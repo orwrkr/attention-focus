@@ -44,11 +44,16 @@ This is an implementation proposal, not a claim that these features already exis
 - Imported names and user-authored notes retain their language and Unicode content;
   application-owned controls, messages, and report headings are English.
 
-## Open decisions
+## Implementation decisions
 
-- UI and tray libraries, packaging, and Windows startup behavior.
-- Storage format, backups, and recovery of unfinished sessions.
-- Stop/resume, sleep, lock, and input-idle semantics.
+The initial architecture selects egui/eframe, tray-icon, and bundled SQLite; see
+[ADR-0004](decisions/0004-desktop-stack.md) and [the architecture](ARCHITECTURE.md).
+These are implementation choices, not claims of completed functionality.
+
+## Deferred features and remaining validation
+
+- Validate tray wakeup, packaging requirements, and Windows lifecycle behavior.
+- Implement and verify the selected storage, backup, and recovery design.
 - Session correction/manual entry, CSV/Markdown export, shortcuts, and autostart.
 - Project identity when slugs change or the source directory is replaced.
 - Time zones, midnight boundaries, and system clock changes.

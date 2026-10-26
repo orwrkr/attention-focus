@@ -11,7 +11,9 @@ Check `git status --short`. Preserve unrelated and unfinished work.
 English is the only permitted language for project-authored content: documentation,
 agent instructions, task cards, architectural decisions, code comments, identifiers,
 test descriptions, synthetic fixtures, commit messages, and application-owned UI
-text, errors, logs, and export headings. Write project development reports in English.
+text, errors, logs, and export headings. Write stored development reports in English.
+Conversational chat replies may use the user's language; this exception does not
+apply to artifacts or content created and stored as part of the project.
 Do not add translations or non-English copies without a new user instruction.
 
 This rule governs authored content, not external data. Preserve Unicode in imported
@@ -57,4 +59,5 @@ files automatically; inspect the staged diff before committing. Pushing, rewriti
 history, deleting unrelated work, and publishing require explicit user instructions.
 Execution environment permissions apply independently of these rules.
 
-Report the outcome, checks, limitations, and any new commit hash in English.
+Report the outcome, checks, limitations, and any new commit hash. Chat language may
+follow the user; saved reports must be in English.

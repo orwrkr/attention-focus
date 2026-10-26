@@ -1,6 +1,6 @@
 # T-0001: Architecture and First Working Slice
 
-Status: ready.
+Status: done.
 Dependencies: none.
 
 ## Goal
@@ -10,32 +10,35 @@ path from reading a project to saving a session and displaying a report.
 
 ## Scope
 
-Compare UI/tray and storage options, define module boundaries, packaging, reliability
-criteria, and implementation tasks. Full application implementation is out of scope.
+UI/tray and storage comparison, module boundaries, packaging, reliability criteria,
+and implementation tasks. Full application implementation is out of scope.
 
-## Plan
+## Completed work
 
-1. Check current official documentation and required scenario support.
-2. Compare native Rust UI and Tauri for complexity, distribution, and tray behavior.
-3. Select storage and safeguards for the read-only MetaPlan boundary.
-4. Define timer states, recovery, and source/project identity.
-5. Write ADRs and ready task cards for the first working slice.
+Selected egui/eframe, tray-icon, and rusqlite with bundled SQLite in ADR-0004.
+Compared Tauri and direct Windows controls, and JSON/text storage alternatives.
+Defined source identity, path safeguards, atomic switching, recovery, OS interruption
+semantics, and range-based reports in docs/ARCHITECTURE.md.
+Created T-0002 through T-0005 with dependencies and acceptance criteria.
+Recorded the user's chat-language clarification in ADR-0003.
 
 ## Acceptance criteria
 
-- [ ] UI/tray and storage choices have rationale, alternatives, and limitations.
-- [ ] Source reader, sessions, storage, UI, and OS integration modules are defined.
-- [ ] Time invariants and crash/sleep behavior are documented.
-- [ ] External storage location and source write-protection checks are defined.
-- [ ] Small implementation tasks have verifiable outcomes.
-- [ ] The English-only UI and repository policy is included in implementation planning.
-- [ ] Context and task index are updated.
+- [x] UI/tray and storage choices have rationale, alternatives, and limitations.
+- [x] Source reader, sessions, storage, UI, and OS integration modules are defined.
+- [x] Time invariants and crash/sleep behavior are documented.
+- [x] External storage location and source write-protection checks are defined.
+- [x] Small implementation tasks have verifiable outcomes.
+- [x] The English-only UI and repository policy is included in implementation planning.
+- [x] Context and task index are updated.
 
 ## Checks
 
-Not performed; the task has not started.
+Reviewed primary documentation linked in ADR-0004. Verified local Rust/Cargo versions
+and the MSVC target. All 19 Markdown files passed link and ASCII/LF checks; task
+statuses match and git diff --check passed. No executable spike or tests were run in this
+architecture-only task; compatibility and OS behavior remain T-0002 acceptance gates.
 
 ## Handoff
 
-Start with `docs/PRODUCT.md` and ADR-0001/0002.
-Do not copy real MetaPlan data into fixtures.
+T-0002 is ready. Prove tray wakeup and bundled SQLite before building domain features.

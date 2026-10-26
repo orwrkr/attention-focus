@@ -22,8 +22,10 @@ exist yet. See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next st
 External user data remains unchanged and may contain any language. The language
 policy does not require translating or rejecting imported project names.
 
-The UI toolkit, storage format, and interruption behavior remain undecided.
-Choosing Rust does not automatically mean choosing Tauri.
+The selected stack is egui/eframe, tray-icon, and rusqlite with bundled SQLite.
+See [the architecture](docs/ARCHITECTURE.md) for module boundaries, timer behavior,
+storage safeguards, and validation gates. Integration has not been implemented yet.
+Chat may use the user's language; all created and stored project content stays English.
 
 ## Development
 

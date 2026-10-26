@@ -4,42 +4,37 @@ Updated: 2026-10-26.
 
 ## State
 
-The repository contains the foundation for workflow-based agent development.
-There is no application implementation, Cargo project, or UI yet.
-The user requested English-only content and removal of earlier non-English history.
-All authored documents have been translated. Local Git metadata was recreated to
-remove the previous non-English history and establish an English-only baseline.
-No remote is configured.
+T-0001 is complete: stack selection, module boundaries, timer/recovery semantics,
+storage safeguards, and implementation tasks are documented.
+No application implementation, Cargo project, or UI exists yet.
 
 ## Decisions
 
-- Rust, with a local Windows system tray workflow.
-- Configurable MetaPlan/Instance source, strictly read-only.
-- Application-owned settings and history stored outside the source.
-- Product boundaries: `docs/decisions/0001-product-boundaries.md`.
-- English-only repository content and application UI:
-  `docs/decisions/0002-english-only.md`.
-- Preserve external Unicode data; do not translate or modify MetaPlan.
-- UI and storage choices remain open. The earlier C# proposal does not apply.
+- Rust with egui/eframe, tray-icon, and rusqlite with bundled SQLite: ADR-0004.
+- Configurable MetaPlan/Instance source, strictly read-only: ADR-0001.
+- Fixed application storage outside the source; validate resolved paths before writes.
+- English-only authored and stored content/UI: ADR-0002.
+- Chat may follow the user's language: ADR-0003.
+- External Unicode data remains unchanged.
+- Architecture and test expectations: docs/ARCHITECTURE.md.
 
-## Observed environment
+## Environment
 
-At initialization: Git 2.55.0.windows.5, rustc 1.98.0, and Cargo 1.98.0.
-These are observations, not pinned minimum versions. Recheck the environment when
-implementation starts, then define the supported toolchain.
+Verified Rust 1.98.0, Cargo 1.98.0, and stable-x86_64-pc-windows-msvc.
+Dependency compatibility, linking, and release packaging are not yet verified.
+Select compatible versions and commit Cargo.lock during T-0002.
 
 ## Next step
 
-Start `T-0001`: compare Rust UI and tray options for Windows, select storage and
-module boundaries, write ADRs, and plan a minimal end-to-end implementation.
-Neither Tauri nor SQLite has been selected.
+Start T-0002: initialize the Cargo package and prove Windows tray/window wakeup,
+safe hide/show/exit, and bundled SQLite integration. Keep the window accessible
+when the tray fails. Do not implement later feature tasks before this gate passes.
 
 ## Verification and limitations
 
-Reviewed all authored prose in English. All 12 Markdown documents passed local link,
-ASCII-content (including absence of BOM), and LF checks; the translation diff passed
-the whitespace check. T-0001 remains ready and has not started. Before committing,
-verify all staged files and task status consistency. After committing, verify a single
-root commit, no superseded objects, and a clean working tree.
-Application tests do not apply yet. Tray behavior, builds, and application-level
-MetaPlan reading have not been verified.
+Reviewed primary documentation for eframe, tray-icon, Tauri, rusqlite, and SQLite.
+The selected stack is an architecture decision, not a tested integration.
+All 19 Markdown files passed local link and ASCII/LF checks; task card/index statuses
+match and git diff --check passed. Authored prose was reviewed in English.
+Application tests do not apply yet.
+No writes were made to MetaPlan. There is no remote and no release artifact.
