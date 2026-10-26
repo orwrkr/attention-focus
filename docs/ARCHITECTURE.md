@@ -1,6 +1,9 @@
 # Initial Architecture
 
-Status: implementation design, not implemented.
+Status: target design; desktop and unassigned tracking subset implemented.
+Desktop persistence and an unassigned timer are now being implemented under
+[ADR-0005](decisions/0005-desktop-state-and-branding.md). The remaining modules and
+full source-aware session policy below are still the target design.
 Decision: [ADR-0004](decisions/0004-desktop-stack.md).
 
 ## Modules and ownership
@@ -50,6 +53,8 @@ Before creating directories or opening a writable database:
 - Reject source/storage equality or containment in either direction.
 - Validate the canonical destination, not a raw path prefix.
 - On first launch, choose and validate the source before persistent initialization.
+  ADR-0005 allows desktop geometry and unassigned sessions to initialize before any
+  source is configured; source selection must subsequently reject storage overlap.
 - On later launches, open an existing database read-only to read the source setting,
   validate paths, then reopen for writes; do not run migrations before validation.
 - Reject unsafe source changes before saving them or switching a session.

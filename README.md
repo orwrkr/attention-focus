@@ -6,9 +6,10 @@ time was spent. The primary interface is a compact Windows system tray applicati
 
 ## Status
 
-The first desktop integration preview is implemented and builds on Windows x64.
-It contains a window, tray commands, and a disposable SQLite persistence check.
-It is not yet a usable focus tracker. Interactive tray verification is still pending.
+The Windows desktop preview now records unassigned focus sessions, remembers window
+placement, and includes embedded application icons with running/stopped tray states.
+Double-click the tray to toggle tracking; use its menu to show the window.
+Project/task integration is not implemented. Interactive desktop verification is pending.
 See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 
 ## Accepted constraints
@@ -20,6 +21,8 @@ See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 - Support project/task selection, start, stop, and focus switching.
 - Report session history and time spent on activities.
 - Use English only for repository-authored content and application UI.
+- Remember window placement and use consistent application/tray icons.
+- Toggle tracking by double-clicking the tray icon.
 
 External user data remains unchanged and may contain any language. The language
 policy does not require translating or rejecting imported project names.
@@ -43,4 +46,6 @@ Decisions: [docs/decisions/README.md](docs/decisions/README.md).
 
 Build and preview instructions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 Run `cargo run --locked` or build with `cargo build --locked --release`.
+Only the EXE is required beside the application. Its data is created separately in
+`%LOCALAPPDATA%/AttentionFocus`; icons, fonts, and SQLite are compiled in.
 Do not commit personal settings, databases, or exports.

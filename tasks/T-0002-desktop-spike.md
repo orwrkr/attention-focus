@@ -44,6 +44,11 @@ UI behavior is implemented but not marked accepted without interactive verificat
 
 ## Handoff
 
+2026-10-27: the user authorized continuing with desktop refinements despite this
+manual verification gate. T-0006 implements window persistence, embedded icons, and
+a durable unassigned timer. The new release passes automated checks and dependency
+inspection; this task still needs actual Windows UI evidence.
+
 Blocked on an operational Windows UI automation helper or a human completing the
 manual checklist in docs/DEVELOPMENT.md. Verify close-to-hide, tray click restoration,
 Show Focus, and Exit both visible and hidden. Record the results before marking done.

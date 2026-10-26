@@ -1,13 +1,15 @@
 # Current Context
 
-Updated: 2026-10-26.
+Updated: 2026-10-27.
 
 ## State
 
-T-0001 is complete. T-0002 has an implemented and compiled desktop preview but is
-blocked on interactive verification. The Cargo package has a library, desktop binary,
-English UI, tray event callbacks, and a temporary SQLite persistence probe.
-No MetaPlan reader, settings, session engine, or reports are implemented yet.
+T-0001 is complete. T-0002 remains blocked on interactive verification, but the user
+explicitly authorized continuing with desktop features. T-0006 adds remembered window
+geometry, embedded icons, two tray states, double-click tracking, and durable unassigned
+sessions. A worker owns SQLite and commits state before the UI updates.
+MetaPlan source settings, task attribution, full lifecycle handling, and reports remain
+unimplemented. This is a bootstrap timer, not the finished project-aware tracker.
 
 ## Decisions
 
@@ -17,6 +19,10 @@ No MetaPlan reader, settings, session engine, or reports are implemented yet.
 - English-only authored and stored content/UI: ADR-0002.
 - Chat may follow the user's language: ADR-0003.
 - External Unicode data remains unchanged.
+- ADR-0005 authorizes desktop state before source selection and eframe RON geometry
+  alongside SQLite. Both use the LocalAppData/AttentionFocus directory.
+- Icons are generated from src/icons.rs and embedded at build time with winresource.
+- Static CRT linking is configured in .cargo/config.toml for Windows x64 MSVC.
 - Architecture and test expectations: docs/ARCHITECTURE.md.
 - UI selection rationale and its unmeasured assumptions are saved in ADR-0004.
   The user accepted continuing with egui as a working hypothesis, not a benchmark winner.
@@ -25,21 +31,26 @@ No MetaPlan reader, settings, session engine, or reports are implemented yet.
 
 Verified Rust 1.98.0, Cargo 1.98.0, and stable-x86_64-pc-windows-msvc.
 Dependency resolution and linking passed. Cargo.lock records the tested dependency graph:
-eframe 0.37.0, tray-icon 0.26.1, rusqlite 0.41.0, and tempfile 3.27.0.
+eframe 0.37.0, tray-icon 0.26.1, rusqlite 0.41.0, tempfile 3.27.0, and winresource 0.1.34.
 The Windows release executable is target/release/attention-focus.exe.
 Clean-machine runtime compatibility remains unverified.
 
 ## Next step
 
-Resume T-0002 with an operational UI helper or human verification of the checklist
-in docs/DEVELOPMENT.md. Verify hide/show and both exit paths before marking it done.
-Only then start T-0003 (source settings and read-only parsing).
+Verify the checklist in docs/DEVELOPMENT.md with an operational UI helper or human:
+geometry restoration, real double-click routing, both tray states, and exit while hidden.
+Record the evidence against T-0002. Next product task is T-0003 (source configuration
+and read-only parsing), including canonical-path checks against all application data.
 
 ## Verification and limitations
 
-Passed cargo fmt --check, cargo test --offline --locked (one SQLite reopen test),
-cargo clippy --offline --locked --all-targets -- -D warnings, and the release build.
-Rust emitted only an incremental-cache hard-link fallback warning on final checks.
-Windows Computer Use list_windows timed out three times, including after a reset.
-No manual UI behavior is claimed. The preview has not been interactively verified.
+Passed cargo test --offline --locked (eight tests), cargo fmt --check, and Clippy.
+Tests cover persistence, interrupted recovery, duplicate starts, failed-stop rollback,
+worker exit confirmation, and ICO structure. ICO artwork was visually inspected.
+Rust emitted only an incremental-cache hard-link fallback warning on the final lint run.
+Windows Computer Use list_windows again timed out three times, including after reset.
+Window restoration, real tray events, and Windows shell rendering remain unverified.
+Release/import-audit results are recorded in T-0006.
+T-0006 implementation is complete. Release build and PE import audit passed; the
+dist/AttentionFocus folder contains only the EXE. Runtime imports are Windows-only.
 No writes were made to MetaPlan. No remote, installer, or published release exists.

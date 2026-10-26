@@ -10,5 +10,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0002](0002-english-only.md) | accepted | English-only project and application UI |
 | [0003](0003-chat-language.md) | accepted | Chat language clarification |
 | [0004](0004-desktop-stack.md) | accepted | Native Rust UI and transactional storage |
+| [0005](0005-desktop-state-and-branding.md) | accepted | Persistent desktop state and tray tracking |
 
-Next number: `0005`. Template: `templates/ADR.md` from the repository root.
+Next number: `0006`. Template: `templates/ADR.md` from the repository root.

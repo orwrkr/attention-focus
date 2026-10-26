@@ -1,0 +1,142 @@
+//! One scalable geometric mark shared by Windows resources and runtime icons.
+
+#[derive(Clone, Copy)]
+pub enum State {
+    App,
+    Running,
+    Stopped,
+}
+
+pub fn rgba(size: u32, state: State) -> Vec<u8> {
+    let accent = match state {
+        State::App | State::Running => [42.0, 212.0, 160.0],
+        State::Stopped => [169.0, 181.0, 198.0],
+    };
+    let mut pixels = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let mut sum = [0.0_f32; 4];
+            for sy in 0..4 {
+                for sx in 0..4 {
+                    let px = (x as f32 + (sx as f32 + 0.5) / 4.0) / size as f32;
+                    let py = (y as f32 + (sy as f32 + 0.5) / 4.0) / size as f32;
+                    let dx = px - 0.5;
+                    let dy = py - 0.5;
+                    let radius = dx.hypot(dy);
+                    if radius > 0.475 {
+                        continue;
+                    }
+                    let ring = (0.33..=0.40).contains(&radius);
+                    let center = match state {
+                        State::App => radius < 0.13,
+                        State::Running => {
+                            (-0.11..=0.18).contains(&dx) && dy.abs() <= (0.18 - dx) * 0.65
+                        }
+                        State::Stopped => {
+                            dy.abs() < 0.145
+                                && ((-0.14..=-0.045).contains(&dx) || (0.045..=0.14).contains(&dx))
+                        }
+                    };
+                    let color = if ring || center {
+                        accent
+                    } else {
+                        [19.0, 29.0, 45.0]
+                    };
+                    for i in 0..3 {
+                        sum[i] += color[i];
+                    }
+                    sum[3] += 255.0;
+                }
+            }
+            let coverage = sum[3] / 255.0;
+            for value in &sum[..3] {
+                pixels.push(if coverage > 0.0 {
+                    (value / coverage).round() as u8
+                } else {
+                    0
+                });
+            }
+            pixels.push((sum[3] / 16.0).round() as u8);
+        }
+    }
+    pixels
+}
+
+/// Multi-resolution 32-bit DIB ICO, with transparency masks for Windows shell use.
+pub fn ico(state: State) -> Vec<u8> {
+    let sizes = [16_u32, 20, 24, 32, 48, 64, 128, 256];
+    let mut output = vec![0, 0, 1, 0, sizes.len() as u8, 0];
+    let mut images = Vec::new();
+    let mut offset = 6 + sizes.len() * 16;
+    for size in sizes {
+        let pixels = rgba(size, state);
+        let mask_stride = size.div_ceil(32) * 4;
+        let data_size = size * size * 4 + mask_stride * size;
+        let mut image = Vec::new();
+        for value in [40_u32, size, size * 2] {
+            image.extend(value.to_le_bytes());
+        }
+        image.extend(1_u16.to_le_bytes());
+        image.extend(32_u16.to_le_bytes());
+        for value in [0, data_size, 0, 0, 0, 0] {
+            image.extend(value.to_le_bytes());
+        }
+        for y in (0..size).rev() {
+            for x in 0..size {
+                let i = ((y * size + x) * 4) as usize;
+                image.extend([pixels[i + 2], pixels[i + 1], pixels[i], pixels[i + 3]]);
+            }
+        }
+        for y in (0..size).rev() {
+            let mut mask = vec![0_u8; mask_stride as usize];
+            for x in 0..size {
+                if pixels[((y * size + x) * 4 + 3) as usize] == 0 {
+                    mask[(x / 8) as usize] |= 0x80 >> (x % 8);
+                }
+            }
+            image.extend(mask);
+        }
+        output.extend([size as u8, size as u8, 0, 0]);
+        output.extend(1_u16.to_le_bytes());
+        output.extend(32_u16.to_le_bytes());
+        output.extend((image.len() as u32).to_le_bytes());
+        output.extend((offset as u32).to_le_bytes());
+        offset += image.len();
+        images.extend(image);
+    }
+    output.extend(images);
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn states_differ_and_keep_transparent_corners() {
+        let running = rgba(32, State::Running);
+        let stopped = rgba(32, State::Stopped);
+        assert_ne!(running, stopped);
+        assert_eq!(running.len(), 32 * 32 * 4);
+        assert_eq!(running[3], 0);
+        assert_eq!(running[(16 * 32 + 16) * 4 + 3], 255);
+    }
+
+    #[test]
+    fn ico_directory_entries_cover_the_file() {
+        let bytes = ico(State::App);
+        assert_eq!(&bytes[..6], &[0, 0, 1, 0, 8, 0]);
+        let mut end = 6 + 8 * 16;
+        for entry in bytes[6..end].as_chunks::<16>().0 {
+            let length = u32::from_le_bytes(entry[8..12].try_into().unwrap()) as usize;
+            let offset = u32::from_le_bytes(entry[12..16].try_into().unwrap()) as usize;
+            assert_eq!(offset, end);
+            assert_eq!(
+                u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()),
+                40
+            );
+            end = offset + length;
+        }
+        assert_eq!(end, bytes.len());
+    }
+}
