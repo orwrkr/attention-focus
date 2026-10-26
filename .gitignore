@@ -1,0 +1,26 @@
+# Rust build output
+/target/
+
+# Local application data and source configuration
+/data/
+/exports/
+/local/
+*.local.toml
+*.local.json
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log
+.env
+.env.*
+!.env.example
+
+# Editors and OS
+/.idea/
+/.vscode/
+Thumbs.db
+.DS_Store
+
+# Cargo.lock should be committed for this application once Cargo is initialized.
