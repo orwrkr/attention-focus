@@ -6,8 +6,10 @@ time was spent. The primary interface is a compact Windows system tray applicati
 
 ## Status
 
-The repository provides an agent development workflow. Application code does not
-exist yet. See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
+The first desktop integration preview is implemented and builds on Windows x64.
+It contains a window, tray commands, and a disposable SQLite persistence check.
+It is not yet a usable focus tracker. Interactive tray verification is still pending.
+See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 
 ## Accepted constraints
 
@@ -24,7 +26,7 @@ policy does not require translating or rejecting imported project names.
 
 The selected stack is egui/eframe, tray-icon, and rusqlite with bundled SQLite.
 See [the architecture](docs/ARCHITECTURE.md) for module boundaries, timer behavior,
-storage safeguards, and validation gates. Integration has not been implemented yet.
+storage safeguards, and validation gates. The UI choice remains subject to validation.
 Chat may use the user's language; all created and stored project content stays English.
 
 ## Development
@@ -39,6 +41,6 @@ Decisions: [docs/decisions/README.md](docs/decisions/README.md).
 
 ## Local environment
 
-Git, rustc, and Cargo were checked during initialization. The Cargo project and
-build commands will be added after architecture selection. Do not commit personal
-settings, databases, or exports.
+Build and preview instructions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Run `cargo run --locked` or build with `cargo build --locked --release`.
+Do not commit personal settings, databases, or exports.

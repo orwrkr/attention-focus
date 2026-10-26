@@ -20,6 +20,15 @@ matter more than elaborate visual styling.
 
 These are architectural judgments, not measured performance or size comparisons.
 
+### Selection rationale clarification
+
+The choice prioritizes a small implementation entirely in Rust, not proven superiority
+in appearance, memory use, startup time, or accessibility. No competing prototypes or
+comparative benchmarks were built. Rust also permits Tauri; it does not require egui.
+Treat this UI choice as a working hypothesis until the integration gate passes.
+Revisit it if visual polish or native interaction quality outweighs implementation
+simplicity. The user accepted proceeding on this basis.
+
 ## Decision
 
 Use egui/eframe for the desktop window and tray-icon for the Windows tray.

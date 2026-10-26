@@ -4,9 +4,10 @@ Updated: 2026-10-26.
 
 ## State
 
-T-0001 is complete: stack selection, module boundaries, timer/recovery semantics,
-storage safeguards, and implementation tasks are documented.
-No application implementation, Cargo project, or UI exists yet.
+T-0001 is complete. T-0002 has an implemented and compiled desktop preview but is
+blocked on interactive verification. The Cargo package has a library, desktop binary,
+English UI, tray event callbacks, and a temporary SQLite persistence probe.
+No MetaPlan reader, settings, session engine, or reports are implemented yet.
 
 ## Decisions
 
@@ -17,24 +18,28 @@ No application implementation, Cargo project, or UI exists yet.
 - Chat may follow the user's language: ADR-0003.
 - External Unicode data remains unchanged.
 - Architecture and test expectations: docs/ARCHITECTURE.md.
+- UI selection rationale and its unmeasured assumptions are saved in ADR-0004.
+  The user accepted continuing with egui as a working hypothesis, not a benchmark winner.
 
 ## Environment
 
 Verified Rust 1.98.0, Cargo 1.98.0, and stable-x86_64-pc-windows-msvc.
-Dependency compatibility, linking, and release packaging are not yet verified.
-Select compatible versions and commit Cargo.lock during T-0002.
+Dependency resolution and linking passed. Cargo.lock records the tested dependency graph:
+eframe 0.37.0, tray-icon 0.26.1, rusqlite 0.41.0, and tempfile 3.27.0.
+The Windows release executable is target/release/attention-focus.exe.
+Clean-machine runtime compatibility remains unverified.
 
 ## Next step
 
-Start T-0002: initialize the Cargo package and prove Windows tray/window wakeup,
-safe hide/show/exit, and bundled SQLite integration. Keep the window accessible
-when the tray fails. Do not implement later feature tasks before this gate passes.
+Resume T-0002 with an operational UI helper or human verification of the checklist
+in docs/DEVELOPMENT.md. Verify hide/show and both exit paths before marking it done.
+Only then start T-0003 (source settings and read-only parsing).
 
 ## Verification and limitations
 
-Reviewed primary documentation for eframe, tray-icon, Tauri, rusqlite, and SQLite.
-The selected stack is an architecture decision, not a tested integration.
-All 19 Markdown files passed local link and ASCII/LF checks; task card/index statuses
-match and git diff --check passed. Authored prose was reviewed in English.
-Application tests do not apply yet.
-No writes were made to MetaPlan. There is no remote and no release artifact.
+Passed cargo fmt --check, cargo test --offline --locked (one SQLite reopen test),
+cargo clippy --offline --locked --all-targets -- -D warnings, and the release build.
+Rust emitted only an incremental-cache hard-link fallback warning on final checks.
+Windows Computer Use list_windows timed out three times, including after a reset.
+No manual UI behavior is claimed. The preview has not been interactively verified.
+No writes were made to MetaPlan. No remote, installer, or published release exists.
