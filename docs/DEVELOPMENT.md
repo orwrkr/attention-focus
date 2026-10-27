@@ -159,8 +159,15 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 - Expand Focus history and reports, choose inclusive From/Through dates and an IANA
   timezone, then refresh. Today/Last 7 days/Last 30 days use the chosen timezone.
 - Reports show saved totals by project, project/task, and local calendar day. Live and
-  unreviewed checkpoint time are separate. Results are explicit snapshots; refresh to
-  update them. All matching sessions contribute to totals; details show the newest 200.
+  unreviewed checkpoint time are separate. Visible expanded reports refresh every two
+  seconds and after tracking commits; collapsed/hidden views stop queries. Only one
+  query is in flight. Debounced editable filters reject superseded replies and retain
+  the last good snapshot on error. All matches contribute; details show the newest 200.
+- Dates support editable text and calendar popups; timezones use a searchable bundled
+  list. Presets roll at midnight in the selected zone. Stay on top uses native viewport
+  level and is saved in existing window.ron storage, not SQLite. No new schema upgrade
+  beyond version two. Tooltip names the current project within Windows' UTF-16 limit.
+  Normal headers omit Production; secondary explanations use theme-aware blue text.
 - Calendar boundaries use bundled historical timezone rules and respect DST. Recorded
   monotonic time is allocated proportionally across the wall interval when clipped,
   using cumulative rounding so adjacent periods add exactly. See ADR-0009 for limits.
@@ -187,6 +194,15 @@ The obsolete AttentionFocus-Update distribution was removed by T-0009. Always us
 scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 
 ## Verification record (2026-10-27)
+
+T-0013: 45 Rust tests, five package tests, formatting, and Clippy pass. Both 0.4.0 EXEs
+and the automatic ZIP verified (versions, eight icon sizes each, source/build stamp,
+allowlist, hashes). All six PDF pages inspected and matched byte-for-byte to the package.
+Six new tests cover calendar rules, tooltip bounds/state, refresh scheduling, stale
+filters/debounce, retry backoff, and timezone validity. WindowLevel and storage API
+usage reviewed; native behavior/persistence/theme rendering remain unverified. Window
+discovery timed out twice; initialization also timed out after reset. No app was launched
+or real history/settings database changed; the external portable copy was left running.
 
 T-0012: 39 Rust tests, five packaging tests, formatting, and Clippy pass. Both 0.3.0 EXEs
 and the automatic ZIP build verified, including version/icon resources, fingerprint,

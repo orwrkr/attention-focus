@@ -18,5 +18,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0010](0010-runtime-profiles.md) | accepted | Independent production/development and pinned actions |
 | [0011](0011-versioned-distribution.md) | accepted | Neutral status icons and versioned production packages |
 | [0012](0012-immediate-activity-changes.md) | accepted | Immediate interval changes and durable recent pickers |
+| [0013](0013-live-reports-and-desktop-controls.md) | accepted | Live reports, calendars, timezone list, and window controls |
 
-Next number: `0013`. Template: `templates/ADR.md` from the repository root.
+Next number: `0014`. Template: `templates/ADR.md` from the repository root.

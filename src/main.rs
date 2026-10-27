@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use attention_focus::{
-    icons, lifecycle, platform,
+    icons, lifecycle, platform, presentation,
     profiles::{Paths, Profile},
     report_ui, source, tracking,
     tray_interaction::Clicks,
@@ -52,6 +52,7 @@ struct Desktop {
     project_search: String,
     profile: Profile,
     storage_root: std::path::PathBuf,
+    stay_on_top: bool,
 }
 
 fn tray_icon(running: bool, profile: Profile) -> Icon {
@@ -90,6 +91,17 @@ impl Desktop {
     ) -> Self {
         let directory = paths.directory;
         let profile = paths.profile;
+        let stay_on_top = context
+            .storage
+            .and_then(|storage| eframe::get_value(storage, "stay_on_top"))
+            .unwrap_or(false);
+        context
+            .egui_ctx
+            .send_viewport_cmd(egui::ViewportCommand::WindowLevel(if stay_on_top {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            }));
         let (sender, actions) = mpsc::channel();
         let menu = Menu::new();
         let show = MenuItem::new(
@@ -218,6 +230,7 @@ impl Desktop {
             project_search: String::new(),
             profile,
             storage_root: paths.root,
+            stay_on_top,
         };
         if desktop.source_selection.is_some() {
             desktop.load_source(&context.egui_ctx, false);
@@ -430,6 +443,9 @@ impl Desktop {
 }
 
 impl eframe::App for Desktop {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
+    }
     fn auto_save_interval(&self) -> Duration {
         Duration::from_secs(2)
     }
@@ -511,18 +527,7 @@ impl eframe::App for Desktop {
                     // Update each snapshot, including while hidden: total includes the
                     // active session once and excludes unreviewed recovery time.
                     if let Some(tray) = &self.tray {
-                        let label = format!(
-                            "{} - {}\nSession: {}\nTotal: {}{}",
-                            self.profile.title(),
-                            if state.running { "tracking" } else { "stopped" },
-                            duration(state.elapsed_ms),
-                            duration(state.total_ms.saturating_add(state.elapsed_ms)),
-                            if state.needs_review {
-                                "\nInterrupted time needs review"
-                            } else {
-                                ""
-                            }
-                        );
+                        let label = presentation::tooltip(self.profile, &state);
                         if let Err(error) = tray.set_tooltip(Some(label)) {
                             self.error = Some(format!("Cannot update tray status: {error}"));
                         }
@@ -542,6 +547,7 @@ impl eframe::App for Desktop {
                     self.ready = true;
                     if completed {
                         self.pending = false;
+                        self.reports.invalidate();
                     }
                 }
                 Action::Tracking(tracking::Event::Error(error)) => {
@@ -571,7 +577,14 @@ impl eframe::App for Desktop {
         );
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let secondary = if ui.visuals().dark_mode {
+            egui::Color32::from_rgb(151, 193, 226)
+        } else {
+            egui::Color32::from_rgb(43, 79, 117)
+        };
+        ui.style_mut().visuals.weak_text_color = Some(secondary);
+        ui.style_mut().visuals.disabled_alpha = 0.7;
         let ctx = ui.ctx().clone();
         let geometry = ctx.input(|input| input.viewport().outer_rect);
         if geometry != self.last_geometry {
@@ -592,12 +605,29 @@ impl eframe::App for Desktop {
             ui.horizontal(|ui| {
                 ui.heading("Attention Focus");
                 ui.weak(format!(
-                    "{} v{}",
-                    self.profile.folder(),
+                    "{}v{}",
+                    if self.profile == Profile::Development {
+                        "Development "
+                    } else {
+                        ""
+                    },
                     env!("CARGO_PKG_VERSION")
                 ));
             });
             ui.horizontal(|ui| {
+                if ui.checkbox(&mut self.stay_on_top, "Stay on top").changed() {
+                    if let Some(storage) = frame.storage_mut() {
+                        eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
+                        storage.flush();
+                    }
+                    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                        if self.stay_on_top {
+                            egui::WindowLevel::AlwaysOnTop
+                        } else {
+                            egui::WindowLevel::Normal
+                        },
+                    ));
+                }
                 if ui
                     .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
                     .clicked()
@@ -616,11 +646,15 @@ impl eframe::App for Desktop {
                 .id_salt("window-content")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.label(if self.state.running {
-                        "Tracking now (saved activity)"
-                    } else {
-                        "Next tracking activity (saved selection)"
-                    });
+                    ui.label(
+                        egui::RichText::new(if self.state.running {
+                            "Tracking now (saved activity)"
+                        } else {
+                            "Next tracking activity (saved selection)"
+                        })
+                        .color(secondary)
+                        .strong(),
+                    );
                     ui.strong(self.state.activity.label());
                     if let Some(task) = self
                         .state

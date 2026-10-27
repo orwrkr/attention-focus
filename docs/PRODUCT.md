@@ -25,6 +25,9 @@
 - Project/task changes start a new interval by default, with a persistent opt-out to
   edit the entire current interval without resetting its start.
 - Sort project/task choices by last tracking use, newest first.
+- Automatically refresh open reports; offer calendar date selection and timezone lists.
+- Offer Stay on top, include the active project in tray tooltips, improve secondary-text
+  distinction, and omit Production from the normal header.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

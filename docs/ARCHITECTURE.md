@@ -124,6 +124,13 @@ Do not silently resume a persisted running session.
 
 ## Reporting
 
+Visible expanded reports schedule bounded asynchronous refreshes (one in flight),
+including after tracking commits. Debounce filter edits, reject superseded parameters,
+retain the last good snapshot on error, and pause queries while collapsed/hidden.
+Calendar pickers share Jiff civil-date arithmetic with accounting; timezone choices
+come from the bundled database. Stay on top is a window.ron option, not a history schema
+change. See ADR-0013.
+
 Use half-open intervals [start, end), and clip to the selected range before summing.
 Resolve local calendar boundaries to UTC using the selected reporting time zone;
 a day is not assumed to last 24 hours. Split intervals at midnight for daily totals.

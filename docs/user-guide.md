@@ -93,7 +93,8 @@ sources and Production/Development keep independent usage.
 - A single left click on the tray icon shows the window. Opening waits briefly for
   Windows to distinguish a single click from a double click.
 - A double left click starts or stops tracking using the last applied selection.
-- Hover shows status, current session time, and saved plus active total time.
+- Hover shows status, the current project while tracking, session time, and saved plus
+  active total time. Long project names are shortened to fit the Windows tooltip.
 - A right click opens the menu with Show Focus, Start/Stop, and Exit.
 - **Hide to tray** hides the window. Closing the window normally hides it too.
 - **Exit** saves the active session and ends the app. Use Exit before replacing its EXE.
@@ -101,6 +102,12 @@ sources and Production/Development keep independent usage.
 Hide to tray and Exit stay pinned above scrolling content, even with reports expanded.
 Hiding a window does not stop tracking. If tray setup fails, hiding is disabled so that
 the app cannot silently become inaccessible.
+
+Enable **Stay on top** in the header to keep the window above ordinary windows.
+Disable it for normal window order. This is remembered separately for each profile,
+together with window placement, and does not prevent hiding to the tray. The normal
+header shows the app/version; the test version also shows Development. Secondary
+explanations use a blue accent to distinguish them from primary text.
 
 ## Interruptions and returning to work
 
@@ -118,13 +125,15 @@ checkpoint; time after it is excluded. Restarting never counts the time the app 
 
 Open **Focus history and reports** and choose a period:
 
-1. Enter **From** and **Through** dates as `YYYY-MM-DD`. Both dates are included.
-2. Enter an IANA **Time zone**, such as `Europe/Istanbul`, `America/New_York`, or `UTC`.
-3. Click **Refresh report**, or choose Today, Last 7 days, or Last 30 days.
+1. Type **From** and **Through** dates as `YYYY-MM-DD`, or use either **Calendar**
+   button to choose a day. Navigate months or change the year. Both dates are included.
+2. Choose **Time zone** from the dropdown; search for a city/region or choose UTC.
+3. Results load automatically. Today, Last 7 days, and Last 30 days set quick ranges;
+   **Refresh report** is also available for an immediate refresh.
 
 Presets use the time zone you selected. A report can cover at most 3,660 calendar days.
 Invalid dates, reversed ranges, and unknown time zones produce an error; correct the
-fields and refresh again. An earlier result keeps its own period and snapshot label.
+fields to retry. An earlier valid result keeps its own period and snapshot label.
 
 ## Understand the totals
 
@@ -132,8 +141,11 @@ fields and refresh again. An earlier result keeps its own period and snapshot la
 - **Running (not finalized)** shows the active session separately.
 - **Needs review (excluded)** shows saved interrupted time awaiting your decision.
 
-These three categories are not combined into a misleading finalized total. Reports
-are snapshots: refresh to include activity recorded since the displayed snapshot time.
+These categories are not combined into a misleading finalized total. Visible expanded
+reports update about every two seconds and after tracking changes. Filters remain
+editable while updating; typing briefly delays the next query. Hidden/collapsed reports
+pause automatic queries and refresh on return. Snapshot time identifies displayed data;
+failures retain the last valid result.
 
 Expand **By project**, **By project and task**, or **By day** for breakdowns. Sources
 with the same project slug are kept separate; hover on a project total to see its source.
@@ -173,8 +185,8 @@ Use the packaged EXE for normal **Production** use. For development, run
 Debug builds always default to Development and reject selecting Production.
 
 Both profiles can run together. Each permits one instance and has its own history,
-selected source, applied activity, window placement, and backups. The header identifies
-the profile; development also has a distinct window title and tray badge. Building
+selected source, applied activity, window placement, and backups. Development is
+identified in the header and has a distinct window title and tray badge. Building
 development does not replace a running production EXE.
 
 The fixed data directories are:
@@ -183,7 +195,7 @@ The fixed data directories are:
 - Development: `%LOCALAPPDATA%/AttentionFocus/Development`
 
 Each contains `focus.sqlite3` for history, `source.sqlite3` for source settings, and
-`window.ron` for window placement. SQLite may create journal files in the same folder.
+`window.ron` for placement and Stay on top. SQLite may create journal files in the same folder.
 Moving the EXE does not move or reset this data.
 
 Older files directly under `%LOCALAPPDATA%/AttentionFocus` remain unchanged. The new

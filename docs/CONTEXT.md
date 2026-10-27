@@ -4,6 +4,16 @@ Updated: 2026-10-27.
 
 ## State
 
+T-0013 implements version 0.4.0: visible expanded reports refresh every two seconds
+and on committed tracking changes, with a single in-flight request, editable/debounced
+filters, stale-parameter reply rejection, and last-good-result retention. Date fields
+have Jiff calendar popups; timezone selection searches bundled names. Stay on top uses
+native WindowLevel and immediate per-profile window.ron persistence. Tracking schema
+remains two, as in 0.3; upgrades from 0.2 still migrate/backup schema one on app startup.
+Tooltips name the active project within 127 UTF-16 units. Production headers omit the
+profile word; Development stays explicit. Secondary text uses theme-aware blue.
+No new dependencies were added. See ADR-0013 and T-0013.
+
 T-0012 implements version 0.3.0: project/task picker changes apply immediately. While
 running they create an atomic new interval by default; the per-profile checkbox can
 instead reassign the entire active interval without resetting its start/timer. While
@@ -102,14 +112,26 @@ Clean-machine runtime compatibility remains unverified.
 ## Next step
 
 Use dist/AttentionFocus-VERSION-windows-x64.zip for production and
-target/debug/attention-focus.exe for Development. No app was launched during T-0012.
-Windows discovery timed out three times including reset during T-0012. Verify immediate
+target/debug/attention-focus.exe for Development. No app was launched during T-0013.
+Windows discovery timed out twice; initialization also timed out after reset. Verify
+calendar/timezone controls, automatic reporting, topmost restore, tooltip project and
+theme contrast, then immediate
 picker changes, edit-mode timing, recent ordering, and the
 pinned buttons, two simultaneous visible profiles, and remaining T-0005/T-0002 tracking,
-tray, geometry, and lifecycle checks in Development. The earlier user-closed app remains
-closed according to the pre-build process inspection. Never create fake Production time.
+tray, geometry, and lifecycle checks in Development. At the last read-only inspection,
+a portable 0.2.0 Production copy outside the repository was running against schema one.
+Do not equate free canonical build outputs with no app running, and do not stop or
+replace the external copy automatically. Never create fake Production time.
 
 ## Verification and limitations
+
+T-0013: 45 Rust tests, five package tests, formatting, and Clippy pass. Both 0.4.0 EXEs
+and automatic ZIP built; verify-release passed versions/icons/fingerprint/stamp/members/
+hashes. Six PDF pages inspected and byte-matched to final output. New checks cover
+refresh scheduling/staleness/backoff, leap/month grids, bundled timezone resolution,
+and Unicode tooltip state/length. Native UI/topmost/persistence/theme checks remain
+unverified: two list_windows timeouts, then initialization timeout after reset. No app
+was launched, real database changed, or running portable copy replaced/stopped.
 
 T-0012: 39 Rust tests, five package tests, formatting, and Clippy pass. Both 0.3.0 EXEs
 and the automatically refreshed ZIP built and verify-release passed (versions, eight

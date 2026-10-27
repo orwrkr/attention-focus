@@ -19,6 +19,10 @@ Notes alone remain draft until explicitly applied. Text fields support the clipb
 Search projects in the picker. Focus history and reports shows inclusive date ranges
 in a chosen time zone, saved totals by project/task/day, and up to 200 recent sessions.
 Running time and unreviewed checkpoints are shown separately from saved totals.
+Expanded visible reports update automatically. Dates support Calendar popups and
+timezones have a searchable list. Stay on top is remembered per profile. Tray tooltips
+include the current project; secondary text uses a readable blue accent. Normal
+headers show the app/version; Development remains identified.
 Some interactive desktop checks remain pending.
 See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 
