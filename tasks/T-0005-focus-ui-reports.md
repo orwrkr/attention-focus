@@ -1,6 +1,6 @@
 # T-0005: Focus Workflow and Time Reports
 
-Status: backlog.
+Status: in_progress.
 Dependencies: T-0004.
 
 ## Goal
@@ -15,21 +15,51 @@ Do not include later tasks or deferred product features.
 
 ## Plan
 
-Implement the acceptance criteria in order, then verify and update project context.
+Add project search and worker-owned report requests, pure interval allocation,
+daily and project/task totals, and recent session details. Resolve inclusive date
+ranges in an explicit IANA timezone with Jiff's bundled database. Keep saved, running,
+and unreviewed time separate. Verify clipping, DST, midnight, identity, and UI behavior.
 
 ## Acceptance criteria
 
-- [ ] Connect source settings, project search, optional task, Start/Stop/Switch, and tray controls to the controller.
-- [ ] Show confirmed timer state and actionable storage/source errors in English.
-- [ ] Display session history and project/task totals for a selected date range with uncertain time separated.
-- [ ] Test clipped intervals, midnight and daylight-saving boundaries, Unicode titles, and project archival.
+- [x] Connect source settings, project search, optional task, Start/Stop/Switch, and tray controls to the controller.
+- [x] Show confirmed timer state and actionable storage/source errors in English.
+- [x] Display session history and project/task totals for a selected date range with uncertain time separated.
+- [x] Test clipped intervals, midnight and daylight-saving boundaries, Unicode titles, and project archival.
 - [ ] Manually verify the full settings-to-report workflow and record release build instructions.
-- [ ] Document deferred export, editing, shortcuts, autostart, and installer work without presenting them as delivered.
+- [x] Document deferred export, editing, shortcuts, autostart, and installer work without presenting them as delivered.
 
 ## Checks
 
-Not started. Record commands, results, and manual evidence here.
+Implementation is complete; full interactive tracking acceptance remains pending.
+Twenty-seven tests passed with cargo test --offline --locked. Added checks cover
+calendar-day boundaries (23/25-hour DST days, midnight gaps, skipped dates), clipped
+and adjacent interval additivity, monotonic/wall drift allocation, Unicode snapshots,
+source identity, archival independence, history truncation without truncated totals,
+and worker report errors that do not acknowledge tracking commands or block Stop.
+All automated data is synthetic in temporary storage; no live MetaPlan tests were added.
+
+Formatting, Clippy with -D warnings, packaging tests, and scripts/build.ps1 passed.
+The canonical EXE has only Windows system DLL imports. The build consumes the main
+Cargo artifact and creates no alternate release. With the app then running, an intentional
+second build failed before compilation with the expected locked-file error (exit 1).
+The already published EXE was unchanged; dist contains only AttentionFocus/attention-focus.exe.
+
+Interactive checks: opened the canonical EXE; verified source-field Ctrl+C, clearing
+unsaved text, and Ctrl+V restoring it without saving source settings. Restored selection
+and source appeared. Verified project filtering without selecting/applying another
+activity, report refresh, project/task/day totals, session-detail expansion, invalid-date
+errors, and recovery to a valid Today report. Did not start/switch/stop fake sessions
+in real history. Real lock/suspend, full synthetic UI tracking, tray, and geometry checks
+remain unverified. No personal names, paths, or session figures are recorded here.
+
+The user reported exiting the agent-launched app. Process inspection then found no app,
+and scripts/build.ps1 successfully published again to the canonical path. A final UI
+discovery request was stopped by the user's physical Escape key; no further UI input
+was sent. This does not invalidate the report/clipboard checks already recorded above.
 
 ## Handoff
 
-Start after T-0004 is complete. Update this card and the task index together.
+Complete the remaining manual tracking/tray/lifecycle checks with disposable history,
+then mark this task done. The app is closed and the canonical EXE is current.
+Export and manual corrections remain deferred; do not expand this task to include them.

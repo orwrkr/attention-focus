@@ -13,7 +13,10 @@ current session and total tracked time.
 Configure an Instance folder under MetaPlan source and projects, then choose a project
 and optional task. Start tracking or use Switch focus while running. The previous
 selection is retained for tray starts. Text fields support the system clipboard.
-Interactive desktop verification is pending.
+Search projects in the picker. Focus history and reports shows inclusive date ranges
+in a chosen time zone, saved totals by project/task/day, and up to 200 recent sessions.
+Running time and unreviewed checkpoints are shown separately from saved totals.
+Some interactive desktop checks remain pending.
 See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 
 ## Accepted constraints

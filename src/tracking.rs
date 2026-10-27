@@ -1,4 +1,5 @@
 //! Serialized, clock-injected tracking with durable activity snapshots.
+use crate::reports;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -59,6 +60,10 @@ pub enum Command {
     Switch(Activity),
     Select(Activity),
     AcceptRecovery,
+    Report {
+        id: u64,
+        request: reports::Request,
+    },
     Interrupt {
         reason: &'static str,
         boundary: Option<Boundary>,
@@ -81,6 +86,11 @@ impl Boundary {
 }
 pub enum Event {
     State(Snapshot),
+    Committed(Snapshot),
+    Report {
+        id: u64,
+        result: std::result::Result<reports::Report, String>,
+    },
     Error(String),
     ExitReady,
 }
@@ -230,6 +240,54 @@ impl Store {
             activity: self.selected()?,
         })
     }
+
+    fn report(
+        &self,
+        request: &reports::Request,
+        now: Moment,
+        active_ms: u64,
+    ) -> Result<reports::Report> {
+        let range = reports::Range::new(request)?;
+        let mut statement = self.connection.prepare("SELECT id,started_ms,COALESCE(ended_ms,?3),elapsed_ms,state,activity,COALESCE(end_reason,'') FROM focus_sessions WHERE started_ms<?2 AND COALESCE(ended_ms,?3)>=?1 ORDER BY id")?;
+        let raw =
+            statement.query_map(params![range.start_ms, range.end_ms, now.wall_ms], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(5)?,
+                    row.get::<_, String>(6)?,
+                ))
+            })?;
+        let mut records = Vec::new();
+        for raw in raw {
+            let (id, start_ms, end_ms, elapsed, state, activity, reason) = raw?;
+            let state = match state.as_str() {
+                "stopped" => reports::State::Saved,
+                "running" => reports::State::Running,
+                "interrupted" => reports::State::Review,
+                _ => return Err(invalid("Unknown history state.").into()),
+            };
+            let activity: Activity = serde_json::from_str(&activity)?;
+            activity.validate()?;
+            records.push(reports::Record {
+                id,
+                start_ms,
+                end_ms,
+                elapsed_ms: if state == reports::State::Running {
+                    active_ms
+                } else {
+                    elapsed.max(0) as u64
+                },
+                state,
+                activity,
+                reason,
+            });
+        }
+        Ok(reports::compute(range, records, now.wall_ms))
+    }
 }
 fn bounded(ms: u64) -> i64 {
     ms.min(i64::MAX as u64) as i64
@@ -320,7 +378,7 @@ impl Engine {
                 }
                 return Ok(true);
             }
-            None => {
+            Some(Command::Report { .. }) | None => {
                 if let Some(elapsed) = elapsed
                     && now.mono_ms.saturating_sub(self.checkpoint_mono) >= 10_000
                 {
@@ -394,11 +452,15 @@ pub fn spawn(
             }
         };
         let mut engine = Engine::new(store, now());
-        let publish = |engine: &Engine| match engine.snapshot(now()) {
-            Ok(state) => notify(Event::State(state)),
+        let publish = |engine: &Engine, committed: bool| match engine.snapshot(now()) {
+            Ok(state) => notify(if committed {
+                Event::Committed(state)
+            } else {
+                Event::State(state)
+            }),
             Err(error) => notify(Event::Error(error.to_string())),
         };
-        publish(&engine);
+        publish(&engine, false);
         loop {
             let command = if engine.started.is_some() {
                 match receiver.recv_timeout(Duration::from_secs(1)) {
@@ -421,7 +483,12 @@ pub fn spawn(
             };
             // Preserve the event boundary even if the worker resumes after a short sleep.
             let moment = command_moment(&command, now(), boot);
-            match engine.apply(command, moment) {
+            let report_request = match &command {
+                Some(Command::Report { id, request }) => Some((*id, request.clone())),
+                _ => None,
+            };
+            let committed = command.is_some() && report_request.is_none();
+            let succeeded = match engine.apply(command, moment) {
                 Ok(true) => {
                     notify(Event::ExitReady);
                     break;
@@ -430,10 +497,30 @@ pub fn spawn(
                     if let Some(done) = completion {
                         let _ = done.send(());
                     }
+                    if let Some((id, request)) = report_request {
+                        let result = engine
+                            .snapshot(moment)
+                            .and_then(|state| {
+                                engine.store.report(&request, moment, state.elapsed_ms)
+                            })
+                            .map_err(|error| format!("Cannot load report: {error}"));
+                        notify(Event::Report { id, result });
+                    }
+                    true
                 }
-                Err(error) => notify(Event::Error(format!("History was not updated: {error}"))),
-            }
-            publish(&engine);
+                Err(error) => {
+                    let message = format!("History was not updated: {error}");
+                    if let Some((id, _)) = report_request {
+                        notify(Event::Report {
+                            id,
+                            result: Err(message.clone()),
+                        });
+                    }
+                    notify(Event::Error(message));
+                    false
+                }
+            };
+            publish(&engine, committed && succeeded);
         }
     });
     sender
@@ -696,7 +783,7 @@ mod tests {
         commands.send(Command::Start(activity("First"))).unwrap();
         assert!(matches!(
             receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
-            Event::State(Snapshot { running: true, .. })
+            Event::Committed(Snapshot { running: true, .. })
         ));
         let (done, saved) = std::sync::mpsc::sync_channel(1);
         commands
@@ -709,12 +796,12 @@ mod tests {
         saved.recv_timeout(Duration::from_secs(5)).unwrap();
         assert!(matches!(
             receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
-            Event::State(Snapshot { running: false, .. })
+            Event::Committed(Snapshot { running: false, .. })
         ));
         commands.send(Command::Start(activity("Next"))).unwrap();
         assert!(matches!(
             receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
-            Event::State(Snapshot { running: true, .. })
+            Event::Committed(Snapshot { running: true, .. })
         ));
         commands.send(Command::Exit).unwrap();
         assert!(matches!(
@@ -742,5 +829,86 @@ mod tests {
         engine.apply(command, moment).unwrap();
         assert_eq!(engine.snapshot(at(20_000)).unwrap().total_ms, 100);
         assert!(!engine.snapshot(at(20_000)).unwrap().running);
+    }
+
+    #[test]
+    fn stored_report_separates_saved_live_and_recovered_time_without_live_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let request = reports::Request {
+            from: "1970-01-01".into(),
+            through: "1970-01-01".into(),
+            timezone: "UTC".into(),
+        };
+        engine
+            .apply(Some(Command::Start(activity("Archived project"))), at(0))
+            .unwrap();
+        engine
+            .apply(Some(Command::Switch(activity("Current project"))), at(1000))
+            .unwrap();
+        let report = engine.store.report(&request, at(1500), 500).unwrap();
+        assert_eq!(report.saved_ms, 1000);
+        assert_eq!(report.running_ms, 500);
+        assert_eq!(report.groups[0].project, "Archived project");
+        engine.apply(None, at(11000)).unwrap();
+        drop(engine);
+        let store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        let report = store.report(&request, at(86000000), 0).unwrap();
+        assert_eq!(report.saved_ms, 1000);
+        assert_eq!(report.review_ms, 10000);
+        assert_eq!(report.running_ms, 0);
+        assert_eq!(
+            report.projects.iter().map(|p| p.saved_ms).sum::<u64>(),
+            1000
+        );
+    }
+
+    #[test]
+    fn invalid_report_does_not_block_stop_or_acknowledge_a_tracking_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let (events, receiver) = std::sync::mpsc::channel();
+        let commands = spawn(dir.path().join("focus.sqlite3"), move |event| {
+            let _ = events.send(event);
+        });
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Event::State(_)
+        ));
+        commands.send(Command::Start(Activity::default())).unwrap();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Event::Committed(_)
+        ));
+        commands
+            .send(Command::Report {
+                id: 42,
+                request: reports::Request {
+                    from: "invalid".into(),
+                    through: "1970-01-01".into(),
+                    timezone: "UTC".into(),
+                },
+            })
+            .unwrap();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Event::Report {
+                id: 42,
+                result: Err(_)
+            }
+        ));
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Event::State(Snapshot { running: true, .. })
+        ));
+        commands.send(Command::Stop).unwrap();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Event::Committed(Snapshot { running: false, .. })
+        ));
+        commands.send(Command::Exit).unwrap();
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Event::ExitReady
+        ));
     }
 }

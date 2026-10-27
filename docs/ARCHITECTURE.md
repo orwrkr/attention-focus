@@ -2,8 +2,8 @@
 
 Status: target design with desktop persistence, read-only source settings, and
 attributed sessions implemented. See [ADR-0008](decisions/0008-attributed-session-engine.md)
-for the clock-injected engine and Windows lifecycle integration. Date-range reporting,
-time-zone handling, and recovery adjustment remain target work. Recovery currently
+for the clock-injected engine and Windows lifecycle integration. ADR-0009 adds date-range
+reports and timezone boundaries. Recovery adjustment remains target work. Recovery currently
 supports accepting the last durable checkpoint; editing and discarding time are deferred.
 Decision: [ADR-0004](decisions/0004-desktop-stack.md).
 

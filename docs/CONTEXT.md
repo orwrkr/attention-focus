@@ -4,6 +4,13 @@ Updated: 2026-10-27.
 
 ## State
 
+T-0005 implements project search and worker-owned date-range reports: inclusive dates,
+an explicit IANA timezone, project/task/day totals, and 200 recent session details.
+Saved, live, and unreviewed time are separate. Jiff 0.2.38 bundles timezone rules.
+Clipped duration allocation preserves adjacent-period totals (ADR-0009).
+The canonical EXE is published. Implementation and automated checks pass; T-0005 stays
+in_progress for full interactive tracking acceptance, which has not been claimed.
+
 T-0004 adds durable project/task/note snapshots, an applied selection restored on
 restart, and transactional Start/Stop/Switch. One clock-injected engine owns writes.
 Version-one migration backs up old unassigned history using SQLite's backup API.
@@ -16,7 +23,7 @@ T-0009 establishes scripts/build.ps1 and dist/AttentionFocus/attention-focus.exe
 the only distributed output. Obsolete AttentionFocus-Update was removed. Locked files
 are errors; never create fallback copies or terminate an app automatically. If an agent
 launched a blocking instance, offer to exit it and wait for user approval.
-Interactive paste with the updated build remains unverified.
+Source-field Ctrl+C/clear/Ctrl+V was now visually verified without saving settings.
 
 T-0003 now adds source settings and a read-only project/task preview (ADR-0007).
 Source identity and selection live in source.sqlite3. Startup reads settings read-only
@@ -34,7 +41,8 @@ T-0001 is complete. T-0002 remains blocked on interactive verification, but the 
 explicitly authorized continuing with desktop features. T-0006 adds remembered window
 geometry, embedded icons, two tray states, double-click tracking, and durable unassigned
 sessions. A worker owns SQLite and commits state before the UI updates.
-Date-range reports and project search remain unimplemented.
+Search and reports are implemented; export, corrections, shortcuts, autostart, and
+installer support remain deferred.
 
 ## Decisions
 
@@ -65,19 +73,22 @@ Clean-machine runtime compatibility remains unverified.
 
 Verify the checklist in docs/DEVELOPMENT.md with an operational UI helper or human:
 geometry restoration, real double-click routing, both tray states, and exit while hidden.
-Record the evidence against T-0002. Next product task is T-0005: project search,
-session history, date-range reports, midnight/DST handling, and the end-to-end UI gate.
-After exiting the older app, verify paste, source loading, project/task switching,
-restart selection, and real lock/suspend behavior with disposable session history.
+The user exited the agent-launched app after report/clipboard checks. Process inspection
+found no app, and the canonical build was republished successfully. An earlier intentional
+build while it ran returned the expected locked-file error without fallback copies.
+The last UI discovery request was stopped with physical Escape; no further UI input
+was sent. Complete T-0005's full manual tracking gate and T-0002's
+remaining tray/geometry/lifecycle checks using disposable history, not fake real sessions.
 
 ## Verification and limitations
 
-Twenty automated tests pass, including source integrity/junctions, atomic switching,
+Twenty-seven automated tests pass, including source integrity/junctions, atomic switching,
 write-failure rollback, backup migration, immutable activity snapshots, crash recovery,
 clock changes, and delayed suspend processing using its original event timestamp.
 A real hidden native listener was registered and routed synthetic Windows lock/suspend
 messages while ignoring unlock/resume. These are not real machine sleep/lock tests.
 Formatting, Clippy, and release build passed; the final results are in T-0004.
+The report checks and canonical packaging results are recorded in T-0005/T-0009.
 The updated PE dependency audit remains Windows-system-only; wtsapi32 and advapi32
 are now included. The canonical single-EXE distribution is current. T-0009 packaging
 checks verified locked-file rejection, old-file preservation, and obsolete-copy cleanup.
@@ -86,10 +97,10 @@ Tests cover persistence, interrupted recovery, duplicate starts, failed-stop rol
 worker exit confirmation, and ICO structure. ICO artwork was visually inspected.
 Rust emitted only an incremental-cache hard-link fallback warning on the final lint run.
 Windows Computer Use list_windows again timed out three times, including after reset.
-The latest helper attempt can enumerate/capture the window and expand source settings.
-Text injection twice produced no visible text, preventing the full source UI check.
-Exit was observed to terminate the process. A background gap was fixed; final rendering,
-window restoration, real tray events, and Windows shell rendering remain unverified.
+The current helper can capture the app. Clipboard paste, search filtering, report refresh,
+totals sections, details, invalid-date errors, and valid refresh were visually verified.
+The background now fills the window. Full tracking actions, window restoration, real tray
+events, and Windows shell rendering still need interactive verification.
 Release/import-audit results are recorded in T-0006.
 T-0006 implementation is complete. Release build and PE import audit passed; the
 dist/AttentionFocus folder contains only the EXE. Runtime imports are Windows-only.

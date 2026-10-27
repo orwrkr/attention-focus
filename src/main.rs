@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use attention_focus::{icons, lifecycle, platform, source, tracking, tray_interaction::Clicks};
+use attention_focus::{
+    icons, lifecycle, platform, report_ui, source, tracking, tray_interaction::Clicks,
+};
 use eframe::egui;
 use std::{
     sync::mpsc::{self, Receiver, SyncSender},
@@ -43,6 +45,8 @@ struct Desktop {
     source_error: Option<String>,
     activity: tracking::Activity,
     lifecycle: Option<lifecycle::Listener>,
+    reports: report_ui::Panel,
+    project_search: String,
 }
 
 fn tray_icon(running: bool) -> Icon {
@@ -193,6 +197,8 @@ impl Desktop {
             source_error: None,
             activity: tracking::Activity::default(),
             lifecycle: listener,
+            reports: report_ui::Panel::default(),
+            project_search: String::new(),
         };
         if desktop.source_selection.is_some() {
             desktop.load_source(&context.egui_ctx, false);
@@ -239,6 +245,8 @@ impl Desktop {
     }
 
     fn activity_picker(&mut self, ui: &mut egui::Ui) {
+        ui.add(egui::TextEdit::singleline(&mut self.project_search).hint_text("Search projects"));
+        let query = self.project_search.trim().to_lowercase();
         egui::ComboBox::from_id_salt("project")
             .selected_text(self.activity.label())
             .show_ui(ui, |ui| {
@@ -249,12 +257,13 @@ impl Desktop {
                     self.activity.project = None;
                 }
                 if let Some(source) = &self.source_selection {
-                    for project in self
-                        .catalog
-                        .projects
-                        .iter()
-                        .filter(|p| !p.archived && p.status != "Completed")
-                    {
+                    for project in self.catalog.projects.iter().filter(|p| {
+                        !p.archived
+                            && p.status != "Completed"
+                            && (query.is_empty()
+                                || p.title.to_lowercase().contains(&query)
+                                || p.slug.to_lowercase().contains(&query))
+                    }) {
                         let selected = self.activity.project.as_ref().is_some_and(|p| {
                             p.source_id == source.id
                                 && p.source_path == source.path.to_string_lossy()
@@ -416,7 +425,17 @@ impl eframe::App for Desktop {
                     }
                 }
                 Action::Exit => self.command(tracking::Command::Exit),
-                Action::Tracking(tracking::Event::State(state)) => {
+                Action::Tracking(tracking::Event::Report { id, result }) => {
+                    self.reports.receive(id, result)
+                }
+                Action::Tracking(
+                    event @ (tracking::Event::State(_) | tracking::Event::Committed(_)),
+                ) => {
+                    let completed = matches!(event, tracking::Event::Committed(_));
+                    let state = match event {
+                        tracking::Event::State(state) | tracking::Event::Committed(state) => state,
+                        _ => unreachable!(),
+                    };
                     if (self.state.running != state.running || !self.ready)
                         && let Some(tray) = &self.tray
                         && let Err(error) = tray.set_icon(Some(tray_icon(state.running)))
@@ -454,7 +473,9 @@ impl eframe::App for Desktop {
                     }
                     self.state = state;
                     self.ready = true;
-                    self.pending = false;
+                    if completed {
+                        self.pending = false;
+                    }
                 }
                 Action::Tracking(tracking::Event::Error(error)) => {
                     self.pending = false;
@@ -631,6 +652,7 @@ impl eframe::App for Desktop {
                                 }
                             });
                     });
+                    self.reports.show(ui, &self.commands, self.ready);
                     ui.horizontal(|ui| {
                         if ui
                             .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))

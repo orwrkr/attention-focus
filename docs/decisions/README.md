@@ -14,5 +14,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0006](0006-tray-single-click.md) | accepted | Single-click window access and hover time |
 | [0007](0007-source-settings.md) | accepted | Source settings and read-only preview |
 | [0008](0008-attributed-session-engine.md) | accepted | Attributed sessions, migration, and lifecycle |
+| [0009](0009-focus-reports.md) | accepted | Date-range focus reports and timezone accounting |
 
-Next number: `0009`. Template: `templates/ADR.md` from the repository root.
+Next number: `0010`. Template: `templates/ADR.md` from the repository root.
