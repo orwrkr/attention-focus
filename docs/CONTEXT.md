@@ -4,6 +4,12 @@ Updated: 2026-10-27.
 
 ## State
 
+T-0008 enables eframe's native clipboard feature. The user confirmed direct path
+typing works; Ctrl+V previously used the disabled system-clipboard fallback.
+The updated build is in dist/AttentionFocus-Update because the older dist EXE is
+locked by a running instance. No active user session was forcibly terminated.
+Interactive paste with the updated build remains unverified.
+
 T-0003 now adds source settings and a read-only project/task preview (ADR-0007).
 Source identity and selection live in source.sqlite3. Startup reads settings read-only
 and validates canonical source/storage boundaries before opening writable app files.
