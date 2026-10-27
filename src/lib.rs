@@ -4,6 +4,7 @@ pub mod icons;
 #[cfg(windows)]
 pub mod platform;
 pub mod tracking;
+pub mod tray_interaction;
 
 /// Verify bundled SQLite persistence without leaving application data behind.
 pub fn sqlite_probe() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {

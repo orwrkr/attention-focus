@@ -4,6 +4,11 @@ Updated: 2026-10-27.
 
 ## State
 
+Completed T-0007: single-click window access and a live native hover tooltip.
+ADR-0006 supersedes the old ignored-single-click rule. Double click still toggles
+tracking without accidentally showing the window; single click waits for the system
+double-click interval. Totals include active time once and exclude unreviewed time.
+
 T-0001 is complete. T-0002 remains blocked on interactive verification, but the user
 explicitly authorized continuing with desktop features. T-0006 adds remembered window
 geometry, embedded icons, two tray states, double-click tracking, and durable unassigned
@@ -44,7 +49,8 @@ and read-only parsing), including canonical-path checks against all application 
 
 ## Verification and limitations
 
-Passed cargo test --offline --locked (eight tests), cargo fmt --check, and Clippy.
+Passed cargo test --offline --locked (ten tests), including single/double-click routing.
+Formatting, lint, and release build results for the tray refinement are in T-0007.
 Tests cover persistence, interrupted recovery, duplicate starts, failed-stop rollback,
 worker exit confirmation, and ICO structure. ICO artwork was visually inspected.
 Rust emitted only an incremental-cache hard-link fallback warning on the final lint run.

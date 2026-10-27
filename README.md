@@ -8,7 +8,8 @@ time was spent. The primary interface is a compact Windows system tray applicati
 
 The Windows desktop preview now records unassigned focus sessions, remembers window
 placement, and includes embedded application icons with running/stopped tray states.
-Double-click the tray to toggle tracking; use its menu to show the window.
+Click the tray to show the window; double-click to toggle tracking. Hover to see
+current session and total tracked time.
 Project/task integration is not implemented. Interactive desktop verification is pending.
 See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 

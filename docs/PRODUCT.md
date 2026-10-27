@@ -12,6 +12,7 @@
 - Remember window placement between launches.
 - Use a shared application logo for the executable, window, taskbar, and tray.
 - Distinguish running/stopped tracking in the tray; double click toggles tracking.
+- Single-click the tray to show the window; hover to see session and total tracked time.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

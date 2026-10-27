@@ -55,7 +55,11 @@ with this storage root. Nothing is stored beside the EXE or in MetaPlan.
 - Start/Stop in the window and tray use the same controller; the tray state changes
   only after the session update commits.
 - Closing the window or using Hide to tray keeps the process running.
-- A native double left click toggles tracking once. Single clicks are ignored.
+- A single left click shows the window after the Windows double-click interval.
+- A native double left click toggles tracking once and cancels single-click opening.
+- Hover shows a native tooltip with session time and total saved plus active time.
+  It updates once per second while running, including when the window is hidden.
+  Unreviewed interrupted time is excluded and flagged. Windows controls tooltip delay.
 - Right click opens Show Focus, Start/Stop, and Exit.
 - The app logo has a green focus ring and center dot. Running uses a green play
   symbol; stopped uses gray pause bars, distinguishing states by shape and color.

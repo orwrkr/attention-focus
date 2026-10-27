@@ -1,18 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use attention_focus::{icons, platform, tracking};
+use attention_focus::{icons, platform, tracking, tray_interaction::Clicks};
 use eframe::egui;
 use std::{
     sync::mpsc::{self, Receiver, SyncSender},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tray_icon::{
-    Icon, MouseButton, TrayIcon, TrayIconBuilder, TrayIconEvent,
+    Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
     menu::{Menu, MenuEvent, MenuItem},
 };
 
 enum Action {
     Show,
+    LeftRelease(Instant),
+    DoubleClick,
     Toggle,
     Exit,
     Tracking(tracking::Event),
@@ -29,6 +31,7 @@ struct Desktop {
     error: Option<String>,
     exiting: bool,
     last_geometry: Option<egui::Rect>,
+    clicks: Clicks,
 }
 
 fn tray_icon(running: bool) -> Icon {
@@ -67,7 +70,7 @@ impl Desktop {
         let tray_result = (|| -> Result<TrayIcon, Box<dyn std::error::Error>> {
             menu.append_items(&[&show, &toggle, &exit])?;
             Ok(TrayIconBuilder::new()
-                .with_tooltip("Attention Focus - stopped")
+                .with_tooltip("Attention Focus - opening history...")
                 .with_icon(tray_icon(false))
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
@@ -100,15 +103,20 @@ impl Desktop {
         let tray_sender = sender.clone();
         let ctx = context.egui_ctx.clone();
         TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
-            // Ignore single-click events emitted around the native double click.
-            if matches!(
-                event,
+            let action = match event {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } => Some(Action::LeftRelease(Instant::now())),
                 TrayIconEvent::DoubleClick {
                     button: MouseButton::Left,
                     ..
-                }
-            ) {
-                let _ = tray_sender.send(Action::Toggle);
+                } => Some(Action::DoubleClick),
+                _ => None,
+            };
+            if let Some(action) = action {
+                let _ = tray_sender.send(action);
                 ctx.request_repaint();
             }
         }));
@@ -128,6 +136,7 @@ impl Desktop {
             error,
             exiting: false,
             last_geometry: None,
+            clicks: Clicks::default(),
         }
     }
 
@@ -169,6 +178,21 @@ impl eframe::App for Desktop {
         while let Ok(action) = self.actions.try_recv() {
             match action {
                 Action::Show => Self::show(ctx),
+                Action::LeftRelease(now) => {
+                    let interval = unsafe {
+                        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime()
+                    };
+                    self.clicks
+                        .release(now, Duration::from_millis(u64::from(interval)));
+                }
+                Action::DoubleClick => {
+                    self.clicks.double_click();
+                    if self.ready && !self.state.needs_review {
+                        self.command(tracking::Command::Toggle);
+                    } else {
+                        Self::show(ctx);
+                    }
+                }
                 Action::Toggle => {
                     if self.ready && !self.state.needs_review {
                         self.command(tracking::Command::Toggle);
@@ -180,15 +204,24 @@ impl eframe::App for Desktop {
                 Action::Tracking(tracking::Event::State(state)) => {
                     if (self.state.running != state.running || !self.ready)
                         && let Some(tray) = &self.tray
+                        && let Err(error) = tray.set_icon(Some(tray_icon(state.running)))
                     {
-                        if let Err(error) = tray.set_icon(Some(tray_icon(state.running))) {
-                            self.error = Some(format!("Cannot update tray icon: {error}"));
-                        }
-                        let label = if state.running {
-                            "Attention Focus - tracking"
-                        } else {
-                            "Attention Focus - stopped"
-                        };
+                        self.error = Some(format!("Cannot update tray icon: {error}"));
+                    }
+                    // Update each snapshot, including while hidden: total includes the
+                    // active session once and excludes unreviewed recovery time.
+                    if let Some(tray) = &self.tray {
+                        let label = format!(
+                            "Attention Focus - {}\nSession: {}\nTotal: {}{}",
+                            if state.running { "tracking" } else { "stopped" },
+                            duration(state.elapsed_ms),
+                            duration(state.total_ms.saturating_add(state.elapsed_ms)),
+                            if state.needs_review {
+                                "\nInterrupted time needs review"
+                            } else {
+                                ""
+                            }
+                        );
                         if let Err(error) = tray.set_tooltip(Some(label)) {
                             self.error = Some(format!("Cannot update tray status: {error}"));
                         }
@@ -213,6 +246,13 @@ impl eframe::App for Desktop {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
+        }
+        let (show, delay) = self.clicks.poll(Instant::now());
+        if show {
+            Self::show(ctx);
+        }
+        if let Some(delay) = delay {
+            ctx.request_repaint_after(delay);
         }
     }
 
@@ -283,7 +323,7 @@ impl eframe::App for Desktop {
             }
             ui.add_space(12.0);
             ui.label("Double-click the tray icon to start or stop.");
-            ui.label("Right-click the tray icon and choose Show Focus to return.");
+            ui.label("Click the tray icon to show this window. Hover to see tracked time.");
             ui.label("Project selection is coming next. MetaPlan is not accessed.");
             ui.horizontal(|ui| {
                 if ui
