@@ -60,6 +60,20 @@ fn key(path: &Path) -> PathBuf {
     PathBuf::from(path.as_os_str().to_string_lossy().to_lowercase())
 }
 
+pub fn known_paths(directory: &Path) -> Result<Vec<PathBuf>> {
+    check_storage(directory)?;
+    let path = directory.join("source.sqlite3");
+    if !path.try_exists()? {
+        return Ok(Vec::new());
+    }
+    let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let mut statement = connection.prepare("SELECT path FROM sources")?;
+    Ok(statement
+        .query_map([], |r| r.get::<_, String>(0))?
+        .map(|r| r.map(PathBuf::from))
+        .collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
 pub fn validate_boundary(source: &Path, storage: &Path) -> io::Result<PathBuf> {
     let source = resolve(source)?;
     let destination = resolve(storage)?;

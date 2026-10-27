@@ -228,7 +228,18 @@ pub(crate) fn allocated(record: &Record, start: i64, end: i64) -> u64 {
     prefix(end).saturating_sub(prefix(start))
 }
 
-pub fn compute(mut range: Range, records: Vec<Record>, generated_ms: i64) -> Report {
+pub fn compute(range: Range, records: Vec<Record>, generated_ms: i64) -> Report {
+    compute_with_limit(range, records, generated_ms, Some(200))
+}
+pub(crate) fn compute_all(range: Range, records: Vec<Record>, generated_ms: i64) -> Report {
+    compute_with_limit(range, records, generated_ms, None)
+}
+fn compute_with_limit(
+    mut range: Range,
+    records: Vec<Record>,
+    generated_ms: i64,
+    limit: Option<usize>,
+) -> Report {
     let mut groups = BTreeMap::<GroupKey, Group>::new();
     let (mut saved_ms, mut running_ms, mut review_ms) = (0u64, 0u64, 0u64);
     let mut history = Vec::new();
@@ -290,7 +301,9 @@ pub fn compute(mut range: Range, records: Vec<Record>, generated_ms: i64) -> Rep
     }
     history.sort_by_key(|h| std::cmp::Reverse((h.record.start_ms, h.record.id)));
     let matching_sessions = history.len();
-    history.truncate(200);
+    if let Some(limit) = limit {
+        history.truncate(limit);
+    }
     let mut projects = BTreeMap::<Option<(i64, String, String)>, Group>::new();
     let mut task_groups = Vec::new();
     for (key, group) in groups {

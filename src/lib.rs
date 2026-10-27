@@ -1,5 +1,6 @@
 //! Local focus tracking, read-only MetaPlan snapshots, and desktop assets.
 
+pub mod export;
 pub mod icons;
 #[cfg(windows)]
 pub mod lifecycle;

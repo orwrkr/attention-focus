@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use attention_focus::{
-    icons, lifecycle, platform, presentation,
+    export, icons, lifecycle, platform, presentation,
     profiles::{Paths, Profile},
     report_ui, source, tracking,
     tray_interaction::Clicks,
@@ -17,6 +17,7 @@ use tray_icon::{
 };
 
 enum Action {
+    Export(Result<String, String>),
     Show,
     LeftRelease(Instant),
     DoubleClick,
@@ -469,6 +470,7 @@ impl eframe::App for Desktop {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(action) = self.actions.try_recv() {
             match action {
+                Action::Export(result) => self.reports.export_finished(result),
                 Action::PlatformError(error) => {
                     self.error = Some(error);
                     Self::show(ctx);
@@ -807,6 +809,40 @@ impl eframe::App for Desktop {
                             });
                     });
                     self.reports.show(ui, &self.commands, self.ready);
+                    if let Some((format, request)) = self.reports.take_export() {
+                        let directory = self.directory.clone();
+                        let root = self.storage_root.clone();
+                        let sender = self.sender.clone();
+                        let ctx = ctx.clone();
+                        let owner = unsafe {
+                            windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow()
+                        } as usize;
+                        std::thread::spawn(move || {
+                            let result =
+                                (|| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+                                    let snapshot = tracking::export_snapshot(
+                                        &directory.join("focus.sqlite3"),
+                                        &request,
+                                    )?;
+                                    let Some(path) = export::pick_path(owner, format)? else {
+                                        return Ok("Export canceled.".into());
+                                    };
+                                    let mut protected = source::known_paths(&directory)?;
+                                    protected.extend(snapshot.sources);
+                                    protected.push(root);
+                                    let path =
+                                        export::write(&snapshot.report, &path, format, &protected)?;
+                                    Ok(format!(
+                                        "Exported {} sessions to {}",
+                                        snapshot.report.matching_sessions,
+                                        path.display()
+                                    ))
+                                })()
+                                .map_err(|error| format!("Cannot export report: {error}"));
+                            let _ = sender.send(Action::Export(result));
+                            ctx.request_repaint();
+                        });
+                    }
                 });
         });
     }

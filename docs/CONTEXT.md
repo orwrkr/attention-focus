@@ -4,9 +4,9 @@ Updated: 2026-10-27.
 
 ## Current state
 
-Current release: 0.7.1. T-0017 UI restoration/daily tray and T-0005 are complete.
+Current release: 0.8.0. T-0016 export, T-0017 UI restoration/daily tray and T-0005 are complete.
 T-0002 remains a separate native desktop acceptance gate. Next implementation card:
-T-0016, CSV/Markdown export. It is planned, not implemented. History editing, shortcuts,
+T-0018 adds explicit window counters and stable horizontal limits. History editing, shortcuts,
 autostart, installer and updater are still deferred. Read task cards and ADRs for history.
 
 The Rust app uses egui/eframe, tray-icon and bundled rusqlite. Dependencies are pinned
@@ -53,6 +53,12 @@ again for that scope; this does not authorize closing Production or force-killin
 
 ## Checks and limits
 
+T-0016: 59 Rust tests and Clippy passed; both 0.8.0 EXEs/ZIP passed verification.
+All eight PDF pages inspected. Native CSV Save produced four synthetic Session rows
+and a Summary with exact totals/version; Markdown dialog cancellation worked. No
+Production data was used. Exports use independent read-only snapshots and last durable
+running checkpoints, preserve all matches, guard source/storage paths and never overwrite.
+
 T-0017: 54 Rust tests, formatting and Clippy passed; both 0.7.1 EXEs and automatic ZIP
 passed verification. All seven guide pages inspected. Native restoration and stable
 maximization/downward sizing passed; native tray and multi-monitor gates remain.
@@ -82,8 +88,8 @@ and only the external Production process remains. No GUI input was needed. Repea
 ## Next step
 
 Complete the remaining T-0002 checklist with suitable native access or human verification
-on a safe test environment. Proceed with T-0016 export as the next product change; research
-file selection and record its ADR first. Keep one primary implementation task selected.
+on a safe test environment. Proceed with T-0018 window counters/horizontal sizing.
+Keep one primary implementation task selected. Export decisions are in ADR-0017.
 Publish changes only through scripts/build.ps1, which builds both canonical EXEs and
 regenerates the PDF/notices/ZIP; run verify-release.ps1 before handoff. Canonical paths:
 dist/AttentionFocus/attention-focus.exe and target/debug/attention-focus.exe. A locked

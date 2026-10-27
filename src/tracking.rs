@@ -405,8 +405,17 @@ impl Store {
         now: Moment,
         active_ms: u64,
     ) -> Result<reports::Report> {
+        let (range, records) = self.report_records(request, now, Some(active_ms))?;
+        Ok(reports::compute(range, records, now.wall_ms))
+    }
+    fn report_records(
+        &self,
+        request: &reports::Request,
+        now: Moment,
+        active_ms: Option<u64>,
+    ) -> Result<(reports::Range, Vec<reports::Record>)> {
         let range = reports::Range::new(request)?;
-        let mut statement = self.connection.prepare("SELECT id,started_ms,COALESCE(ended_ms,?3),elapsed_ms,state,activity,COALESCE(end_reason,'') FROM focus_sessions WHERE started_ms<?2 AND COALESCE(ended_ms,?3)>=?1 ORDER BY id")?;
+        let mut statement = self.connection.prepare("SELECT id,started_ms,COALESCE(ended_ms,?3),elapsed_ms,state,activity,COALESCE(end_reason,''),checkpoint_ms FROM focus_sessions WHERE started_ms<?2 AND COALESCE(ended_ms,?3)>=?1 ORDER BY id")?;
         let raw =
             statement.query_map(params![range.start_ms, range.end_ms, now.wall_ms], |row| {
                 Ok((
@@ -417,11 +426,17 @@ impl Store {
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
                     row.get::<_, String>(6)?,
+                    row.get::<_, i64>(7)?,
                 ))
             })?;
+        let raw = raw.collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(statement);
+        // Release the export snapshot's read lock before JSON decoding or output formatting.
+        if active_ms.is_none() {
+            self.connection.execute_batch("COMMIT")?;
+        }
         let mut records = Vec::new();
-        for raw in raw {
-            let (id, start_ms, end_ms, elapsed, state, activity, reason) = raw?;
+        for (id, start_ms, mut end_ms, elapsed, state, activity, reason, checkpoint) in raw {
             let state = match state.as_str() {
                 "stopped" => reports::State::Saved,
                 "running" => reports::State::Running,
@@ -430,12 +445,15 @@ impl Store {
             };
             let activity: Activity = serde_json::from_str(&activity)?;
             activity.validate()?;
+            if state == reports::State::Running && active_ms.is_none() {
+                end_ms = checkpoint;
+            }
             records.push(reports::Record {
                 id,
                 start_ms,
                 end_ms,
                 elapsed_ms: if state == reports::State::Running {
-                    active_ms
+                    active_ms.unwrap_or(elapsed.max(0) as u64)
                 } else {
                     elapsed.max(0) as u64
                 },
@@ -444,8 +462,45 @@ impl Store {
                 reason,
             });
         }
-        Ok(reports::compute(range, records, now.wall_ms))
+        Ok((range, records))
     }
+}
+
+/// Read one immutable checkpoint snapshot without migrations, recovery writes or UI row limits.
+pub struct ExportSnapshot {
+    pub report: reports::Report,
+    pub sources: Vec<std::path::PathBuf>,
+}
+pub fn export_snapshot(path: &Path, request: &reports::Request) -> Result<ExportSnapshot> {
+    let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    connection.busy_timeout(Duration::from_millis(250))?;
+    if connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != 2 {
+        return Err(invalid("Unsupported history version for export.").into());
+    }
+    connection.execute_batch("BEGIN")?;
+    let _: Option<i64> = connection
+        .query_row("SELECT id FROM focus_sessions LIMIT 1", [], |r| r.get(0))
+        .optional()?;
+    let now = Moment {
+        wall_ms: now_ms(),
+        mono_ms: 0,
+    };
+    let store = Store { connection };
+    let sources = {
+        let mut statement=store.connection.prepare("SELECT DISTINCT CASE WHEN json_valid(activity) THEN json_extract(activity,'$.project.source_path') END FROM focus_sessions")?;
+        statement
+            .query_map([], |r| r.get::<_, Option<String>>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .map(std::path::PathBuf::from)
+            .collect()
+    };
+    let (range, records) = store.report_records(request, now, None)?;
+    Ok(ExportSnapshot {
+        report: reports::compute_all(range, records, now.wall_ms),
+        sources,
+    })
 }
 fn bounded(ms: u64) -> i64 {
     ms.min(i64::MAX as u64) as i64

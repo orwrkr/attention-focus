@@ -72,11 +72,14 @@ The initial architecture selects egui/eframe, tray-icon, and bundled SQLite; see
 [ADR-0004](decisions/0004-desktop-stack.md) and [the architecture](ARCHITECTURE.md).
 These are implementation choices, not claims of completed functionality.
 
+CSV/Markdown export is available in T-0016, including every matching session and
+protected destinations; see ADR-0017.
+
 ## Deferred features and remaining validation
 
 - Validate tray wakeup, packaging requirements, and Windows lifecycle behavior.
 - Complete real Windows validation of the implemented storage, backup, and recovery design.
-- Session correction/manual entry, CSV/Markdown export, shortcuts, and autostart.
+- Session correction/manual entry, shortcuts, and autostart.
 - Project identity when slugs change or the source directory is replaced.
 - Complete interactive validation of implemented time zones, midnight boundaries, and clock changes.
 

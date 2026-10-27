@@ -186,6 +186,38 @@ not erase existing history; sessions keep snapshots of the titles they recorded.
 
 <!-- pagebreak -->
 
+# Export CSV and Markdown
+
+Open **Focus history and reports**, set the period/timezone, then choose **Export CSV**
+or **Export Markdown**. Choose a new filename in the Windows Save dialog. Canceling
+creates no export; existing files are never overwritten. Export outside MetaPlan and
+the application's data folders. Source files do not need to be currently available.
+
+## What is exported
+
+The export is a snapshot of every matching session, including entries beyond the
+window's 200-row preview. It includes version, snapshot time, timezone, exact filter
+boundaries, integer millisecond durations, source identities, activity names and notes.
+Saved, Running checkpoint and Needs review totals remain separate.
+
+Running time uses the last durable checkpoint, so it can lag the live window timer.
+Stop tracking before export when you need a finalized current interval. Preparing
+the snapshot and writing the file happen in the background; tracking has its own worker.
+
+## Read the formats
+
+CSV has a header, one **Summary** row and **Session** rows. Metadata and report totals
+repeat on each row. Sum **Clipped ms** of Saved Session rows for the finalized total;
+do not sum the repeated total columns. Formula-like text is prefixed with an apostrophe
+for text import. This guard is not guaranteed after editing/re-saving in spreadsheet
+software. UTF-8 text and quoted multiline cells preserve imported Unicode.
+
+Markdown includes totals by project, project/task and day, plus all session details.
+Imported formatting is escaped. A failed export shows an error, keeps tracking usable
+and does not replace an existing file.
+
+<!-- pagebreak -->
+
 # Minute boundaries and time accounting
 
 ## Choose precise intervals
@@ -305,7 +337,7 @@ the separate internal `target/debug` output. Agents do not terminate apps automa
 
 ## What is not included yet
 
-Manual time correction, export to CSV/Markdown, global shortcuts, automatic startup,
+Manual time correction, global shortcuts, automatic startup,
 an installer, and an automatic in-app updater are not implemented. Real Windows tray,
 sleep/lock, multi-monitor geometry, and clean-machine compatibility still have manual
 acceptance checks outstanding. Unit tests and simulated notifications do not prove

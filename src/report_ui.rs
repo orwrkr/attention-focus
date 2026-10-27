@@ -26,6 +26,9 @@ pub struct Panel {
     needs_review: bool,
     growing: bool,
     was_open: bool,
+    export_request: Option<crate::export::Format>,
+    export_pending: bool,
+    export_message: Option<String>,
 }
 
 impl Default for Panel {
@@ -57,6 +60,9 @@ impl Default for Panel {
             needs_review: false,
             growing: false,
             was_open: false,
+            export_request: None,
+            export_pending: false,
+            export_message: None,
         }
     }
 }
@@ -70,6 +76,18 @@ fn duration(ms: u64) -> String {
     )
 }
 impl Panel {
+    pub fn take_export(&mut self) -> Option<(crate::export::Format, reports::Request)> {
+        self.export_request
+            .take()
+            .map(|format| (format, self.request.clone()))
+    }
+    pub fn export_finished(&mut self, result: Result<String, String>) {
+        self.export_pending = false;
+        match result {
+            Ok(message) => self.export_message = Some(message),
+            Err(error) => self.error = Some(error),
+        }
+    }
     pub fn save(&self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(
             storage,
@@ -302,6 +320,15 @@ impl Panel {
             if !ready {
                 ui.label("History is not available yet.");
             }
+            ui.horizontal(|ui| {
+                for (label,format) in [("Export CSV",crate::export::Format::Csv),("Export Markdown",crate::export::Format::Markdown)] {
+                    if ui.add_enabled(ready && !self.export_pending && self.request.bounds().is_ok(),egui::Button::new(label)).clicked() {
+                        self.export_request=Some(format);self.export_pending=true;self.export_message=None;
+                    }
+                }
+            });
+            if self.export_pending {ui.weak("Preparing export...");}
+            if let Some(message)=&self.export_message {ui.label(message);}
             ui.weak(if self.pending {"Updating report..."} else if self.growing {"Auto-refresh: tracking is inside this range"} else {"Auto-refresh paused: no tracking time is growing in this range"});
             if let Some(error) = &self.error {
                 ui.colored_label(egui::Color32::LIGHT_RED, error);

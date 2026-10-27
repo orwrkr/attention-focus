@@ -19,6 +19,8 @@ Notes alone remain draft until explicitly applied. Text fields support the clipb
 Search projects in the picker. Focus history and reports shows minute-precise ranges
 in a chosen time zone, saved totals by project/task/day, and up to 200 recent sessions.
 Running time and unreviewed checkpoints are shown separately from saved totals.
+Export CSV/Markdown snapshots include all matching sessions, without the preview's
+200-row limit. Native Save selects a new file outside MetaPlan and application storage.
 Expanded visible reports update periodically only while tracking time grows inside
 the filter; affected stop/edit/recovery events refresh once. Dates support Calendar popups and
 timezones have a searchable list. Stay on top is remembered per profile. Tray tooltips
