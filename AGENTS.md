@@ -47,6 +47,10 @@ explain their meaning in English. Do not use escapes to disguise non-English pro
 - Do not introduce cloud services, telemetry, window-content monitoring, or
   productivity scoring without a specific user request.
 - Use UTF-8 without BOM and LF line endings. Use English file names and identifiers.
+- Publish releases only through scripts/build.ps1 to dist/AttentionFocus/attention-focus.exe.
+  On a locked EXE, report the error without creating alternate files or directories.
+  Never terminate a running app automatically. If you launched it, offer to exit it
+  and wait for user approval before closing it. Cargo target files are build intermediates.
 
 ## End of session
 

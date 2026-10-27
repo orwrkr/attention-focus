@@ -12,8 +12,10 @@ Missed heartbeats and clock changes require checkpoint review. See ADR-0008.
 
 T-0008 enables eframe's native clipboard feature. The user confirmed direct path
 typing works; Ctrl+V previously used the disabled system-clipboard fallback.
-The updated build is in dist/AttentionFocus-Update because the older dist EXE is
-locked by a running instance. No active user session was forcibly terminated.
+T-0009 establishes scripts/build.ps1 and dist/AttentionFocus/attention-focus.exe as
+the only distributed output. Obsolete AttentionFocus-Update was removed. Locked files
+are errors; never create fallback copies or terminate an app automatically. If an agent
+launched a blocking instance, offer to exit it and wait for user approval.
 Interactive paste with the updated build remains unverified.
 
 T-0003 now adds source settings and a read-only project/task preview (ADR-0007).
@@ -55,7 +57,8 @@ Date-range reports and project search remain unimplemented.
 Verified Rust 1.98.0, Cargo 1.98.0, and stable-x86_64-pc-windows-msvc.
 Dependency resolution and linking passed. Cargo.lock records the tested dependency graph:
 eframe 0.37.0, tray-icon 0.26.1, rusqlite 0.41.0, tempfile 3.27.0, and winresource 0.1.34.
-The Windows release executable is target/release/attention-focus.exe.
+The distributed executable is dist/AttentionFocus/attention-focus.exe. Cargo's primary
+release artifact is consumed by the packaging script; target remains internal build data.
 Clean-machine runtime compatibility remains unverified.
 
 ## Next step
@@ -76,7 +79,8 @@ A real hidden native listener was registered and routed synthetic Windows lock/s
 messages while ignoring unlock/resume. These are not real machine sleep/lock tests.
 Formatting, Clippy, and release build passed; the final results are in T-0004.
 The updated PE dependency audit remains Windows-system-only; wtsapi32 and advapi32
-are now included. The single-EXE distribution in dist/AttentionFocus-Update is current.
+are now included. The canonical single-EXE distribution is current. T-0009 packaging
+checks verified locked-file rejection, old-file preservation, and obsolete-copy cleanup.
 Formatting, lint, and release build results for the tray refinement are in T-0007.
 Tests cover persistence, interrupted recovery, duplicate starts, failed-stop rollback,
 worker exit confirmation, and ICO structure. ICO artwork was visually inspected.

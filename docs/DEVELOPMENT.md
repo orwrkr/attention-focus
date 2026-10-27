@@ -18,14 +18,19 @@ cargo fetch --locked --target x86_64-pc-windows-msvc
 cargo fmt --check
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
-cargo build --locked --release
+./scripts/test-release-output.ps1
+./scripts/build.ps1
 cargo run --locked
 ```
 
-The release executable is `target/release/attention-focus.exe`.
-The distributable copy is `dist/AttentionFocus/attention-focus.exe`; that folder
+The only distributed executable is `dist/AttentionFocus/attention-focus.exe`; that folder
 contains only the executable. The final PE import audit found only Windows system
 libraries and no separately shipped runtime or SQLite DLL (see T-0006).
+The build script consumes Cargo's main release artifact and publishes it atomically.
+Other files under target are internal build/test artifacts, not releases. A locked
+current or obsolete EXE fails before compilation; a publication race also returns an
+error. No alternate EXE, fallback directory, or automatic process termination is allowed.
+If an agent launched a blocking app, it must offer to exit it and wait for approval.
 Build output is ignored by Git. No installer, automatic startup, or updater is added.
 Runtime requirements on a clean Windows machine have not yet been verified; do not
 describe this build as universally portable.
@@ -107,9 +112,8 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
    diagnostics, startup restoration, Unicode rendering, and continued Start/Stop on failure.
 
 The current build has attributed tracking; search and date-range reports remain T-0005.
-The latest executable is in `dist/AttentionFocus-Update/attention-focus.exe` while an older
-running instance locks the original dist executable. Exit the older app before launching
-the update. Both builds use the same history location; no parallel instance is allowed.
+The obsolete AttentionFocus-Update distribution was removed by T-0009. Always use
+scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 
 ## Verification record (2026-10-27)
 

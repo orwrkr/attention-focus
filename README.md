@@ -49,7 +49,9 @@ Decisions: [docs/decisions/README.md](docs/decisions/README.md).
 ## Local environment
 
 Build and preview instructions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
-Run `cargo run --locked` or build with `cargo build --locked --release`.
+Run `cargo run --locked` for development. Build the distributed EXE with
+`./scripts/build.ps1`; its only output is `dist/AttentionFocus/attention-focus.exe`.
+If the EXE is locked, exit the running app and retry. No alternate copy is created.
 Only the EXE is required beside the application. Its data is created separately in
 `%LOCALAPPDATA%/AttentionFocus`; icons, fonts, and SQLite are compiled in.
 Do not commit personal settings, databases, or exports.
