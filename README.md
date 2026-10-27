@@ -53,7 +53,9 @@ Decisions: [docs/decisions/README.md](docs/decisions/README.md).
 
 Build and preview instructions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 Run `./scripts/dev.ps1` (or `cargo run --locked`) for Development. Build the distributed EXE with
-`./scripts/build.ps1`; its only output is `dist/AttentionFocus/attention-focus.exe`.
+`./scripts/build.ps1`; it builds both EXEs and automatically creates a verified,
+versioned production ZIP under dist. The canonical production EXE is
+`dist/AttentionFocus/attention-focus.exe`; the test EXE is `target/debug/attention-focus.exe`.
 If the EXE is locked, exit the running app and retry. No alternate copy is created.
 Only the EXE is required beside the application. Its data is created separately in
 `%LOCALAPPDATA%/AttentionFocus/Production`; development uses the separate `Development`
@@ -63,3 +65,17 @@ Existing history directly under AttentionFocus stays untouched; new Production s
 empty and keeps its history on later launches. Only the old source path is imported.
 Icons, fonts, and SQLite are compiled in.
 Do not commit personal settings, databases, or exports.
+
+## Guide and distribution
+
+Read the English [user guide](docs/user-guide.md). The build ships its PDF, third-party
+notices, and a version/hash manifest with the EXE in AttentionFocus-VERSION-windows-x64.zip.
+Application icons are neutral blue (purple for Development); only the tray's green play
+or gray pause icon indicates tracking. Development tray icons have a purple D badge.
+
+For PDF build dependencies, run `./scripts/setup-docs.ps1` once. Use
+`./scripts/export-user-guide.ps1` to re-export the PDF and automatically refresh the ZIP,
+`./scripts/package-production.ps1` to package prepared production outputs, and
+`./scripts/verify-release.ps1` to verify the package and both EXEs. Cargo.toml owns the
+version; changed production inputs require a version bump and a full build after a
+version has been archived. See [development instructions](docs/DEVELOPMENT.md).

@@ -9,3 +9,6 @@ Cargo.lock text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.ps1 text eol=lf
+*.py text eol=lf
+*.txt text eol=lf
+/third-party/license-overrides/** text eol=lf

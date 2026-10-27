@@ -16,5 +16,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0008](0008-attributed-session-engine.md) | accepted | Attributed sessions, migration, and lifecycle |
 | [0009](0009-focus-reports.md) | accepted | Date-range focus reports and timezone accounting |
 | [0010](0010-runtime-profiles.md) | accepted | Independent production/development and pinned actions |
+| [0011](0011-versioned-distribution.md) | accepted | Neutral status icons and versioned production packages |
 
-Next number: `0011`. Template: `templates/ADR.md` from the repository root.
+Next number: `0012`. Template: `templates/ADR.md` from the repository root.

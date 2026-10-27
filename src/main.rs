@@ -54,14 +54,15 @@ struct Desktop {
     storage_root: std::path::PathBuf,
 }
 
-fn tray_icon(running: bool) -> Icon {
+fn tray_icon(running: bool, profile: Profile) -> Icon {
     Icon::from_rgba(
         icons::rgba(
             32,
-            if running {
-                icons::State::Running
-            } else {
-                icons::State::Stopped
+            match (running, profile) {
+                (true, Profile::Production) => icons::State::Running,
+                (false, Profile::Production) => icons::State::Stopped,
+                (true, Profile::Development) => icons::State::RunningDevelopment,
+                (false, Profile::Development) => icons::State::StoppedDevelopment,
             },
         ),
         32,
@@ -106,7 +107,7 @@ impl Desktop {
             menu.append_items(&[&show, &toggle, &exit])?;
             Ok(TrayIconBuilder::new()
                 .with_tooltip(format!("{} - opening history...", profile.title()))
-                .with_icon(tray_icon(false))
+                .with_icon(tray_icon(false, profile))
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
                 .build()?)
@@ -457,7 +458,8 @@ impl eframe::App for Desktop {
                     };
                     if (self.state.running != state.running || !self.ready)
                         && let Some(tray) = &self.tray
-                        && let Err(error) = tray.set_icon(Some(tray_icon(state.running)))
+                        && let Err(error) =
+                            tray.set_icon(Some(tray_icon(state.running, self.profile)))
                     {
                         self.error = Some(format!("Cannot update tray icon: {error}"));
                     }
@@ -544,7 +546,11 @@ impl eframe::App for Desktop {
             // These actions stay outside the scrolling body at every content height.
             ui.horizontal(|ui| {
                 ui.heading("Attention Focus");
-                ui.weak(self.profile.folder());
+                ui.weak(format!(
+                    "{} v{}",
+                    self.profile.folder(),
+                    env!("CARGO_PKG_VERSION")
+                ));
             });
             ui.horizontal(|ui| {
                 if ui
@@ -718,7 +724,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .with_inner_size([620.0, 640.0])
                 .with_min_inner_size([420.0, 360.0])
                 .with_icon(egui::IconData {
-                    rgba: icons::rgba(64, icons::State::App),
+                    rgba: icons::rgba(
+                        64,
+                        if profile == Profile::Development {
+                            icons::State::AppDevelopment
+                        } else {
+                            icons::State::App
+                        },
+                    ),
                     width: 64,
                     height: 64,
                 }),

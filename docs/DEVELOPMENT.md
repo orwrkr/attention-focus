@@ -5,6 +5,9 @@
 - Windows x64 with the Rust MSVC toolchain (verified toolchain: Rust/Cargo 1.98.0).
 - MSVC C++ build tools and Windows SDK for native linking and bundled SQLite.
 - Access to crates.io for the first dependency download.
+- Python 3.11+ and pinned PDF dependencies for production packaging. Run
+  `./scripts/setup-docs.ps1` once (creates target/docs-venv), or set
+  ATTENTION_FOCUS_PYTHON to a Python with scripts/requirements-docs.txt installed.
 
 The application uses eframe 0.37.0, tray-icon 0.26.1, rusqlite 0.41.0, Jiff 0.2.38,
 and winresource 0.1.34. Cargo.lock records the resolved dependency graph.
@@ -19,13 +22,22 @@ cargo fmt --check
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 ./scripts/test-release-output.ps1
+python ./scripts/test_release_tools.py
+./scripts/setup-docs.ps1
 ./scripts/build.ps1
+./scripts/verify-release.ps1
+./scripts/export-user-guide.ps1
+./scripts/package-production.ps1
 ./scripts/dev.ps1 -BuildOnly
 ./scripts/dev.ps1
 ```
 
-The only distributed executable is `dist/AttentionFocus/attention-focus.exe`; that folder
-contains only the executable. The final PE import audit found only Windows system
+The only distributed executable is `dist/AttentionFocus/attention-focus.exe`. The main
+build also creates `target/debug/attention-focus.exe` for testing, the guide PDF, notices,
+manifest, and `dist/AttentionFocus-VERSION-windows-x64.zip`. The ZIP contains exactly
+the EXE, User-Guide-VERSION.pdf, THIRD-PARTY-NOTICES.txt, and release.json under a
+versioned root directory. No databases, settings, logs, PDBs, or build tools are shipped.
+The final PE import audit found only Windows system
 libraries and no separately shipped runtime or SQLite DLL (see T-0006).
 The build script consumes Cargo's main release artifact and publishes it atomically.
 Other files under target are internal build/test artifacts, not releases. A locked
@@ -35,6 +47,23 @@ If an agent launched a blocking app, it must offer to exit it and wait for appro
 Build output is ignored by Git. No installer, automatic startup, or updater is added.
 Runtime requirements on a clean Windows machine have not yet been verified; do not
 describe this build as universally portable.
+
+Cargo.toml is the version authority. FileVersion is major.minor.patch.0; ProductVersion
+is the package version (with -dev for debug). The header, PDF, manifest, and archive
+identify the version. After archiving a version, changed production source/guide/build
+inputs require a version bump and scripts/build.ps1. A build stamp ties the EXE to its
+inputs; packaging refuses a stale EXE or a renamed version around old binaries.
+scripts/build.ps1 automatically refreshes/verifies the ZIP after publishing outputs.
+scripts/export-user-guide.ps1 also refreshes the ZIP; package-production.ps1 explicitly
+repackages current prepared outputs. verify-release.ps1 verifies hashes, member allowlist,
+source fingerprint, both EXEs' metadata, and every embedded neutral icon size. Old
+versioned ZIPs are release history. There is still one canonical loose production EXE.
+Development-only scripts/dev.ps1 builds do not touch production or require its closure.
+
+The guide source is docs/user-guide.md, exported by scripts/export_user_guide.py using
+ReportLab and actual generated icon artwork. Review every PDF page after guide/layout
+changes. THIRD-PARTY-NOTICES.txt includes resolved Windows runtime crates, embedded font
+attributions, and Rust standard-library notices. See third-party/README.md for provenance.
 
 ## Runtime files and data
 
@@ -93,8 +122,9 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
   It updates once per second while running, including when the window is hidden.
   Unreviewed interrupted time is excluded and flagged. Windows controls tooltip delay.
 - Right click opens Show Focus, Start/Stop, and Exit.
-- The app logo has a green focus ring and center dot. Running uses a green play
-  symbol; stopped uses gray pause bars, distinguishing states by shape and color.
+- Permanent file/window/taskbar/Task Manager icons are neutral blue diamonds, purple
+  for debug Development. Running tray states use green play; stopped states use gray
+  pause bars. Development tray states have a purple D badge. Identity never implies running.
 - Exit saves the running session before terminating. Restart never resumes silently.
 - Checkpoints are saved every ten seconds. Interrupted records require review before
   starting again; accepting recovery keeps only the last checkpoint and excludes downtime.
@@ -148,6 +178,14 @@ The obsolete AttentionFocus-Update distribution was removed by T-0009. Always us
 scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 
 ## Verification record (2026-10-27)
+
+T-0011: 0.2.0 Production and Development EXEs and versioned ZIP built. Verified version
+metadata and eight embedded neutral icon sizes per EXE. All five guide pages visually
+reviewed and compared byte-for-byte with the final PDF. Automatic archive refresh via
+both build and PDF export verified, including exact member allowlist and SHA-256 hashes.
+Thirty-two Rust tests, five Python tests, formatting, Clippy, locked-output checks,
+and PowerShell parsing pass. Both PE import audits are Windows-system-only. No app was
+launched; native shell rendering and the full manual UI gate remain pending. See T-0011.
 
 T-0010: 32 tests, formatting, Clippy, canonical packaging, and development build passed.
 Tests verify clean/profile-independent history and settings, unchanged legacy bytes,

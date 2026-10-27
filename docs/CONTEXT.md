@@ -4,6 +4,16 @@ Updated: 2026-10-27.
 
 ## State
 
+T-0011 introduces version 0.2.0, neutral blue application icons and purple development
+identity; only tray states are green play/gray pause, with a D badge in Development.
+The common renderer feeds Windows resources, runtime window icons, tray icons, and the
+five-page English guide. See ADR-0011 and docs/user-guide.md.
+scripts/build.ps1 now builds both EXEs and automatically publishes/verifies a versioned
+ZIP with the EXE, guide PDF, third-party notices, and release.json hashes. Exporting the
+PDF also refreshes the ZIP. Cargo owns the version; archived versions reject changed
+inputs. The build stamp rejects stale EXEs. Run scripts/verify-release.ps1 before handoff.
+Install documentation tools with setup-docs.ps1 or provide ATTENTION_FOCUS_PYTHON.
+
 T-0010 pins Hide to tray/Exit above scrolling content and isolates Production and
 Development under LocalAppData/AttentionFocus. The release defaults to Production;
 debug and scripts/dev.ps1 use Development and reject explicit Production. Profiles
@@ -27,7 +37,8 @@ Missed heartbeats and clock changes require checkpoint review. See ADR-0008.
 T-0008 enables eframe's native clipboard feature. The user confirmed direct path
 typing works; Ctrl+V previously used the disabled system-clipboard fallback.
 T-0009 establishes scripts/build.ps1 and dist/AttentionFocus/attention-focus.exe as
-the only distributed output. Obsolete AttentionFocus-Update was removed. Locked files
+the only canonical production EXE. T-0011 adds the versioned package. Obsolete
+AttentionFocus-Update was removed. Locked files
 are errors; never create fallback copies or terminate an app automatically. If an agent
 launched a blocking instance, offer to exit it and wait for user approval.
 Source-field Ctrl+C/clear/Ctrl+V was now visually verified without saving settings.
@@ -80,14 +91,21 @@ Clean-machine runtime compatibility remains unverified.
 
 ## Next step
 
-The canonical Production release and internal target/debug Development EXE are built.
-No app was launched during T-0010: Windows window discovery timed out on all three
-recovery attempts. First production launch will create its clean profile. Verify the
+Use dist/AttentionFocus-VERSION-windows-x64.zip for production and
+target/debug/attention-focus.exe for Development. No app was launched during T-0011.
+During T-0010 Windows discovery timed out on all three recovery attempts. Verify the
 pinned buttons, two simultaneous visible profiles, and remaining T-0005/T-0002 tracking,
 tray, geometry, and lifecycle checks in Development. The earlier user-closed app remains
 closed according to the pre-build process inspection. Never create fake Production time.
 
 ## Verification and limitations
+
+T-0011: both 0.2.0 EXEs and the production ZIP built; 32 Rust tests, five Python tests,
+formatting, Clippy, output-lock checks, and PowerShell parsing pass. Verified file version
+metadata and all eight embedded neutral icon sizes per EXE. Inspected every one of five
+PDF pages and proved the final packaged PDF byte-identical. ZIP allowlist/hashes/stamp
+and automatic refresh through both build and PDF export pass. Both PE imports are
+Windows-system-only. No app was launched; real shell rendering remains unverified.
 
 Thirty-two automated tests pass, including profile isolation/defaults/legacy preservation,
 native simultaneous profile mutexes, junction rejection, source integrity, atomic switching,
@@ -98,7 +116,7 @@ messages while ignoring unlock/resume. These are not real machine sleep/lock tes
 Formatting, Clippy, and release build passed; the final results are in T-0004.
 The report checks and canonical packaging results are recorded in T-0005/T-0009.
 The updated PE dependency audit remains Windows-system-only; wtsapi32 and advapi32
-are now included. The canonical single-EXE distribution is current. T-0009 packaging
+are now included. The canonical EXE remains the only production executable. T-0009 packaging
 checks verified locked-file rejection, old-file preservation, and obsolete-copy cleanup.
 Formatting, lint, and release build results for the tray refinement are in T-0007.
 Tests cover persistence, interrupted recovery, duplicate starts, failed-stop rollback,
@@ -111,6 +129,6 @@ The latest helper cannot enumerate windows (three timeouts including reset). The
 header/two-app GUI changes are not visually verified. Full tracking actions, window restoration, real tray
 events, and Windows shell rendering still need interactive verification.
 Release/import-audit results are recorded in T-0006.
-T-0006 implementation is complete. Release build and PE import audit passed; the
-dist/AttentionFocus folder contains only the EXE. Runtime imports are Windows-only.
+T-0006 implementation is complete. Release build and PE import audit passed. T-0011
+expands dist/AttentionFocus with the guide, notices, and manifest. Runtime imports are Windows-only.
 No writes were made to MetaPlan. No remote, installer, or published release exists.

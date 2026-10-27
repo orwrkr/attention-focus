@@ -3,14 +3,19 @@
 #[derive(Clone, Copy)]
 pub enum State {
     App,
+    AppDevelopment,
     Running,
     Stopped,
+    RunningDevelopment,
+    StoppedDevelopment,
 }
 
 pub fn rgba(size: u32, state: State) -> Vec<u8> {
     let accent = match state {
-        State::App | State::Running => [42.0, 212.0, 160.0],
-        State::Stopped => [169.0, 181.0, 198.0],
+        State::App => [112.0, 160.0, 255.0],
+        State::AppDevelopment => [194.0, 145.0, 255.0],
+        State::Running | State::RunningDevelopment => [42.0, 212.0, 160.0],
+        State::Stopped | State::StoppedDevelopment => [169.0, 181.0, 198.0],
     };
     let mut pixels = Vec::with_capacity((size * size * 4) as usize);
     for y in 0..size {
@@ -23,25 +28,42 @@ pub fn rgba(size: u32, state: State) -> Vec<u8> {
                     let dx = px - 0.5;
                     let dy = py - 0.5;
                     let radius = dx.hypot(dy);
-                    if radius > 0.475 {
+                    let badge =
+                        matches!(state, State::RunningDevelopment | State::StoppedDevelopment)
+                            && (0.66..0.96).contains(&px)
+                            && (0.66..0.96).contains(&py);
+                    if radius > 0.475 && !badge {
                         continue;
                     }
                     let ring = (0.33..=0.40).contains(&radius);
                     let center = match state {
-                        State::App => radius < 0.13,
-                        State::Running => {
+                        State::App | State::AppDevelopment => dx.abs() + dy.abs() < 0.17,
+                        State::Running | State::RunningDevelopment => {
                             (-0.11..=0.18).contains(&dx) && dy.abs() <= (0.18 - dx) * 0.65
                         }
-                        State::Stopped => {
+                        State::Stopped | State::StoppedDevelopment => {
                             dy.abs() < 0.145
                                 && ((-0.14..=-0.045).contains(&dx) || (0.045..=0.14).contains(&dx))
                         }
                     };
-                    let color = if ring || center {
+                    let mut color = if ring || center {
                         accent
                     } else {
                         [19.0, 29.0, 45.0]
                     };
+                    // A purple D badge identifies development without changing status color.
+                    if badge {
+                        color = [155.0, 93.0, 225.0];
+                        let bx = (px - 0.66) / 0.30;
+                        let by = (py - 0.66) / 0.30;
+                        if (0.20..0.35).contains(&bx) && (0.20..0.80).contains(&by)
+                            || (0.35..0.62).contains(&bx)
+                                && ((0.20..0.34).contains(&by) || (0.66..0.80).contains(&by))
+                            || (0.57..0.76).contains(&bx) && (0.31..0.69).contains(&by)
+                        {
+                            color = [255.0, 255.0, 255.0];
+                        }
+                    }
                     for i in 0..3 {
                         sum[i] += color[i];
                     }
@@ -120,6 +142,25 @@ mod tests {
         assert_eq!(running.len(), 32 * 32 * 4);
         assert_eq!(running[3], 0);
         assert_eq!(running[(16 * 32 + 16) * 4 + 3], 255);
+        for size in [16, 32, 64] {
+            let states = [
+                State::App,
+                State::AppDevelopment,
+                State::Running,
+                State::Stopped,
+                State::RunningDevelopment,
+                State::StoppedDevelopment,
+            ];
+            let images: Vec<_> = states.iter().map(|s| rgba(size, *s)).collect();
+            for i in 0..images.len() {
+                for j in i + 1..images.len() {
+                    assert_ne!(images[i], images[j]);
+                }
+            }
+            let center = ((size / 2 * size + size / 2) * 4) as usize;
+            assert!(images[0][center + 2] > images[0][center + 1]);
+            assert!(images[2][center + 1] > images[2][center + 2]);
+        }
     }
 
     #[test]

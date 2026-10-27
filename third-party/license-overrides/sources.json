@@ -1,0 +1,47 @@
+{
+  "egui": {
+    "repository": "https://github.com/emilk/egui",
+    "commit": "3c6eb8261c3293ad9c7ea1ed58487e038860ebef",
+    "packages": [
+      "ecolor",
+      "eframe",
+      "egui-winit",
+      "egui",
+      "egui_glow",
+      "emath",
+      "epaint",
+      "epaint_default_fonts"
+    ],
+    "package_commits": {
+      "ecolor": "7c0b40402271e8d40cda69f87cf3c2617c2e4382",
+      "egui-winit": "7c0b40402271e8d40cda69f87cf3c2617c2e4382",
+      "egui": "7c0b40402271e8d40cda69f87cf3c2617c2e4382",
+      "egui_glow": "7c0b40402271e8d40cda69f87cf3c2617c2e4382",
+      "emath": "7c0b40402271e8d40cda69f87cf3c2617c2e4382",
+      "epaint": "7c0b40402271e8d40cda69f87cf3c2617c2e4382",
+      "epaint_default_fonts": "7c0b40402271e8d40cda69f87cf3c2617c2e4382"
+    },
+    "provenance": "Common workspace license texts are from the available eframe 0.37.0 commit. All listed crates declare the same MIT/Apache workspace license. Other published crate commit URLs returned 404; their identities are pinned separately, not claimed to be byte-compared upstream."
+  },
+  "accesskit": {
+    "repository": "https://github.com/AccessKit/accesskit",
+    "commit": "f3026222559c7f5f46d8f25cb7404de68eb149f0",
+    "packages": [
+      "accesskit"
+    ]
+  },
+  "profiling": {
+    "repository": "https://github.com/aclysma/profiling",
+    "commit": "8271551172eb6fa4cba47369aedd93790c623df9",
+    "packages": [
+      "profiling"
+    ]
+  },
+  "clipboard-win": {
+    "repository": "https://github.com/DoumanAsh/clipboard-win",
+    "commit": "ed27008ae5d1f10cfbb266de039f0fb35fd05a56",
+    "packages": [
+      "clipboard-win"
+    ]
+  }
+}

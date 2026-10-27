@@ -56,6 +56,16 @@ explain their meaning in English. Do not use escapes to disguise non-English pro
   Never reset, seed synthetic sessions into, or copy development history into Production.
   Legacy root history is retained untouched. Keep profile instance locks and source
   containment checks independent. Development builds must not replace the production EXE.
+- Cargo.toml owns the release version. Bump it before publishing changed production
+  inputs for an already archived version. Keep Windows resources, header, guide, manifest,
+  and versioned ZIP/PDF names consistent. Never version only the ZIP around a stale EXE.
+- Every production update must use scripts/build.ps1: build both EXEs, regenerate the
+  guide/notices, and automatically rebuild/verify the production ZIP. PDF-only export
+  uses scripts/export-user-guide.ps1, which also refreshes the ZIP. Never leave a stale
+  archive after editing something shipped. Run scripts/verify-release.ps1 before handoff.
+  Development-only iterations may use scripts/dev.ps1 without touching production.
+- Permanent app icons are neutral identity marks, not running-state indicators. Only
+  tray icons encode running/stopped; development tray states retain their D badge.
 
 ## End of session
 

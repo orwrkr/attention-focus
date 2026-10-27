@@ -16,6 +16,11 @@
 - Keep Hide to tray and Exit visible above scrolling content.
 - Separate production/development data and allow simultaneous independent instances.
 - Start new production with empty history while retaining the previous development history.
+- Permanent icons must be neutral or state-correct; never imply running while stopped.
+- Main builds must also produce the development EXE for testing.
+- Provide an English user guide and a PDF export script.
+- Automatically refresh a production ZIP with the EXE, guide PDF, and required notices.
+- Maintain consistent version metadata and appropriate versioned distribution filenames.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.
@@ -60,10 +65,10 @@ These are implementation choices, not claims of completed functionality.
 ## Deferred features and remaining validation
 
 - Validate tray wakeup, packaging requirements, and Windows lifecycle behavior.
-- Implement and verify the selected storage, backup, and recovery design.
+- Complete real Windows validation of the implemented storage, backup, and recovery design.
 - Session correction/manual entry, CSV/Markdown export, shortcuts, and autostart.
 - Project identity when slugs change or the source directory is replaced.
-- Time zones, midnight boundaries, and system clock changes.
+- Complete interactive validation of implemented time zones, midnight boundaries, and clock changes.
 
 ## Accounting principles
 
