@@ -4,7 +4,7 @@ Updated: 2026-10-27.
 
 ## Current state
 
-Current release: 0.6.1. T-0015 and the T-0005 settings-to-report workflow are complete.
+Current release: 0.7.1. T-0017 UI restoration/daily tray and T-0005 are complete.
 T-0002 remains a separate native desktop acceptance gate. Next implementation card:
 T-0016, CSV/Markdown export. It is planned, not implemented. History editing, shortcuts,
 autostart, installer and updater are still deferred. Read task cards and ADRs for history.
@@ -20,10 +20,14 @@ means end of day. Periodic queries run only while live time grows inside the fil
 affected stop/edit/recovery events refresh once. Saved, Running and Needs review remain
 separate. Calendar/DST allocation is covered by tests. See ADR-0014.
 
-Window width is capped at 760 logical pixels. Height follows measured content, with
-explicit shrinking after collapse. Maximize fits useful content; longer views scroll
-and header actions remain pinned. Single-monitor placement/size and Stay on top
-preference restoration were visually checked. See ADR-0015.
+Windows owns resizing/maximization; there are no per-frame native size commands.
+Only content width is capped. This supersedes ADR-0015 clamps, which caused jitter.
+Sections/scroll, report custom filters or rolling presets, searches and note draft
+persist per profile in window.ron. Native restart verified restoration without tracking.
+Today in the tray is the selected project's local-day saved plus active total across
+tasks, isolated by source ID/path/slug, excluding review time. Saved sums are cached;
+idle refresh is every 30 seconds. Unavailable daily data does not block state updates.
+See ADR-0016. Native maximization and downward sizing via Windows Size menu passed.
 
 ## Lifecycle and data boundaries
 
@@ -48,6 +52,10 @@ agent-launched Development test runs and normal UI Exit for verification. Do not
 again for that scope; this does not authorize closing Production or force-killing apps.
 
 ## Checks and limits
+
+T-0017: 54 Rust tests, formatting and Clippy passed; both 0.7.1 EXEs and automatic ZIP
+passed verification. All seven guide pages inspected. Native restoration and stable
+maximization/downward sizing passed; native tray and multi-monitor gates remain.
 
 52 Rust tests, five package tests, formatting and Clippy passed. Junction tests initially
 hit restricted permissions; the permitted rerun passed all tests. Native listener tests

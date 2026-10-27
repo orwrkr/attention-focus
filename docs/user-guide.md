@@ -95,8 +95,10 @@ sources and Production/Development keep independent usage.
 - A single left click on the tray icon shows the window. Opening waits briefly for
   Windows to distinguish a single click from a double click.
 - A double left click starts or stops tracking using the last applied selection.
-- Hover shows status, the current project while tracking, session time, and saved plus
-  active total time. Long project names are shortened to fit the Windows tooltip.
+- Hover shows status, the selected project, session time and **Today** for that project.
+  Today combines all its tasks and saved plus current time inside the Windows local
+  calendar day, excluding unreviewed time. Report filters do not affect this value.
+  Long project names are shortened. While stopped, it refers to the saved next project.
 - A right click opens the menu with Show Focus, Start/Stop, and Exit.
 - **Hide to tray** hides the window. Closing the window normally hides it too.
 - **Exit** saves the active session and ends the app. Use Exit before replacing its EXE.
@@ -111,10 +113,12 @@ together with window placement, and does not prevent hiding to the tray. The nor
 header shows the app/version; the test version also shows Development. Secondary
 explanations use a blue accent to distinguish them from primary text.
 
-Window width is capped at 760 logical pixels. Its height limit follows expanded
-content and available screen space. Maximize fits the useful content instead of
-filling the monitor; long reports still scroll and header actions stay accessible.
-Collapsing content also shrinks a window that exceeds the new height limit.
+Resize or maximize the window normally. The app does not force its height or undo
+maximization. The content column has a readable width; long reports scroll, and header
+actions remain accessible. Expanded/collapsed sections, scroll positions, project and
+timezone searches, report filters and unapplied note drafts are restored on restart.
+Today/Last 7/Last 30 presets roll forward; custom dates and minutes stay as entered.
+Preferences are saved per profile. Restoring the UI never restarts tracking.
 
 ## Interruptions and returning to work
 

@@ -33,16 +33,19 @@ pub fn tooltip(profile: Profile, state: &Snapshot) -> String {
         if state.running { "tracking" } else { "stopped" }
     );
     let times = format!(
-        "\nSession: {}\nTotal: {}{}",
+        "\nSession: {}\nToday: {}{}",
         duration(state.elapsed_ms),
-        duration(state.total_ms.saturating_add(state.elapsed_ms)),
+        state
+            .daily_project_ms
+            .map(duration)
+            .unwrap_or_else(|| "unavailable".into()),
         if state.needs_review {
             "\nInterrupted time needs review"
         } else {
             ""
         }
     );
-    let project = if state.running {
+    let project = {
         let budget = 127usize
             .saturating_sub(title.encode_utf16().count() + times.encode_utf16().count() + 10);
         let name: String = state
@@ -52,8 +55,6 @@ pub fn tooltip(profile: Profile, state: &Snapshot) -> String {
             .map(|c| if c.is_control() { ' ' } else { c })
             .collect();
         format!("\nProject: {}", shorten(&name, budget))
-    } else {
-        String::new()
     };
     shorten(&format!("{title}{project}{times}"), 127)
 }
@@ -63,11 +64,12 @@ mod tests {
     use super::*;
     use crate::tracking::{Activity, Project};
     #[test]
-    fn tooltip_names_only_the_active_project_and_preserves_times_with_long_unicode() {
+    fn tooltip_names_the_selected_project_and_preserves_daily_time_with_long_unicode() {
         let mut state = Snapshot {
             running: true,
             elapsed_ms: 12_000,
             total_ms: 60_000,
+            daily_project_ms: Some(42_000),
             activity: Activity {
                 project: Some(Project {
                     source_id: 1,
@@ -84,12 +86,12 @@ mod tests {
         assert!(text.encode_utf16().count() <= 127);
         assert!(text.contains("Project: Example project"));
         assert!(text.contains("Session: 00:00:12"));
-        assert!(text.contains("Total: 00:01:12"));
+        assert!(text.contains("Today: 00:00:42"));
         assert!(text.contains("\nSession:"));
         state.activity.project.as_mut().unwrap().title = "Line\nNext".into();
         assert!(tooltip(Profile::Production, &state).contains("Project: Line Next\n"));
         state.running = false;
-        assert!(!tooltip(Profile::Production, &state).contains("Project:"));
+        assert!(tooltip(Profile::Production, &state).contains("Project:"));
         state.needs_review = true;
         assert!(tooltip(Profile::Production, &state).contains("needs review"));
         assert_eq!(shorten("\u{1f331}\u{1f331}", 4), "\u{1f331}\u{1f331}");

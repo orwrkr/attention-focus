@@ -18,6 +18,7 @@
 | [T-0014](T-0014-minute-reports-and-status.md) | done | Minute Reports and Unambiguous Status | T-0013 |
 | [T-0015](T-0015-lifecycle-and-compact-window.md) | done | Confirmed Shutdown and Compact Window | T-0014 |
 | [T-0016](T-0016-report-export.md) | ready | CSV and Markdown Report Export | T-0005 |
+| [T-0017](T-0017-ui-state-and-daily-tray.md) | done | Restored UI State, Stable Resize and Daily Tray Total | T-0015 |
 
 Task template: `templates/TASK.md` from the repository root.
 

@@ -70,6 +70,32 @@ fn duration(ms: u64) -> String {
     )
 }
 impl Panel {
+    pub fn save(&self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(
+            storage,
+            "report_filter_v1",
+            &(self.request.clone(), self.preset),
+        );
+        eframe::set_value(storage, "timezone_search", &self.zone_search);
+    }
+    pub fn restore(storage: Option<&dyn eframe::Storage>) -> Self {
+        let mut panel = Self::default();
+        if let Some(storage) = storage {
+            if let Some((request, preset)) =
+                eframe::get_value::<(reports::Request, Option<usize>)>(storage, "report_filter_v1")
+            {
+                panel.request = request;
+                panel.preset = preset.filter(|days| [1, 7, 30].contains(days));
+                if let Some(days) = panel.preset
+                    && let Ok(request) = reports::Request::recent(days, &panel.request.timezone)
+                {
+                    panel.request = request;
+                }
+            }
+            panel.zone_search = eframe::get_value(storage, "timezone_search").unwrap_or_default();
+        }
+        panel
+    }
     pub fn receive(&mut self, id: u64, result: std::result::Result<reports::Report, String>) {
         if id != self.request_id {
             return;
@@ -445,7 +471,46 @@ impl Panel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::Storage;
     use std::sync::mpsc;
+
+    #[derive(Default)]
+    struct MemoryStorage(std::collections::HashMap<String, String>);
+    impl eframe::Storage for MemoryStorage {
+        fn get_string(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
+        }
+        fn set_string(&mut self, key: &str, value: String) {
+            self.0.insert(key.into(), value);
+        }
+        fn remove_string(&mut self, key: &str) {
+            self.0.remove(key);
+        }
+        fn flush(&mut self) {}
+    }
+    #[test]
+    fn restore_keeps_custom_minutes_zone_and_search_but_not_inflight_work() {
+        let mut panel = fixed();
+        panel.request.from_time = "09:15".into();
+        panel.request.through_time = "10:30".into();
+        panel.zone_search = "UTC".into();
+        panel.pending = true;
+        let mut storage = MemoryStorage::default();
+        panel.save(&mut storage);
+        let restored = Panel::restore(Some(&storage));
+        assert_eq!(restored.request, panel.request);
+        assert_eq!(restored.preset, None);
+        assert_eq!(restored.zone_search, "UTC");
+        assert!(!restored.pending && restored.report.is_none() && restored.dirty);
+        panel.preset = Some(7);
+        panel.save(&mut storage);
+        assert_eq!(
+            Panel::restore(Some(&storage)).request,
+            reports::Request::recent(7, "UTC").unwrap()
+        );
+        storage.set_string("report_filter_v1", "broken preferences".into());
+        assert_eq!(Panel::restore(Some(&storage)).preset, Some(1));
+    }
 
     fn fixed() -> Panel {
         Panel {

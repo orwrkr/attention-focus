@@ -50,6 +50,7 @@ struct Desktop {
     lifecycle: Option<lifecycle::Listener>,
     reports: report_ui::Panel,
     project_search: String,
+    restored_note: Option<String>,
     profile: Profile,
     storage_root: std::path::PathBuf,
     stay_on_top: bool,
@@ -226,8 +227,15 @@ impl Desktop {
             source_error: source_warning,
             activity: tracking::Activity::default(),
             lifecycle: listener,
-            reports: report_ui::Panel::default(),
-            project_search: String::new(),
+            reports: report_ui::Panel::restore(context.storage),
+            project_search: context
+                .storage
+                .and_then(|s| eframe::get_value(s, "project_search"))
+                .unwrap_or_default(),
+            restored_note: context
+                .storage
+                .and_then(|s| eframe::get_value::<Option<String>>(s, "note_draft"))
+                .flatten(),
             profile,
             storage_root: paths.root,
             stay_on_top,
@@ -445,12 +453,17 @@ impl Desktop {
 impl eframe::App for Desktop {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
+        eframe::set_value(storage, "project_search", &self.project_search);
+        let draft =
+            (self.activity.note != self.state.activity.note).then(|| self.activity.note.clone());
+        eframe::set_value(storage, "note_draft", &draft);
+        self.reports.save(storage);
     }
     fn auto_save_interval(&self) -> Duration {
         Duration::from_secs(2)
     }
     fn persist_egui_memory(&self) -> bool {
-        false
+        true
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -524,8 +537,7 @@ impl eframe::App for Desktop {
                     {
                         self.error = Some(format!("Cannot update tray icon: {error}"));
                     }
-                    // Update each snapshot, including while hidden: total includes the
-                    // active session once and excludes unreviewed recovery time.
+                    // Update the selected project's local-day total even while hidden.
                     if let Some(tray) = &self.tray {
                         let label = presentation::tooltip(self.profile, &state);
                         if let Err(error) = tray.set_tooltip(Some(label)) {
@@ -542,6 +554,9 @@ impl eframe::App for Desktop {
                     );
                     if !self.ready {
                         self.activity = state.activity.clone();
+                        if let Some(note) = self.restored_note.take() {
+                            self.activity.note = note;
+                        }
                     }
                     self.reports.tracking_changed(
                         &state,
@@ -604,6 +619,8 @@ impl eframe::App for Desktop {
                 self.command(tracking::Command::Exit);
             }
         }
+        ui.painter()
+            .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_max_width(ui.available_width().min(744.0));
             // These actions stay outside the scrolling body at every content height.
@@ -647,8 +664,7 @@ impl eframe::App for Desktop {
                 }
             });
             ui.separator();
-            let body_top = ui.cursor().top();
-            let body = egui::ScrollArea::vertical()
+            egui::ScrollArea::vertical()
                 .id_salt("window-content")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
@@ -792,24 +808,6 @@ impl eframe::App for Desktop {
                     });
                     self.reports.show(ui, &self.commands, self.ready);
                 });
-            // Fit actual content, including expanded reports, while keeping vertical scrolling.
-            let viewport = ctx.input(|input| input.viewport().clone());
-            let monitor = viewport.monitor_size.unwrap_or(egui::vec2(1280.0, 960.0));
-            let header = body_top - ui.min_rect().top();
-            let limit = egui::vec2(
-                760.0_f32.min(monitor.x),
-                (body.content_size.y + header + 24.0).clamp(360.0, (monitor.y - 80.0).max(360.0)),
-            );
-            ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(limit));
-            if viewport.maximized == Some(true) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(limit));
-            } else if let Some(rect) = viewport.inner_rect
-                && (rect.width() > limit.x + 1.0 || rect.height() > limit.y + 1.0)
-            {
-                // Windows size constraints alone do not shrink an already oversized window.
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(rect.size().min(limit)));
-            }
         });
     }
 }
@@ -834,7 +832,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .with_app_id(profile.app_id())
                 .with_inner_size([620.0, 640.0])
                 .with_min_inner_size([420.0, 360.0])
-                .with_max_inner_size([760.0, 4096.0])
                 .with_icon(egui::IconData {
                     rgba: icons::rgba(
                         64,

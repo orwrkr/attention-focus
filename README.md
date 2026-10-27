@@ -9,7 +9,7 @@ time was spent. The primary interface is a compact Windows system tray applicati
 The Windows desktop preview now records project/task focus sessions, remembers window
 placement, and includes embedded application icons with running/stopped tray states.
 Click the tray to show the window; double-click to toggle tracking. Hover to see
-current session and total tracked time.
+current session and today's time for the selected project across all its tasks.
 Configure an Instance folder under MetaPlan source and projects, then choose a project
 and optional task. Changing a project/task while running starts a new interval by
 default; disable the checkbox to reassign the entire current interval instead. While
@@ -25,7 +25,9 @@ timezones have a searchable list. Stay on top is remembered per profile. Tray to
 include the current project; secondary text uses a readable blue accent. Normal
 headers show the app/version; Development remains identified.
 Some interactive desktop checks remain pending.
-Window size follows useful content with a capped width. Confirmed Windows logoff or
+Native resizing/maximizing is stable; the content column has a readable width.
+Sections, scroll, filters/searches and note drafts restore separately per profile.
+Confirmed Windows logoff or
 shutdown saves tracking; canceled shutdown queries do not stop it. Sleep/hibernate
 stops tracking without automatic resume. Forced exits use checkpoint recovery.
 See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.

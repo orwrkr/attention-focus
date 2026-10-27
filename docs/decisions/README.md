@@ -21,5 +21,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0013](0013-live-reports-and-desktop-controls.md) | accepted | Live reports, calendars, timezone list, and window controls |
 | [0014](0014-minute-ranges-and-status-lights.md) | accepted | Minute boundaries, relevant refresh, and tray status lights |
 | [0015](0015-shutdown-and-compact-window.md) | accepted | Confirmed session end and content-fitted window limits |
+| [0016](0016-ui-state-and-daily-tray.md) | accepted | UI restoration, native sizing and project-day tray totals |
 
-Next number: `0016`. Template: `templates/ADR.md` from the repository root.
+Next number: `0017`. Template: `templates/ADR.md` from the repository root.

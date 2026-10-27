@@ -75,6 +75,7 @@ pub struct Snapshot {
     pub active_start_ms: Option<i64>,
     pub elapsed_ms: u64,
     pub total_ms: u64,
+    pub daily_project_ms: Option<u64>,
     pub completed: u64,
     pub needs_review: bool,
     pub activity: Activity,
@@ -389,6 +390,7 @@ impl Store {
             active_start_ms: active.map(|a| a.1),
             elapsed_ms: active.map_or(0, |a| a.0).max(0) as u64,
             total_ms: total.max(0) as u64,
+            daily_project_ms: None,
             completed: count.max(0) as u64,
             needs_review: review,
             activity: self.selected()?,
@@ -458,6 +460,7 @@ pub struct Engine {
     started: Option<Moment>,
     observed: Moment,
     checkpoint_mono: u64,
+    daily_cache: std::cell::RefCell<Option<(i64, i64, ActivityKey, u64)>>,
 }
 impl Engine {
     pub fn new(store: Store, now: Moment) -> Self {
@@ -466,17 +469,100 @@ impl Engine {
             started: None,
             observed: now,
             checkpoint_mono: now.mono_ms,
+            daily_cache: std::cell::RefCell::new(None),
         }
     }
     pub fn snapshot(&self, now: Moment) -> Result<Snapshot> {
+        self.snapshot_in_zone(now, jiff::tz::TimeZone::system())
+    }
+    fn snapshot_in_zone(&self, now: Moment, zone: jiff::tz::TimeZone) -> Result<Snapshot> {
         let mut snapshot = self.store.snapshot()?;
         if let Some(start) = self.started {
             snapshot.elapsed_ms = now.mono_ms.saturating_sub(start.mono_ms);
         }
+        let daily = (|| -> Result<u64> {
+            let day = jiff::Timestamp::from_millisecond(now.wall_ms)?
+                .to_zoned(zone.clone())
+                .date();
+            let begin = day
+                .to_zoned(zone.clone())?
+                .start_of_day()?
+                .timestamp()
+                .as_millisecond();
+            let end = day
+                .tomorrow()?
+                .to_zoned(zone)?
+                .start_of_day()?
+                .timestamp()
+                .as_millisecond();
+            let mut key = snapshot.activity.key();
+            key.task = None;
+            let mut cache = self.daily_cache.borrow_mut();
+            if cache
+                .as_ref()
+                .is_none_or(|(b, e, k, _)| *b != begin || *e != end || *k != key)
+            {
+                let mut total = 0u64;
+                let mut query = self.store.connection.prepare("SELECT started_ms,ended_ms,elapsed_ms,activity FROM focus_sessions WHERE state='stopped' AND started_ms<?2 AND ended_ms>?1")?;
+                let rows = query.query_map(params![begin, end], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, i64>(1)?,
+                        r.get::<_, i64>(2)?,
+                        r.get::<_, String>(3)?,
+                    ))
+                })?;
+                for row in rows {
+                    let (start_ms, end_ms, elapsed, text) = row?;
+                    let activity: Activity = serde_json::from_str(&text)?;
+                    if activity.key().project == key.project {
+                        total = total.saturating_add(reports::allocated(
+                            &reports::Record {
+                                id: 0,
+                                start_ms,
+                                end_ms,
+                                elapsed_ms: elapsed.max(0) as u64,
+                                state: reports::State::Saved,
+                                activity,
+                                reason: String::new(),
+                            },
+                            begin,
+                            end,
+                        ));
+                    }
+                }
+                *cache = Some((begin, end, key, total));
+            }
+            let mut total = cache.as_ref().unwrap().3;
+            if let Some(start) = self.started {
+                total = total.saturating_add(reports::allocated(
+                    &reports::Record {
+                        id: 0,
+                        start_ms: start.wall_ms,
+                        end_ms: now.wall_ms,
+                        elapsed_ms: snapshot.elapsed_ms,
+                        state: reports::State::Running,
+                        activity: snapshot.activity.clone(),
+                        reason: String::new(),
+                    },
+                    begin,
+                    end,
+                ));
+            }
+            Ok(total)
+        })();
+        // A broken historical row must not prevent publishing successful Start/Stop state.
+        snapshot.daily_project_ms = daily.ok();
         Ok(snapshot)
     }
     /// Returns true only after a successful explicit exit.
     pub fn apply(&mut self, command: Option<Command>, now: Moment) -> Result<bool> {
+        if command
+            .as_ref()
+            .is_some_and(|c| !matches!(c, Command::Report { .. }))
+        {
+            self.daily_cache.borrow_mut().take();
+        }
         let gap = now.mono_ms.saturating_sub(self.observed.mono_ms);
         let drift =
             ((i128::from(now.wall_ms) - i128::from(self.observed.wall_ms)) - i128::from(gap)).abs();
@@ -654,8 +740,9 @@ pub fn spawn(
                     }
                 }
             } else {
-                match receiver.recv() {
+                match receiver.recv_timeout(Duration::from_secs(30)) {
                     Ok(command) => Some(command),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => None,
                     Err(_) => break,
                 }
             };
@@ -712,6 +799,106 @@ pub fn spawn(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn daily_totals_clip_midnight_combine_tasks_isolate_sources_and_exclude_review() {
+        let dir = tempfile::tempdir().unwrap();
+        let midnight = "2026-10-27T00:00:00Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_millisecond();
+        let moment = |ms: u64| Moment {
+            wall_ms: midnight - 10_000 + ms as i64,
+            mono_ms: ms,
+        };
+        let mut engine = Engine::new(
+            Store::open(&dir.path().join("focus.sqlite3")).unwrap(),
+            moment(0),
+        );
+        let first = activity("Example");
+        engine
+            .apply(Some(Command::Start(first.clone())), moment(0))
+            .unwrap();
+        assert_eq!(
+            engine
+                .snapshot_in_zone(moment(20_000), jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .daily_project_ms,
+            Some(10_000)
+        );
+        let mut task = first.clone();
+        task.project.as_mut().unwrap().task = Some("Review".into());
+        engine
+            .apply(Some(Command::Switch(task)), moment(20_000))
+            .unwrap();
+        assert_eq!(
+            engine
+                .snapshot_in_zone(moment(25_000), jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .daily_project_ms,
+            Some(15_000)
+        );
+        engine.apply(Some(Command::Stop), moment(25_000)).unwrap();
+        let saved = engine
+            .snapshot_in_zone(moment(25_000), jiff::tz::TimeZone::UTC)
+            .unwrap();
+        assert_eq!(saved.daily_project_ms, Some(15_000));
+        assert_eq!(saved.total_ms, 25_000);
+        let mut other = first.clone();
+        other.project.as_mut().unwrap().source_id = 2;
+        engine
+            .apply(Some(Command::Select(other)), moment(26_000))
+            .unwrap();
+        assert_eq!(
+            engine
+                .snapshot_in_zone(moment(26_000), jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .daily_project_ms,
+            Some(0)
+        );
+        engine
+            .apply(Some(Command::Select(first.clone())), moment(27_000))
+            .unwrap();
+        engine
+            .apply(Some(Command::Start(first)), moment(27_000))
+            .unwrap();
+        engine.apply(None, moment(37_000)).unwrap();
+        engine.apply(None, moment(80_000)).unwrap();
+        let review = engine
+            .snapshot_in_zone(moment(80_000), jiff::tz::TimeZone::UTC)
+            .unwrap();
+        assert!(review.needs_review);
+        assert_eq!(review.daily_project_ms, Some(15_000));
+        engine
+            .apply(Some(Command::AcceptRecovery), moment(81_000))
+            .unwrap();
+        assert_eq!(
+            engine
+                .snapshot_in_zone(moment(81_000), jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .daily_project_ms,
+            Some(25_000)
+        );
+        assert_eq!(
+            engine
+                .snapshot_in_zone(moment(86_420_000), jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .daily_project_ms,
+            Some(0)
+        );
+        engine
+            .store
+            .connection
+            .execute("UPDATE focus_sessions SET activity='invalid'", [])
+            .unwrap();
+        engine.daily_cache.borrow_mut().take();
+        assert_eq!(
+            engine
+                .snapshot_in_zone(moment(81_000), jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .daily_project_ms,
+            None
+        );
+    }
     fn at(ms: u64) -> Moment {
         Moment {
             wall_ms: 1_000_000 + ms as i64,

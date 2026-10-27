@@ -4,7 +4,7 @@ use jiff::{Timestamp, civil::Date, tz::TimeZone};
 use std::collections::BTreeMap;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Request {
     pub from: String,
     pub through: String,
@@ -216,7 +216,7 @@ pub struct Report {
 }
 
 /// Cumulative rounding makes adjacent clips add to the original elapsed duration.
-fn allocated(record: &Record, start: i64, end: i64) -> u64 {
+pub(crate) fn allocated(record: &Record, start: i64, end: i64) -> u64 {
     let span = i128::from(record.end_ms) - i128::from(record.start_ms);
     if span <= 0 {
         return 0;

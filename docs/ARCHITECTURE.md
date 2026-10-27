@@ -111,8 +111,8 @@ No idle-input auto-stop: reading and thinking may involve no input. No automatic
 restart after unlock. Source priority and lifecycle statuses are never changed.
 The hidden listener agrees immediately to WM_QUERYENDSESSION and saves only for a
 confirmed WM_ENDSESSION. Force termination/power loss still use checkpoint recovery;
-see ADR-0015. Width is capped; measured content bounds height, and oversized windows
-are explicitly shrunk after collapse. Maximize fits content with scrolling.
+see ADR-0015. ADR-0016 replaces native size clamps with normal Windows resizing and
+maximization, a bounded content column and persisted section/filter/search/draft state.
 
 The upper UI caption shows the committed activity, distinct from pending note drafts.
 Persist the picker mode independently per profile. Schema two backs up schema one and

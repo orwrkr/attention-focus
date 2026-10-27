@@ -126,7 +126,10 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 - Closing the window or using Hide to tray keeps the process running.
 - A single left click shows the window after the Windows double-click interval.
 - A native double left click toggles tracking once and cancels single-click opening.
-- Hover shows a native tooltip with session time and total saved plus active time.
+- Hover shows session time and Today for the selected project across all its tasks,
+  using the Windows local day and including active time once. Report filters do not
+  change this value; saved-day totals are cached and idle rollover checks run every
+  30 seconds. Unavailable daily data does not prevent successful state publication.
   It updates once per second while running, including when the window is hidden.
   Unreviewed interrupted time is excluded and flagged. Windows controls tooltip delay.
 - Right click opens Show Focus, Start/Stop, and Exit.
