@@ -42,11 +42,14 @@ The Windows LocalAppData known folder supplies the fixed application data locati
 
 - `%LOCALAPPDATA%/AttentionFocus/window.ron`: position, size, and maximization.
 - `%LOCALAPPDATA%/AttentionFocus/focus.sqlite3`: unassigned sessions and checkpoints.
+- `%LOCALAPPDATA%/AttentionFocus/source.sqlite3`: source identities and selected path.
 - SQLite may create temporary journal files in that same directory.
 
 Moving the EXE does not reset history. Back up the data directory after exiting.
-Source configuration is not implemented; future source selection must reject overlap
-with this storage root. Nothing is stored beside the EXE or in MetaPlan.
+Source selection rejects equality or containment with this storage root after resolving
+existing ancestors and junctions. Startup reads settings read-only before any persistent
+initialization. Linked entries inside app storage are rejected. Nothing is stored beside
+the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threat model.
 
 ## Current behavior
 
@@ -74,8 +77,12 @@ with this storage root. Nothing is stored beside the EXE or in MetaPlan.
   close exit. The UI displays the failure instead of hiding silently.
 - Tray callbacks wake the event loop. Stopped tracking has no periodic timer updates;
   running tracking updates once per second. Geometry autosaves after movement and on exit.
-- MetaPlan is not read or modified. Project selection and date-range reports remain
-  future work; the UI currently shows elapsed time and accumulated saved totals.
+- Expand MetaPlan source and projects, enter an absolute Instance path, and choose
+  Save and refresh. The selected path is restored and loaded in the background at startup.
+- Preview project names, statuses, priorities, archive placement, and unfinished tasks
+  from the current cycle. Duplicate slugs are excluded; malformed/missing files produce
+  diagnostics. Linked source files/directories are skipped; task paths are never followed.
+- MetaPlan is read only. Project attribution and date-range reports remain future work.
 
 ## Manual verification checklist
 
@@ -87,10 +94,20 @@ with this storage root. Nothing is stored beside the EXE or in MetaPlan.
 5. Use Show Focus and Exit both visible and hidden; restart and check saved totals.
 6. Verify interrupted recovery using disposable test history, never real history.
 7. Check tray failure, unwritable storage, and a clean Windows machine.
+8. Configure a disposable synthetic Instance folder; verify preview, refresh, invalid-path
+   diagnostics, startup restoration, Unicode rendering, and continued Start/Stop on failure.
 
 This is an initial unassigned timer, not the completed project-aware focus tracker.
 
 ## Verification record (2026-10-27)
+
+T-0003 adds fifteen passing automated tests, including immutable source snapshots,
+settings and identity restoration, rejected storage overlap, and real junction aliases.
+Formatting, Clippy, and release build passed. The Windows helper now captures the app
+and source-panel expansion, although launch timed out and required window recovery.
+Its text input produced no visible text in two focused attempts. Source loading through
+the UI remains unverified. Exit terminated the process. A visible background gap was
+fixed in the final build; the fix has not yet been visually rechecked.
 
 Eight automated tests passed, including icon structure, stopped-session persistence,
 interrupted recovery, one-active-session enforcement, failed-stop preservation, and

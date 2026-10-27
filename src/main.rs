@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use attention_focus::{icons, platform, tracking, tray_interaction::Clicks};
+use attention_focus::{icons, platform, source, tracking, tray_interaction::Clicks};
 use eframe::egui;
 use std::{
     sync::mpsc::{self, Receiver, SyncSender},
@@ -18,6 +18,7 @@ enum Action {
     Toggle,
     Exit,
     Tracking(tracking::Event),
+    Source(Result<(source::Selection, source::Catalog), String>),
 }
 
 struct Desktop {
@@ -32,6 +33,13 @@ struct Desktop {
     exiting: bool,
     last_geometry: Option<egui::Rect>,
     clicks: Clicks,
+    directory: std::path::PathBuf,
+    sender: mpsc::Sender<Action>,
+    source_path: String,
+    source_selection: Option<source::Selection>,
+    catalog: source::Catalog,
+    source_pending: bool,
+    source_error: Option<String>,
 }
 
 fn tray_icon(running: bool) -> Icon {
@@ -61,7 +69,11 @@ fn duration(ms: u64) -> String {
 }
 
 impl Desktop {
-    fn new(context: &eframe::CreationContext<'_>, directory: std::path::PathBuf) -> Self {
+    fn new(
+        context: &eframe::CreationContext<'_>,
+        directory: std::path::PathBuf,
+        selection: Option<source::Selection>,
+    ) -> Self {
         let (sender, actions) = mpsc::channel();
         let menu = Menu::new();
         let show = MenuItem::new("Show Focus", true, None);
@@ -121,11 +133,12 @@ impl Desktop {
             }
         }));
         let ctx = context.egui_ctx.clone();
+        let tracking_sender = sender.clone();
         let commands = tracking::spawn(directory.join("focus.sqlite3"), move |event| {
-            let _ = sender.send(Action::Tracking(event));
+            let _ = tracking_sender.send(Action::Tracking(event));
             ctx.request_repaint();
         });
-        Self {
+        let mut desktop = Self {
             tray,
             toggle_item: toggle,
             actions,
@@ -137,7 +150,46 @@ impl Desktop {
             exiting: false,
             last_geometry: None,
             clicks: Clicks::default(),
+            directory,
+            sender,
+            source_path: selection
+                .as_ref()
+                .map(|s| s.path.display().to_string())
+                .unwrap_or_default(),
+            source_selection: selection,
+            catalog: source::Catalog::default(),
+            source_pending: false,
+            source_error: None,
+        };
+        if desktop.source_selection.is_some() {
+            desktop.load_source(&context.egui_ctx, false);
         }
+        desktop
+    }
+
+    fn load_source(&mut self, ctx: &egui::Context, save: bool) {
+        self.source_pending = true;
+        self.source_error = None;
+        let path = std::path::PathBuf::from(self.source_path.trim());
+        let directory = self.directory.clone();
+        let selection = self.source_selection.clone();
+        let sender = self.sender.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let result = (|| -> Result<_, Box<dyn std::error::Error + Send + Sync>> {
+                let path = source::validate_boundary(&path, &directory)?;
+                let catalog = source::read(&path)?;
+                let selection = if save {
+                    source::save(&directory, &path)?
+                } else {
+                    selection.ok_or("No source selected.")?
+                };
+                Ok((selection, catalog))
+            })()
+            .map_err(|e| format!("Cannot load MetaPlan: {e}"));
+            let _ = sender.send(Action::Source(result));
+            ctx.request_repaint();
+        });
     }
 
     fn command(&mut self, command: tracking::Command) {
@@ -177,6 +229,20 @@ impl eframe::App for Desktop {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(action) = self.actions.try_recv() {
             match action {
+                Action::Source(result) => {
+                    self.source_pending = false;
+                    match result {
+                        Ok((selection, catalog)) => {
+                            self.source_path = selection.path.display().to_string();
+                            self.source_selection = Some(selection);
+                            self.catalog = catalog;
+                        }
+                        Err(error) => {
+                            self.source_error = Some(error);
+                            self.catalog = source::Catalog::default();
+                        }
+                    }
+                }
                 Action::Show => Self::show(ctx),
                 Action::LeftRelease(now) => {
                     let interval = unsafe {
@@ -273,72 +339,133 @@ impl eframe::App for Desktop {
             }
         }
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
-            ui.heading("Attention Focus");
-            ui.label("Unassigned focus");
-            ui.add_space(12.0);
-            ui.label(
-                egui::RichText::new(duration(self.state.elapsed_ms))
-                    .size(36.0)
-                    .monospace(),
-            );
-            ui.label(if !self.ready {
-                "Opening history..."
-            } else if self.state.running {
-                "Tracking"
-            } else {
-                "Stopped"
-            });
-            ui.add_space(12.0);
-            if ui
-                .add_enabled(
-                    self.ready && !self.pending && !self.state.needs_review,
-                    egui::Button::new(if self.state.running {
-                        "Stop tracking"
+            egui::ScrollArea::vertical()
+                .id_salt("window-content")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.heading("Attention Focus");
+                    ui.label("Unassigned focus");
+                    ui.add_space(12.0);
+                    ui.label(
+                        egui::RichText::new(duration(self.state.elapsed_ms))
+                            .size(36.0)
+                            .monospace(),
+                    );
+                    ui.label(if !self.ready {
+                        "Opening history..."
+                    } else if self.state.running {
+                        "Tracking"
                     } else {
-                        "Start tracking"
-                    }),
-                )
-                .clicked()
-            {
-                self.command(tracking::Command::Toggle);
-            }
-            ui.separator();
-            ui.label(format!(
-                "Saved focus: {} in {} sessions",
-                duration(self.state.total_ms),
-                self.state.completed
-            ));
-            if self.state.needs_review {
-                ui.label("An interrupted session was saved up to its last checkpoint.");
-                ui.label("Time after that checkpoint is excluded. Tracking has not resumed.");
-                if ui
-                    .add_enabled(!self.pending, egui::Button::new("Accept saved time"))
-                    .clicked()
-                {
-                    self.command(tracking::Command::AcceptRecovery);
-                }
-            }
-            if let Some(error) = &self.error {
-                ui.colored_label(egui::Color32::LIGHT_RED, error);
-            }
-            ui.add_space(12.0);
-            ui.label("Double-click the tray icon to start or stop.");
-            ui.label("Click the tray icon to show this window. Hover to see tracked time.");
-            ui.label("Project selection is coming next. MetaPlan is not accessed.");
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
-                    .clicked()
-                {
-                    Self::hide(&ctx);
-                }
-                if ui
-                    .add_enabled(!self.pending, egui::Button::new("Exit"))
-                    .clicked()
-                {
-                    self.command(tracking::Command::Exit);
-                }
-            });
+                        "Stopped"
+                    });
+                    ui.add_space(12.0);
+                    if ui
+                        .add_enabled(
+                            self.ready && !self.pending && !self.state.needs_review,
+                            egui::Button::new(if self.state.running {
+                                "Stop tracking"
+                            } else {
+                                "Start tracking"
+                            }),
+                        )
+                        .clicked()
+                    {
+                        self.command(tracking::Command::Toggle);
+                    }
+                    ui.separator();
+                    ui.label(format!(
+                        "Saved focus: {} in {} sessions",
+                        duration(self.state.total_ms),
+                        self.state.completed
+                    ));
+                    if self.state.needs_review {
+                        ui.label("An interrupted session was saved up to its last checkpoint.");
+                        ui.label(
+                            "Time after that checkpoint is excluded. Tracking has not resumed.",
+                        );
+                        if ui
+                            .add_enabled(!self.pending, egui::Button::new("Accept saved time"))
+                            .clicked()
+                        {
+                            self.command(tracking::Command::AcceptRecovery);
+                        }
+                    }
+                    if let Some(error) = &self.error {
+                        ui.colored_label(egui::Color32::LIGHT_RED, error);
+                    }
+                    ui.add_space(12.0);
+                    ui.label("Double-click the tray icon to start or stop.");
+                    ui.label("Click the tray icon to show this window. Hover to see tracked time.");
+                    ui.collapsing("MetaPlan source and projects", |ui| {
+                        ui.label("Instance folder (read-only)");
+                        ui.add_enabled(
+                            !self.source_pending,
+                            egui::TextEdit::singleline(&mut self.source_path)
+                                .desired_width(f32::INFINITY),
+                        );
+                        if ui
+                            .add_enabled(
+                                !self.source_pending,
+                                egui::Button::new("Save and refresh"),
+                            )
+                            .clicked()
+                        {
+                            self.load_source(&ctx, true);
+                        }
+                        if self.source_pending {
+                            ui.label("Loading projects...");
+                        }
+                        if let Some(error) = &self.source_error {
+                            ui.colored_label(egui::Color32::LIGHT_RED, error);
+                        }
+                        ui.label("Preview only. Tracking is still unassigned.");
+                        egui::ScrollArea::vertical()
+                            .id_salt("source-preview")
+                            .max_height(230.0)
+                            .show(ui, |ui| {
+                                for project in &self.catalog.projects {
+                                    ui.push_id((&project.slug, project.archived), |ui| {
+                                        ui.collapsing(
+                                            format!(
+                                                "{}{}",
+                                                project.title,
+                                                if project.archived { " (Archived)" } else { "" }
+                                            ),
+                                            |ui| {
+                                                ui.label(format!(
+                                                    "{} | {} | {}",
+                                                    project.slug, project.status, project.priority
+                                                ));
+                                                if project.tasks.is_empty() {
+                                                    ui.label("No unfinished current-cycle tasks.");
+                                                }
+                                                for task in &project.tasks {
+                                                    ui.label(task);
+                                                }
+                                            },
+                                        );
+                                    });
+                                }
+                                for diagnostic in &self.catalog.diagnostics {
+                                    ui.colored_label(egui::Color32::YELLOW, diagnostic);
+                                }
+                            });
+                    });
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
+                            .clicked()
+                        {
+                            Self::hide(&ctx);
+                        }
+                        if ui
+                            .add_enabled(!self.pending, egui::Button::new("Exit"))
+                            .clicked()
+                        {
+                            self.command(tracking::Command::Exit);
+                        }
+                    });
+                });
         });
     }
 }
@@ -346,6 +473,10 @@ impl eframe::App for Desktop {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _instance = platform::Instance::acquire()?;
     let directory = platform::data_dir()?;
+    // Restore read-only and validate source overlap before SQLite or eframe can write.
+    let selection =
+        source::restore(&directory).map_err(|error| -> Box<dyn std::error::Error> { error })?;
+    let directory = source::resolve(&directory)?;
     std::fs::create_dir_all(&directory)?;
     let window_state = directory.join("window.ron");
     eframe::run_native(
@@ -353,7 +484,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_app_id("AttentionFocus")
-                .with_inner_size([560.0, 420.0])
+                .with_inner_size([620.0, 640.0])
                 .with_min_inner_size([420.0, 360.0])
                 .with_icon(egui::IconData {
                     rgba: icons::rgba(64, icons::State::App),
@@ -364,7 +495,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             persistence_path: Some(window_state),
             ..Default::default()
         },
-        Box::new(move |context| Ok(Box::new(Desktop::new(context, directory)))),
+        Box::new(move |context| Ok(Box::new(Desktop::new(context, directory, selection)))),
     )?;
     Ok(())
 }

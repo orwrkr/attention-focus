@@ -12,5 +12,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0004](0004-desktop-stack.md) | accepted | Native Rust UI and transactional storage |
 | [0005](0005-desktop-state-and-branding.md) | accepted | Persistent desktop state and tray tracking |
 | [0006](0006-tray-single-click.md) | accepted | Single-click window access and hover time |
+| [0007](0007-source-settings.md) | accepted | Source settings and read-only preview |
 
-Next number: `0007`. Template: `templates/ADR.md` from the repository root.
+Next number: `0008`. Template: `templates/ADR.md` from the repository root.

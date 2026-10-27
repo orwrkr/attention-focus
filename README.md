@@ -10,7 +10,9 @@ The Windows desktop preview now records unassigned focus sessions, remembers win
 placement, and includes embedded application icons with running/stopped tray states.
 Click the tray to show the window; double-click to toggle tracking. Hover to see
 current session and total tracked time.
-Project/task integration is not implemented. Interactive desktop verification is pending.
+Configure an Instance folder under MetaPlan source and projects to preview project
+metadata and unfinished current-cycle tasks. Tracking is still unassigned.
+Interactive desktop verification is pending.
 See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 
 ## Accepted constraints

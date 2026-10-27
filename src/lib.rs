@@ -1,8 +1,9 @@
-//! Local unassigned focus tracking and desktop assets. No MetaPlan access yet.
+//! Local focus tracking, read-only MetaPlan snapshots, and desktop assets.
 
 pub mod icons;
 #[cfg(windows)]
 pub mod platform;
+pub mod source;
 pub mod tracking;
 pub mod tray_interaction;
 
