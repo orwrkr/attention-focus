@@ -1,9 +1,10 @@
 # Initial Architecture
 
-Status: target design; desktop and unassigned tracking subset implemented.
-Desktop persistence and an unassigned timer are now being implemented under
-[ADR-0005](decisions/0005-desktop-state-and-branding.md). The remaining modules and
-full source-aware session policy below are still the target design.
+Status: target design with desktop persistence, read-only source settings, and
+attributed sessions implemented. See [ADR-0008](decisions/0008-attributed-session-engine.md)
+for the clock-injected engine and Windows lifecycle integration. Date-range reporting,
+time-zone handling, and recovery adjustment remain target work. Recovery currently
+supports accepting the last durable checkpoint; editing and discarding time are deferred.
 Decision: [ADR-0004](decisions/0004-desktop-stack.md).
 
 ## Modules and ownership

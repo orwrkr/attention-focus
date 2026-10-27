@@ -42,6 +42,8 @@ The Windows LocalAppData known folder supplies the fixed application data locati
 
 - `%LOCALAPPDATA%/AttentionFocus/window.ron`: position, size, and maximization.
 - `%LOCALAPPDATA%/AttentionFocus/focus.sqlite3`: unassigned sessions and checkpoints.
+- The history database also stores project/task snapshots and the last applied selection.
+- A legacy database upgrade creates a `focus-before-v1-*.sqlite3` backup using SQLite.
 - `%LOCALAPPDATA%/AttentionFocus/source.sqlite3`: source identities and selected path.
 - SQLite may create temporary journal files in that same directory.
 
@@ -54,7 +56,10 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 ## Current behavior
 
 - Startup restores window geometry and opens a visible English window with a tray icon.
-- A worker owns durable SQLite history. Sessions currently belong to Unassigned focus.
+- A worker owns durable SQLite history. Choose a project and optional task or Unassigned
+  focus. Notes are optional. Start uses the draft selection; Apply selection saves it
+  for later tray starts. Switch focus closes the previous session and starts the next
+  in one transaction. Editing a picker alone does not change the active session.
 - Start/Stop in the window and tray use the same controller; the tray state changes
   only after the session update commits.
 - Closing the window or using Hide to tray keeps the process running.
@@ -69,9 +74,12 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 - Exit saves the running session before terminating. Restart never resumes silently.
 - Checkpoints are saved every ten seconds. Interrupted records require review before
   starting again; accepting recovery keeps only the last checkpoint and excludes downtime.
-- A detected scheduling gap over 30 seconds or a wall-clock divergence over five seconds
-  interrupts tracking. OS lock/suspend notifications remain T-0004 work; short sleeps
-  are not yet fully handled by this bootstrap timer.
+- Windows lock/suspend notifications stop tracking at the captured event boundary.
+  Unlock and resume leave it stopped. The listener waits up to 1.5 seconds for a durable
+  confirmation and reports failures. New starts are disabled if listener setup fails.
+- A scheduling gap over 30 seconds, wall-clock divergence over five seconds, or backward
+  wall clock interrupts tracking at the last durable checkpoint for review. New starts
+  are rejected while the wall clock precedes the latest recorded end.
 - A per-profile mutex rejects a second instance in the same Windows session.
 - Tray setup failure leaves the window usable, disables hiding, and lets window
   close exit. The UI displays the failure instead of hiding silently.
@@ -82,7 +90,8 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 - Preview project names, statuses, priorities, archive placement, and unfinished tasks
   from the current cycle. Duplicate slugs are excluded; malformed/missing files produce
   diagnostics. Linked source files/directories are skipped; task paths are never followed.
-- MetaPlan is read only. Project attribution and date-range reports remain future work.
+- MetaPlan is read only. Project/task attribution is saved with immutable title snapshots;
+  date-range reports remain future work.
 
 ## Manual verification checklist
 
@@ -97,7 +106,10 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 8. Configure a disposable synthetic Instance folder; verify preview, refresh, invalid-path
    diagnostics, startup restoration, Unicode rendering, and continued Start/Stop on failure.
 
-This is an initial unassigned timer, not the completed project-aware focus tracker.
+The current build has attributed tracking; search and date-range reports remain T-0005.
+The latest executable is in `dist/AttentionFocus-Update/attention-focus.exe` while an older
+running instance locks the original dist executable. Exit the older app before launching
+the update. Both builds use the same history location; no parallel instance is allowed.
 
 ## Verification record (2026-10-27)
 

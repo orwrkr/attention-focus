@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use attention_focus::{icons, platform, source, tracking, tray_interaction::Clicks};
+use attention_focus::{icons, lifecycle, platform, source, tracking, tray_interaction::Clicks};
 use eframe::egui;
 use std::{
     sync::mpsc::{self, Receiver, SyncSender},
@@ -19,6 +19,7 @@ enum Action {
     Exit,
     Tracking(tracking::Event),
     Source(Result<(source::Selection, source::Catalog), String>),
+    PlatformError(String),
 }
 
 struct Desktop {
@@ -40,6 +41,8 @@ struct Desktop {
     catalog: source::Catalog,
     source_pending: bool,
     source_error: Option<String>,
+    activity: tracking::Activity,
+    lifecycle: Option<lifecycle::Listener>,
 }
 
 fn tray_icon(running: bool) -> Icon {
@@ -138,6 +141,34 @@ impl Desktop {
             let _ = tracking_sender.send(Action::Tracking(event));
             ctx.request_repaint();
         });
+        let lifecycle_commands = commands.clone();
+        let lifecycle_sender = sender.clone();
+        let ctx = context.egui_ctx.clone();
+        let listener = lifecycle::Listener::start(move |reason| {
+            let (done, saved) = mpsc::sync_channel(1);
+            let command = tracking::Command::Interrupt {
+                reason,
+                boundary: Some(tracking::Boundary::now()),
+                done: Some(done),
+            };
+            if lifecycle_commands.try_send(command).is_err()
+                || saved.recv_timeout(Duration::from_millis(1500)).is_err()
+            {
+                let _ = lifecycle_sender.send(Action::PlatformError(
+                    "Cannot confirm saving before lock or suspend. Check session recovery.".into(),
+                ));
+                ctx.request_repaint();
+            }
+        });
+        let listener = match listener {
+            Ok(listener) => Some(listener),
+            Err(error) => {
+                let _ = sender.send(Action::PlatformError(format!(
+                    "Windows lifecycle monitoring is unavailable: {error}"
+                )));
+                None
+            }
+        };
         let mut desktop = Self {
             tray,
             toggle_item: toggle,
@@ -160,6 +191,8 @@ impl Desktop {
             catalog: source::Catalog::default(),
             source_pending: false,
             source_error: None,
+            activity: tracking::Activity::default(),
+            lifecycle: listener,
         };
         if desktop.source_selection.is_some() {
             desktop.load_source(&context.egui_ctx, false);
@@ -205,6 +238,110 @@ impl Desktop {
         }
     }
 
+    fn activity_picker(&mut self, ui: &mut egui::Ui) {
+        egui::ComboBox::from_id_salt("project")
+            .selected_text(self.activity.label())
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(self.activity.project.is_none(), "Unassigned focus")
+                    .clicked()
+                {
+                    self.activity.project = None;
+                }
+                if let Some(source) = &self.source_selection {
+                    for project in self
+                        .catalog
+                        .projects
+                        .iter()
+                        .filter(|p| !p.archived && p.status != "Completed")
+                    {
+                        let selected = self.activity.project.as_ref().is_some_and(|p| {
+                            p.source_id == source.id
+                                && p.source_path == source.path.to_string_lossy()
+                                && p.slug == project.slug
+                        });
+                        if ui.selectable_label(selected, &project.title).clicked() {
+                            self.activity.project = Some(tracking::Project {
+                                source_id: source.id,
+                                source_path: source.path.to_string_lossy().into_owned(),
+                                slug: project.slug.clone(),
+                                title: project.title.clone(),
+                                task: None,
+                            });
+                        }
+                    }
+                }
+            });
+        if let Some(project) = &mut self.activity.project {
+            egui::ComboBox::from_id_salt("task")
+                .selected_text(project.task.as_deref().unwrap_or("No task"))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut project.task, None, "No task");
+                    if let Some(source) = &self.source_selection
+                        && source.id == project.source_id
+                        && source.path.to_string_lossy() == project.source_path
+                        && let Some(snapshot) = self
+                            .catalog
+                            .projects
+                            .iter()
+                            .find(|p| p.slug == project.slug)
+                    {
+                        for task in &snapshot.tasks {
+                            ui.selectable_value(&mut project.task, Some(task.clone()), task);
+                        }
+                    }
+                });
+        }
+        ui.add(
+            egui::TextEdit::singleline(&mut self.activity.note).hint_text("Optional session note"),
+        );
+        if self.activity != self.state.activity {
+            ui.label("Selection has not been applied.");
+            if ui
+                .add_enabled(
+                    self.ready
+                        && !self.pending
+                        && !self.state.needs_review
+                        && self.available(&self.activity),
+                    egui::Button::new(if self.state.running {
+                        "Switch focus"
+                    } else {
+                        "Apply selection"
+                    }),
+                )
+                .clicked()
+            {
+                self.command(if self.state.running {
+                    tracking::Command::Switch(self.activity.clone())
+                } else {
+                    tracking::Command::Select(self.activity.clone())
+                });
+            }
+        }
+        if !self.available(&self.activity) {
+            ui.label(
+                "Selected activity is unavailable. Refresh MetaPlan or choose another activity.",
+            );
+        }
+    }
+
+    fn available(&self, activity: &tracking::Activity) -> bool {
+        let Some(project) = &activity.project else {
+            return true;
+        };
+        self.source_selection.as_ref().is_some_and(|source| {
+            source.id == project.source_id && source.path.to_string_lossy() == project.source_path
+        }) && self.catalog.projects.iter().any(|snapshot| {
+            snapshot.slug == project.slug
+                && !snapshot.archived
+                && snapshot.status != "Completed"
+                && project
+                    .task
+                    .as_ref()
+                    .is_none_or(|task| snapshot.tasks.contains(task))
+        })
+    }
+
     fn show(ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
@@ -229,6 +366,10 @@ impl eframe::App for Desktop {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(action) = self.actions.try_recv() {
             match action {
+                Action::PlatformError(error) => {
+                    self.error = Some(error);
+                    Self::show(ctx);
+                }
                 Action::Source(result) => {
                     self.source_pending = false;
                     match result {
@@ -253,14 +394,22 @@ impl eframe::App for Desktop {
                 }
                 Action::DoubleClick => {
                     self.clicks.double_click();
-                    if self.ready && !self.state.needs_review {
+                    if self.ready
+                        && !self.state.needs_review
+                        && (self.state.running
+                            || (self.lifecycle.is_some() && self.available(&self.state.activity)))
+                    {
                         self.command(tracking::Command::Toggle);
                     } else {
                         Self::show(ctx);
                     }
                 }
                 Action::Toggle => {
-                    if self.ready && !self.state.needs_review {
+                    if self.ready
+                        && !self.state.needs_review
+                        && (self.state.running
+                            || (self.lifecycle.is_some() && self.available(&self.state.activity)))
+                    {
                         self.command(tracking::Command::Toggle);
                     } else {
                         Self::show(ctx);
@@ -297,7 +446,12 @@ impl eframe::App for Desktop {
                     } else {
                         "Start tracking"
                     });
-                    self.toggle_item.set_enabled(!state.needs_review);
+                    self.toggle_item.set_enabled(
+                        !state.needs_review && (state.running || self.lifecycle.is_some()),
+                    );
+                    if !self.ready {
+                        self.activity = state.activity.clone();
+                    }
                     self.state = state;
                     self.ready = true;
                     self.pending = false;
@@ -320,6 +474,13 @@ impl eframe::App for Desktop {
         if let Some(delay) = delay {
             ctx.request_repaint_after(delay);
         }
+        self.toggle_item.set_enabled(
+            self.ready
+                && !self.pending
+                && !self.state.needs_review
+                && (self.state.running
+                    || (self.lifecycle.is_some() && self.available(&self.state.activity))),
+        );
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -344,7 +505,17 @@ impl eframe::App for Desktop {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.heading("Attention Focus");
-                    ui.label("Unassigned focus");
+                    ui.label(self.state.activity.label());
+                    if let Some(task) = self
+                        .state
+                        .activity
+                        .project
+                        .as_ref()
+                        .and_then(|p| p.task.as_ref())
+                    {
+                        ui.label(task);
+                    }
+                    self.activity_picker(ui);
                     ui.add_space(12.0);
                     ui.label(
                         egui::RichText::new(duration(self.state.elapsed_ms))
@@ -361,7 +532,12 @@ impl eframe::App for Desktop {
                     ui.add_space(12.0);
                     if ui
                         .add_enabled(
-                            self.ready && !self.pending && !self.state.needs_review,
+                            self.ready
+                                && !self.pending
+                                && !self.state.needs_review
+                                && (self.state.running
+                                    || (self.lifecycle.is_some()
+                                        && self.available(&self.activity))),
                             egui::Button::new(if self.state.running {
                                 "Stop tracking"
                             } else {
@@ -370,7 +546,11 @@ impl eframe::App for Desktop {
                         )
                         .clicked()
                     {
-                        self.command(tracking::Command::Toggle);
+                        self.command(if self.state.running {
+                            tracking::Command::Stop
+                        } else {
+                            tracking::Command::Start(self.activity.clone())
+                        });
                     }
                     ui.separator();
                     ui.label(format!(
@@ -418,7 +598,7 @@ impl eframe::App for Desktop {
                         if let Some(error) = &self.source_error {
                             ui.colored_label(egui::Color32::LIGHT_RED, error);
                         }
-                        ui.label("Preview only. Tracking is still unassigned.");
+                        ui.label("Projects are read only. Use the project picker to choose focus.");
                         egui::ScrollArea::vertical()
                             .id_salt("source-preview")
                             .max_height(230.0)

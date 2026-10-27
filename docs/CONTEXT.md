@@ -4,6 +4,12 @@ Updated: 2026-10-27.
 
 ## State
 
+T-0004 adds durable project/task/note snapshots, an applied selection restored on
+restart, and transactional Start/Stop/Switch. One clock-injected engine owns writes.
+Version-one migration backs up old unassigned history using SQLite's backup API.
+Windows lock/suspend messages stop at the captured event boundary; resume stays stopped.
+Missed heartbeats and clock changes require checkpoint review. See ADR-0008.
+
 T-0008 enables eframe's native clipboard feature. The user confirmed direct path
 typing works; Ctrl+V previously used the disabled system-clipboard fallback.
 The updated build is in dist/AttentionFocus-Update because the older dist EXE is
@@ -14,7 +20,8 @@ T-0003 now adds source settings and a read-only project/task preview (ADR-0007).
 Source identity and selection live in source.sqlite3. Startup reads settings read-only
 and validates canonical source/storage boundaries before opening writable app files.
 Background loading reports per-project diagnostics and excludes duplicate slugs and links.
-Sessions remain unassigned; the preview does not yet select session attribution.
+The project/task picker uses this snapshot; unavailable or archived activities cannot
+start new sessions. Stopping and exit remain available when the source cannot load.
 
 Completed T-0007: single-click window access and a live native hover tooltip.
 ADR-0006 supersedes the old ignored-single-click rule. Double click still toggles
@@ -25,7 +32,7 @@ T-0001 is complete. T-0002 remains blocked on interactive verification, but the 
 explicitly authorized continuing with desktop features. T-0006 adds remembered window
 geometry, embedded icons, two tray states, double-click tracking, and durable unassigned
 sessions. A worker owns SQLite and commits state before the UI updates.
-Task attribution, full lifecycle handling, and reports remain unimplemented.
+Date-range reports and project search remain unimplemented.
 
 ## Decisions
 
@@ -55,16 +62,21 @@ Clean-machine runtime compatibility remains unverified.
 
 Verify the checklist in docs/DEVELOPMENT.md with an operational UI helper or human:
 geometry restoration, real double-click routing, both tray states, and exit while hidden.
-Record the evidence against T-0002. T-0003 implementation is complete; next product
-task is T-0004 (durable attributed sessions and lifecycle).
-Manually check source entry, refresh, restart, Unicode preview, and missing-source behavior.
+Record the evidence against T-0002. Next product task is T-0005: project search,
+session history, date-range reports, midnight/DST handling, and the end-to-end UI gate.
+After exiting the older app, verify paste, source loading, project/task switching,
+restart selection, and real lock/suspend behavior with disposable session history.
 
 ## Verification and limitations
 
-Passed cargo test --offline --locked (ten tests), including single/double-click routing.
-The source integration now passes fifteen tests, including real Windows junctions,
-case aliases, immutable synthetic source trees, settings recovery, and source identity.
-Formatting, Clippy, and the updated release build passed. UI preview remains unverified.
+Twenty automated tests pass, including source integrity/junctions, atomic switching,
+write-failure rollback, backup migration, immutable activity snapshots, crash recovery,
+clock changes, and delayed suspend processing using its original event timestamp.
+A real hidden native listener was registered and routed synthetic Windows lock/suspend
+messages while ignoring unlock/resume. These are not real machine sleep/lock tests.
+Formatting, Clippy, and release build passed; the final results are in T-0004.
+The updated PE dependency audit remains Windows-system-only; wtsapi32 and advapi32
+are now included. The single-EXE distribution in dist/AttentionFocus-Update is current.
 Formatting, lint, and release build results for the tray refinement are in T-0007.
 Tests cover persistence, interrupted recovery, duplicate starts, failed-stop rollback,
 worker exit confirmation, and ICO structure. ICO artwork was visually inspected.

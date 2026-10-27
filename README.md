@@ -6,12 +6,13 @@ time was spent. The primary interface is a compact Windows system tray applicati
 
 ## Status
 
-The Windows desktop preview now records unassigned focus sessions, remembers window
+The Windows desktop preview now records project/task focus sessions, remembers window
 placement, and includes embedded application icons with running/stopped tray states.
 Click the tray to show the window; double-click to toggle tracking. Hover to see
 current session and total tracked time.
-Configure an Instance folder under MetaPlan source and projects to preview project
-metadata and unfinished current-cycle tasks. Tracking is still unassigned.
+Configure an Instance folder under MetaPlan source and projects, then choose a project
+and optional task. Start tracking or use Switch focus while running. The previous
+selection is retained for tray starts. Text fields support the system clipboard.
 Interactive desktop verification is pending.
 See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 
