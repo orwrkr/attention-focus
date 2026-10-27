@@ -28,6 +28,8 @@
 - Automatically refresh open reports; offer calendar date selection and timezone lists.
 - Offer Stay on top, include the active project in tray tooltips, improve secondary-text
   distinction, and omit Production from the normal header.
+- Use status lights without action-like play/pause symbols. Allow minute boundaries
+  and limit periodic refresh to live time growing inside the report filter.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

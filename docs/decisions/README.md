@@ -19,5 +19,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0011](0011-versioned-distribution.md) | accepted | Neutral status icons and versioned production packages |
 | [0012](0012-immediate-activity-changes.md) | accepted | Immediate interval changes and durable recent pickers |
 | [0013](0013-live-reports-and-desktop-controls.md) | accepted | Live reports, calendars, timezone list, and window controls |
+| [0014](0014-minute-ranges-and-status-lights.md) | accepted | Minute boundaries, relevant refresh, and tray status lights |
 
-Next number: `0014`. Template: `templates/ADR.md` from the repository root.
+Next number: `0015`. Template: `templates/ADR.md` from the repository root.

@@ -3,7 +3,7 @@
 | ID | Status | Task | Dependencies |
 | --- | --- | --- | --- |
 | [T-0001](T-0001-architecture.md) | done | Architecture and first working slice | None |
-| [T-0002](T-0002-desktop-spike.md) | blocked | Desktop and Storage Integration Spike | T-0001 |
+| [T-0002](T-0002-desktop-spike.md) | ready | Desktop and Storage Integration Spike | T-0001 |
 | [T-0003](T-0003-source-settings.md) | done | Read-Only Source and Settings | T-0002 implementation; user override |
 | [T-0004](T-0004-session-engine.md) | done | Durable Sessions and Recovery | T-0003 |
 | [T-0005](T-0005-focus-ui-reports.md) | in_progress | Focus Workflow and Time Reports | T-0004 |
@@ -15,5 +15,6 @@
 | [T-0011](T-0011-release-package-guide.md) | done | Status Icons, User Guide, and Versioned Packages | T-0010 |
 | [T-0012](T-0012-selection-switching.md) | done | Immediate Activity Changes and Recent Pickers | T-0011 |
 | [T-0013](T-0013-report-controls.md) | done | Live Reports and Desktop Controls | T-0012 |
+| [T-0014](T-0014-minute-reports-and-status.md) | done | Minute Reports and Unambiguous Status | T-0013 |
 
 Task template: `templates/TASK.md` from the repository root.

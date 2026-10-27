@@ -124,9 +124,11 @@ Do not silently resume a persisted running session.
 
 ## Reporting
 
-Visible expanded reports schedule bounded asynchronous refreshes (one in flight),
-including after tracking commits. Debounce filter edits, reject superseded parameters,
-retain the last good snapshot on error, and pause queries while collapsed/hidden.
+Visible expanded reports poll periodically only while active time grows inside the
+filter, with one query in flight. Refresh affected historical classifications
+once on stop/edit/recovery, not on unrelated commits. Minute filters are half-open;
+24:00 denotes end of day. Debounce edits, reject superseded parameters, retain the last
+good snapshot on error, and pause queries while collapsed/hidden. See ADR-0014.
 Calendar pickers share Jiff civil-date arithmetic with accounting; timezone choices
 come from the bundled database. Stay on top is a window.ron option, not a history schema
 change. See ADR-0013.

@@ -38,13 +38,8 @@ pub fn rgba(size: u32, state: State) -> Vec<u8> {
                     let ring = (0.33..=0.40).contains(&radius);
                     let center = match state {
                         State::App | State::AppDevelopment => dx.abs() + dy.abs() < 0.17,
-                        State::Running | State::RunningDevelopment => {
-                            (-0.11..=0.18).contains(&dx) && dy.abs() <= (0.18 - dx) * 0.65
-                        }
-                        State::Stopped | State::StoppedDevelopment => {
-                            dy.abs() < 0.145
-                                && ((-0.14..=-0.045).contains(&dx) || (0.045..=0.14).contains(&dx))
-                        }
+                        State::Running | State::RunningDevelopment => radius < 0.19,
+                        State::Stopped | State::StoppedDevelopment => false,
                     };
                     let mut color = if ring || center {
                         accent
@@ -160,6 +155,7 @@ mod tests {
             let center = ((size / 2 * size + size / 2) * 4) as usize;
             assert!(images[0][center + 2] > images[0][center + 1]);
             assert!(images[2][center + 1] > images[2][center + 2]);
+            assert_eq!(&images[3][center..center + 3], &[19, 29, 45]);
         }
     }
 

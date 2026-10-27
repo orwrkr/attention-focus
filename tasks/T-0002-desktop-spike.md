@@ -1,6 +1,6 @@
 # T-0002: Desktop and Storage Integration Spike
 
-Status: blocked.
+Status: ready.
 Dependencies: T-0001.
 
 ## Goal
@@ -49,7 +49,11 @@ manual verification gate. T-0006 implements window persistence, embedded icons, 
 a durable unassigned timer. The new release passes automated checks and dependency
 inspection; this task still needs actual Windows UI evidence.
 
-Blocked on an operational Windows UI automation helper or a human completing the
-manual checklist in docs/DEVELOPMENT.md. Verify close-to-hide, tray click restoration,
-Show Focus, and Exit both visible and hidden. Record the results before marking done.
-Then start T-0003. Do not bypass this integration gate or claim a portable release.
+2026-10-27 follow-up: the Windows helper became operational during T-0014. Development
+0.5.0 was visually checked for source selection, project filtering, calendar/minute
+controls and start/stop reporting while an external Production copy remained open.
+The tooling blocker is resolved; this card is ready for its remaining checklist.
+Verify close-to-hide, real tray state/click restoration, Show Focus and approved Exit
+both visible and hidden, geometry, topmost restoration and lifecycle recovery. Record
+results before marking done. Later implementation tasks already proceeded under the
+user's override; clean-machine compatibility is still unverified.

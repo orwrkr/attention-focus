@@ -72,6 +72,7 @@ pub enum ChangeMode {
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
     pub running: bool,
+    pub active_start_ms: Option<i64>,
     pub elapsed_ms: u64,
     pub total_ms: u64,
     pub completed: u64,
@@ -160,7 +161,7 @@ pub enum Event {
     Committed(Snapshot),
     Report {
         id: u64,
-        result: std::result::Result<reports::Report, String>,
+        result: std::result::Result<Box<reports::Report>, String>,
     },
     Error(String),
     ExitReady,
@@ -369,12 +370,12 @@ impl Store {
                 order,
             });
         }
-        let active: Option<i64> = self
+        let active: Option<(i64, i64)> = self
             .connection
             .query_row(
-                "SELECT elapsed_ms FROM focus_sessions WHERE state='running'",
+                "SELECT elapsed_ms,started_ms FROM focus_sessions WHERE state='running'",
                 [],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
         let (total, count): (i64,i64) = self.connection.query_row("SELECT COALESCE(SUM(elapsed_ms),0), COUNT(*) FROM focus_sessions WHERE state='stopped'", [], |r| Ok((r.get(0)?,r.get(1)?)))?;
@@ -385,7 +386,8 @@ impl Store {
         )?;
         Ok(Snapshot {
             running: active.is_some(),
-            elapsed_ms: active.unwrap_or(0).max(0) as u64,
+            active_start_ms: active.map(|a| a.1),
+            elapsed_ms: active.map_or(0, |a| a.0).max(0) as u64,
             total_ms: total.max(0) as u64,
             completed: count.max(0) as u64,
             needs_review: review,
@@ -683,6 +685,7 @@ pub fn spawn(
                             .and_then(|state| {
                                 engine.store.report(&request, moment, state.elapsed_ms)
                             })
+                            .map(Box::new)
                             .map_err(|error| format!("Cannot load report: {error}"));
                         notify(Event::Report { id, result });
                     }
@@ -807,6 +810,7 @@ mod tests {
         );
         assert_eq!(state.activity, activity("Corrected"));
         assert_eq!(engine.started.unwrap().mono_ms, 100);
+        assert_eq!(state.active_start_ms, Some(at(100).wall_ms));
         let rows: Vec<String> = engine
             .store
             .connection
@@ -1385,6 +1389,8 @@ mod tests {
             from: "1970-01-01".into(),
             through: "1970-01-01".into(),
             timezone: "UTC".into(),
+            from_time: "00:00".into(),
+            through_time: "24:00".into(),
         };
         engine
             .apply(Some(Command::Start(activity("Archived project"))), at(0))
@@ -1432,6 +1438,8 @@ mod tests {
                     from: "invalid".into(),
                     through: "1970-01-01".into(),
                     timezone: "UTC".into(),
+                    from_time: "00:00".into(),
+                    through_time: "24:00".into(),
                 },
             })
             .unwrap();

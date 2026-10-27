@@ -61,5 +61,10 @@ was sent. This does not invalidate the report/clipboard checks already recorded 
 ## Handoff
 
 Complete the remaining manual tracking/tray/lifecycle checks with disposable history,
-then mark this task done. The app is closed and the canonical EXE is current.
+then mark this task done. T-0014 added native Development evidence for synthetic source
+settings, project filtering/selection, minute/calendar filters and start/stop reporting.
+Historical ranges paused while Today updated live; Stop moved Running to Saved.
+Task switching/edit mode, real tray, geometry and lock/suspend/recovery still need
+acceptance. Development 0.5.0 remains open and stopped on synthetic data; obtain approval
+before closing it. The external portable Production instance was left untouched.
 Export and manual corrections remain deferred; do not expand this task to include them.

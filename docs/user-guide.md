@@ -45,6 +45,8 @@ working graphics driver are required. Clean-machine compatibility is still being
 ## Choose an activity
 
 - Type in **Search projects** to filter by project title or directory slug.
+- Open the Project dropdown to see matches. Search ignores case, filters projects
+  rather than tasks/history, and does not change the current tracked activity.
 - Select a project and optionally an unfinished task from its current cycle.
 - Choose **Unassigned focus** when no project is appropriate.
 - Add an optional note to describe the session.
@@ -125,8 +127,9 @@ checkpoint; time after it is excluded. Restarting never counts the time the app 
 
 Open **Focus history and reports** and choose a period:
 
-1. Type **From** and **Through** dates as `YYYY-MM-DD`, or use either **Calendar**
-   button to choose a day. Navigate months or change the year. Both dates are included.
+1. Type **From** and **Until** dates as `YYYY-MM-DD`, or use either **Calendar** button.
+   Enter times as `HH:MM`: From is included, Until is excluded. `24:00` for Until means
+   the end of that date; defaults `00:00` to `24:00` select whole days.
 2. Choose **Time zone** from the dropdown; search for a city/region or choose UTC.
 3. Results load automatically. Today, Last 7 days, and Last 30 days set quick ranges;
    **Refresh report** is also available for an immediate refresh.
@@ -138,14 +141,21 @@ fields to retry. An earlier valid result keeps its own period and snapshot label
 ## Understand the totals
 
 - **Saved focus** includes finalized sessions in the selected period.
-- **Running (not finalized)** shows the active session separately.
-- **Needs review (excluded)** shows saved interrupted time awaiting your decision.
+- **Running (not finalized)** is the active interval's elapsed time inside this filter.
+  It remains separate from Saved focus until the interval stops or switches.
+- **Needs review (excluded)** is interrupted checkpoint time inside the filter, awaiting
+  your recovery decision. Accept saved time moves it into Saved focus, excluding downtime.
 
-These categories are not combined into a misleading finalized total. Visible expanded
-reports update about every two seconds and after tracking changes. Filters remain
-editable while updating; typing briefly delays the next query. Hidden/collapsed reports
-pause automatic queries and refresh on return. Snapshot time identifies displayed data;
-failures retain the last valid result.
+Zero means no matching time, which can happen while tracking outside the filter; values
+under one second also display as zero. Hover on either label for its explanation.
+These categories are never combined into a misleading finalized total.
+
+Visible expanded reports poll every two seconds only while active time can grow inside
+the filter. Historical/future ranges and stopped tracking pause periodic queries. A
+boundary exit gets one final snapshot; relevant stop/edit/recovery events refresh once
+to reclassify time. Unrelated tracking changes do not reload historical results. Opening,
+changing filters, or manual Refresh still loads a result. Failures retain the last valid
+snapshot. Hidden/collapsed reports pause queries; typed filters remain debounced/editable.
 
 Expand **By project**, **By project and task**, or **By day** for breakdowns. Sources
 with the same project slug are kept separate; hover on a project total to see its source.
@@ -160,6 +170,22 @@ period. Start/end labels show the selected time zone's UTC offset, including DST
 Details show up to 200 recent matching sessions. Totals include every matching session,
 including older ones not shown in that list. Renamed, deleted, or archived projects do
 not erase existing history; sessions keep snapshots of the titles they recorded.
+
+<!-- pagebreak -->
+
+# Minute boundaries and time accounting
+
+## Choose precise intervals
+
+For example, From `2026-10-27 09:15` to Until `2026-10-27 10:30` includes exactly that
+75-minute window in the chosen timezone. Time at or after 10:30 is excluded. Adjacent
+windows therefore do not count the same time twice. To include the entire last date,
+use Until `24:00`; Until `00:00` means the start of that date.
+
+Non-midnight times repeated or skipped by a daylight-saving change are rejected rather
+than guessed. Choose another boundary or use UTC to specify the exact occurrence.
+Midnight retains the first valid start-of-day behavior, including historical date skips.
+This filtering never edits saved sessions or changes the tracking timer.
 
 ## How calendar time is counted
 

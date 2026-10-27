@@ -296,7 +296,7 @@ impl Desktop {
         if !split {
             ui.label("Changes reassign the entire current interval, including its elapsed time.");
         }
-        ui.add(egui::TextEdit::singleline(&mut self.project_search).hint_text("Search projects"));
+        ui.add(egui::TextEdit::singleline(&mut self.project_search).hint_text("Search projects")).on_hover_text("Filters the Project list by name or folder ID, ignoring case. Open the list to see matches. Search does not change the tracked activity.");
         let query = self.project_search.trim().to_lowercase();
         egui::ComboBox::from_id_salt("project")
             .selected_text(self.activity.label())
@@ -507,7 +507,7 @@ impl eframe::App for Desktop {
                 }
                 Action::Exit => self.command(tracking::Command::Exit),
                 Action::Tracking(tracking::Event::Report { id, result }) => {
-                    self.reports.receive(id, result)
+                    self.reports.receive(id, result.map(|report| *report))
                 }
                 Action::Tracking(
                     event @ (tracking::Event::State(_) | tracking::Event::Committed(_)),
@@ -543,11 +543,15 @@ impl eframe::App for Desktop {
                     if !self.ready {
                         self.activity = state.activity.clone();
                     }
+                    self.reports.tracking_changed(
+                        &state,
+                        completed,
+                        jiff::Timestamp::now().as_millisecond(),
+                    );
                     self.state = state;
                     self.ready = true;
                     if completed {
                         self.pending = false;
-                        self.reports.invalidate();
                     }
                 }
                 Action::Tracking(tracking::Event::Error(error)) => {

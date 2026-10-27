@@ -9,6 +9,8 @@ pub struct Request {
     pub from: String,
     pub through: String,
     pub timezone: String,
+    pub from_time: String,
+    pub through_time: String,
 }
 impl Default for Request {
     fn default() -> Self {
@@ -18,6 +20,8 @@ impl Default for Request {
             from: "1970-01-01".into(),
             through: "1970-01-01".into(),
             timezone: "UTC".into(),
+            from_time: "00:00".into(),
+            through_time: "24:00".into(),
         })
     }
 }
@@ -33,8 +37,69 @@ impl Request {
             from: first.to_string(),
             through: today.to_string(),
             timezone: timezone.into(),
+            from_time: "00:00".into(),
+            through_time: "24:00".into(),
         })
     }
+    pub fn bounds(&self) -> Result<(i64, i64)> {
+        let first: Date = self.from.parse()?;
+        let last: Date = self.through.parse()?;
+        let begin = parse_minute(&self.from_time, false)?;
+        let end = parse_minute(&self.through_time, true)?;
+        if (last, end) <= (first, begin) {
+            return Err(std::io::Error::other(
+                "Until must be later than From. The Until boundary is excluded.",
+            )
+            .into());
+        }
+        let zone = TimeZone::get(&self.timezone)?;
+        let start_ms = minute_boundary(first, begin, &zone)?;
+        let end_ms = minute_boundary(last, end, &zone)?;
+        if end_ms < start_ms {
+            return Err(
+                std::io::Error::other("Until must follow From in the selected time zone.").into(),
+            );
+        }
+        Ok((start_ms, end_ms))
+    }
+}
+fn parse_minute(text: &str, allow_end: bool) -> Result<u16> {
+    let bytes = text.as_bytes();
+    if bytes.len() != 5
+        || bytes[2] != b':'
+        || ![bytes[0], bytes[1], bytes[3], bytes[4]]
+            .iter()
+            .all(u8::is_ascii_digit)
+    {
+        return Err(std::io::Error::other(
+            "Enter time as HH:MM (24:00 is allowed only for Until).",
+        )
+        .into());
+    }
+    let hour = (bytes[0] - b'0') as u16 * 10 + (bytes[1] - b'0') as u16;
+    let minute = (bytes[3] - b'0') as u16 * 10 + (bytes[4] - b'0') as u16;
+    if minute >= 60 || hour >= 24 && !(allow_end && hour == 24 && minute == 0) {
+        return Err(std::io::Error::other(
+            "Time must be 00:00-23:59; Until also accepts 24:00 for end of day.",
+        )
+        .into());
+    }
+    Ok(hour * 60 + minute)
+}
+fn minute_boundary(mut date: Date, minute: u16, zone: &TimeZone) -> Result<i64> {
+    if minute == 1440 {
+        date = date.tomorrow()?;
+    }
+    if minute == 0 || minute == 1440 {
+        return Ok(date
+            .to_zoned(zone.clone())?
+            .start_of_day()?
+            .timestamp()
+            .as_millisecond());
+    }
+    zone.to_ambiguous_zoned(date.at((minute/60) as i8,(minute%60) as i8,0,0)).unambiguous()
+        .map(|zoned|zoned.timestamp().as_millisecond())
+        .map_err(|_|std::io::Error::other("This local time is repeated or skipped by a clock change. Choose an unambiguous time or use UTC.").into())
 }
 #[derive(Clone, Debug)]
 pub struct Day {
@@ -54,9 +119,10 @@ pub struct Range {
 impl Range {
     pub fn new(request: &Request) -> Result<Self> {
         let mut date: Date = request.from.parse()?;
-        let last: Date = request.through.parse()?;
-        if last < date {
-            return Err(std::io::Error::other("Through date must not precede From date.").into());
+        let mut last: Date = request.through.parse()?;
+        let (start_ms, end_ms) = request.bounds()?;
+        if request.through_time == "00:00" {
+            last = last.yesterday()?;
         }
         let zone = TimeZone::get(&request.timezone)?;
         let mut days = Vec::new();
@@ -65,28 +131,28 @@ impl Range {
                 return Err(std::io::Error::other("Choose at most 3,660 days per report.").into());
             }
             let next = date.tomorrow()?;
-            let start_ms = date
+            let day_start = date
                 .to_zoned(zone.clone())?
                 .start_of_day()?
                 .timestamp()
                 .as_millisecond();
-            let end_ms = next
+            let day_end = next
                 .to_zoned(zone.clone())?
                 .start_of_day()?
                 .timestamp()
                 .as_millisecond();
             days.push(Day {
                 date: date.to_string(),
-                start_ms,
-                end_ms,
+                start_ms: day_start.max(start_ms),
+                end_ms: day_end.min(end_ms),
                 saved_ms: 0,
             });
             date = next;
         }
         Ok(Self {
             request: request.clone(),
-            start_ms: days[0].start_ms,
-            end_ms: days.last().unwrap().end_ms,
+            start_ms,
+            end_ms,
             days,
             zone,
         })
@@ -275,6 +341,8 @@ mod tests {
             from: from.into(),
             through: through.into(),
             timezone: timezone.into(),
+            from_time: "00:00".into(),
+            through_time: "24:00".into(),
         })
         .unwrap()
     }
@@ -288,6 +356,107 @@ mod tests {
             activity: Activity::default(),
             reason: "test".into(),
         }
+    }
+    fn minute_range(from: &str, start: &str, until: &str, end: &str, zone: &str) -> Range {
+        Range::new(&Request {
+            from: from.into(),
+            through: until.into(),
+            timezone: zone.into(),
+            from_time: start.into(),
+            through_time: end.into(),
+        })
+        .unwrap()
+    }
+    #[test]
+    fn minute_filters_clip_daily_totals_and_adjacent_ranges_exactly() {
+        let all = minute_range("2026-01-01", "23:30", "2026-01-02", "00:30", "UTC");
+        let start = all.start_ms;
+        let end = all.end_ms;
+        assert_eq!(end - start, 3_600_000);
+        let make = || {
+            record(
+                start - 30 * 60_000,
+                end + 30 * 60_000,
+                7_200_003,
+                State::Saved,
+            )
+        };
+        let report = compute(all, vec![make()], 0);
+        assert_eq!(
+            report.saved_ms,
+            report.range.days.iter().map(|d| d.saved_ms).sum::<u64>()
+        );
+        assert_eq!(report.range.days.len(), 2);
+        assert_eq!(report.range.days[0].start_ms, start);
+        assert_eq!(report.range.days[1].end_ms, end);
+        let first = compute(
+            minute_range("2026-01-01", "23:30", "2026-01-01", "24:00", "UTC"),
+            vec![make()],
+            0,
+        );
+        let second = compute(
+            minute_range("2026-01-02", "00:00", "2026-01-02", "00:30", "UTC"),
+            vec![make()],
+            0,
+        );
+        assert_eq!(first.saved_ms + second.saved_ms, report.saved_ms);
+        let utc = minute_range("2026-10-27", "06:15", "2026-10-27", "07:30", "UTC");
+        let local = minute_range(
+            "2026-10-27",
+            "09:15",
+            "2026-10-27",
+            "10:30",
+            "Europe/Istanbul",
+        );
+        assert_eq!((utc.start_ms, utc.end_ms), (local.start_ms, local.end_ms));
+    }
+    #[test]
+    fn minute_boundaries_reject_invalid_and_ambiguous_times() {
+        let mut request = Request {
+            from: "2026-10-27".into(),
+            through: "2026-10-27".into(),
+            timezone: "UTC".into(),
+            from_time: "09:15".into(),
+            through_time: "10:30".into(),
+        };
+        for text in ["9:15", "24:00", "09:60", "aa:bb", ""] {
+            request.from_time = text.into();
+            assert!(request.bounds().is_err());
+        }
+        request.from_time = "09:15".into();
+        for text in ["24:01", "09:15", "08:00"] {
+            request.through_time = text.into();
+            assert!(request.bounds().is_err());
+        }
+        request.timezone = "America/New_York".into();
+        request.from = "2026-03-08".into();
+        request.through = request.from.clone();
+        request.from_time = "02:15".into();
+        request.through_time = "03:30".into();
+        assert!(request.bounds().is_err());
+        request.from = "2026-11-01".into();
+        request.through = request.from.clone();
+        request.from_time = "01:30".into();
+        request.through_time = "02:30".into();
+        assert!(request.bounds().is_err());
+        request.timezone = "UTC".into();
+        assert!(request.bounds().is_ok());
+    }
+    #[test]
+    fn until_minute_is_excluded_and_until_midnight_does_not_add_an_extra_day() {
+        let range = minute_range("2026-01-01", "23:00", "2026-01-02", "00:00", "UTC");
+        assert_eq!(range.days.len(), 1);
+        let end = range.end_ms;
+        let start = range.start_ms;
+        let report = compute(
+            range,
+            vec![
+                record(end, end + 1000, 1000, State::Running),
+                record(start - 1000, start, 1000, State::Saved),
+            ],
+            0,
+        );
+        assert_eq!(report.matching_sessions, 0);
     }
     #[test]
     fn calendar_boundaries_handle_dst_midnight_gaps_and_skipped_dates() {
@@ -395,16 +564,22 @@ mod tests {
                 from: "invalid".into(),
                 through: "2026-01-01".into(),
                 timezone: "UTC".into(),
+                from_time: "00:00".into(),
+                through_time: "24:00".into(),
             },
             Request {
                 from: "2026-02-01".into(),
                 through: "2026-01-01".into(),
                 timezone: "UTC".into(),
+                from_time: "00:00".into(),
+                through_time: "24:00".into(),
             },
             Request {
                 from: "2026-01-01".into(),
                 through: "2026-01-01".into(),
                 timezone: "No/Such_Zone".into(),
+                from_time: "00:00".into(),
+                through_time: "24:00".into(),
             },
         ] {
             assert!(Range::new(&request).is_err());

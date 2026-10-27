@@ -4,6 +4,17 @@ Updated: 2026-10-27.
 
 ## State
 
+T-0014 implements version 0.5.0: tray status is a filled green light (running) or hollow
+gray ring (stopped), without transport symbols. Reports accept minute From/Until fields,
+start included/end excluded, with 24:00 as end of day. Whole-day presets remain intact;
+non-midnight DST gaps/folds are rejected, midnight retains first-valid-day behavior.
+Daily buckets clip to exact boundaries. Periodic refresh runs only while active time
+grows inside the filter; final boundary/affected stop/edit/recovery updates run once.
+Unrelated activity no longer reloads history. Search and unfinished/review totals have
+hover/guide explanations. Active-start timestamps are read into snapshots; SQLite schema
+remains two. See ADR-0014. T-0002/T-0005 remain manual gates, not missing core features;
+deferred export, saved-history edits, shortcuts, autostart and installer are not delivered.
+
 T-0013 implements version 0.4.0: visible expanded reports refresh every two seconds
 and on committed tracking changes, with a single in-flight request, editable/debounced
 filters, stale-parameter reply rejection, and last-good-result retention. Date fields
@@ -112,18 +123,26 @@ Clean-machine runtime compatibility remains unverified.
 ## Next step
 
 Use dist/AttentionFocus-VERSION-windows-x64.zip for production and
-target/debug/attention-focus.exe for Development. No app was launched during T-0013.
-Windows discovery timed out twice; initialization also timed out after reset. Verify
-calendar/timezone controls, automatic reporting, topmost restore, tooltip project and
-theme contrast, then immediate
-picker changes, edit-mode timing, recent ordering, and the
-pinned buttons, two simultaneous visible profiles, and remaining T-0005/T-0002 tracking,
-tray, geometry, and lifecycle checks in Development. At the last read-only inspection,
-a portable 0.2.0 Production copy outside the repository was running against schema one.
-Do not equate free canonical build outputs with no app running, and do not stop or
-replace the external copy automatically. Never create fake Production time.
+target/debug/attention-focus.exe for Development. The Windows helper recovered during
+T-0014. Development 0.5.0 remains open and stopped with synthetic projects under ignored
+target/manual-instance; a short synthetic interval was saved only in Development.
+Its EXE is locked until the user exits or approves our closing it. The external portable
+Production copy stayed open and untouched; never stop/replace it or create fake
+Production time. Complete real tray state/click, geometry, topmost restoration,
+timezone dropdown, task switching/edit-mode/recency and lock/suspend/recovery acceptance
+in Development. T-0002 is ready now that its tooling blocker is resolved; T-0005 remains
+in progress. Clean-machine runtime verification is also outstanding.
 
 ## Verification and limitations
+
+T-0014: 51 Rust tests, five package tests, formatting and Clippy passed. Both 0.5.0
+EXEs and automatic ZIP passed verify-release versions/icons/fingerprints/stamp/members/
+hashes. All seven PDF pages were rendered and inspected; final PDF matched the preview.
+Native Development checks verified synthetic source settings, project search/dropdown,
+stopped selection caption, calendar selection and minute entry. A historical report
+kept its snapshot while tracking; Today enabled live Running time; Stop transferred
+it to Saved and paused polling. No Production history was opened for writing. Actual
+tray rendering/interactions and remaining desktop lifecycle gates are not claimed.
 
 T-0013: 45 Rust tests, five package tests, formatting, and Clippy pass. Both 0.4.0 EXEs
 and automatic ZIP built; verify-release passed versions/icons/fingerprint/stamp/members/

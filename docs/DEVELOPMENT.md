@@ -131,8 +131,8 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
   Unreviewed interrupted time is excluded and flagged. Windows controls tooltip delay.
 - Right click opens Show Focus, Start/Stop, and Exit.
 - Permanent file/window/taskbar/Task Manager icons are neutral blue diamonds, purple
-  for debug Development. Running tray states use green play; stopped states use gray
-  pause bars. Development tray states have a purple D badge. Identity never implies running.
+  for debug Development. Running tray states use a filled green status light; stopped
+  states use a hollow gray ring. Development retains a D badge. No transport-button symbols.
 - Exit saves the running session before terminating. Restart never resumes silently.
 - Checkpoints are saved every ten seconds. Interrupted records require review before
   starting again; accepting recovery keeps only the last checkpoint and excludes downtime.
@@ -156,11 +156,13 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
   EditCurrent only reassigns the active interval. Reports preserve history independently
   of current source availability or archival.
 - Search projects by imported title or slug. Search does not change active focus.
-- Expand Focus history and reports, choose inclusive From/Through dates and an IANA
+- Expand Focus history and reports, choose minute-precise From/Until boundaries and an IANA
   timezone, then refresh. Today/Last 7 days/Last 30 days use the chosen timezone.
 - Reports show saved totals by project, project/task, and local calendar day. Live and
   unreviewed checkpoint time are separate. Visible expanded reports refresh every two
-  seconds and after tracking commits; collapsed/hidden views stop queries. Only one
+  seconds only while current active time grows inside the filter. Relevant committed
+  changes refresh affected history once; unrelated changes and collapsed/hidden views
+  do not query. From is included; Until is excluded, with 24:00 as end of day. Only one
   query is in flight. Debounced editable filters reject superseded replies and retain
   the last good snapshot on error. All matches contribute; details show the newest 200.
 - Dates support editable text and calendar popups; timezones use a searchable bundled

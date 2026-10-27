@@ -51,7 +51,7 @@ def render(output: Path) -> None:
         if not line: i+=1; continue
         if line=="<!-- pagebreak -->": story.append(PageBreak()); i+=1; continue
         if line=="<!-- icon-legend -->":
-            legend=[("app","Application / Production","Blue diamond: identity only, never a running indicator."),("running","Production running","Green play symbol: tracking is active."),("stopped","Production stopped","Gray pause bars: tracking is stopped."),("app-development","Application / Development","Purple diamond: development identity only."),("running-development","Development running","Green play symbol with a purple D badge."),("stopped-development","Development stopped","Gray pause bars with a purple D badge.")]
+            legend=[("app","Application / Production","Blue diamond: identity only, never a running indicator."),("running","Production running","Filled green status light: tracking is active."),("stopped","Production stopped","Hollow gray status ring: tracking is stopped."),("app-development","Application / Development","Purple diamond: development identity only."),("running-development","Development running","Filled green status light with a purple D badge."),("stopped-development","Development stopped","Hollow gray status ring with a purple D badge.")]
             rows=[[icon_image(directory,name),Paragraph(f"<b>{title}</b><br/>{description}",styles["GuideBody"])] for name,title,description in legend]
             table=Table(rows,colWidths=[42,445],hAlign="LEFT")
             table.setStyle(TableStyle([("VALIGN",(0,0),(-1,-1),"MIDDLE"),("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#f2f5fa")),("LINEBELOW",(0,0),(-1,-2),0.4,colors.white),("TOPPADDING",(0,0),(-1,-1),2),("BOTTOMPADDING",(0,0),(-1,-1),2)]))

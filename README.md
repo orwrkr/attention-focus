@@ -16,10 +16,11 @@ default; disable the checkbox to reassign the entire current interval instead. W
 stopped, a picker change saves the next tray-start activity. The upper caption identifies
 the confirmed activity. Project/task lists put the most recently tracked choice first.
 Notes alone remain draft until explicitly applied. Text fields support the clipboard.
-Search projects in the picker. Focus history and reports shows inclusive date ranges
+Search projects in the picker. Focus history and reports shows minute-precise ranges
 in a chosen time zone, saved totals by project/task/day, and up to 200 recent sessions.
 Running time and unreviewed checkpoints are shown separately from saved totals.
-Expanded visible reports update automatically. Dates support Calendar popups and
+Expanded visible reports update periodically only while tracking time grows inside
+the filter; affected stop/edit/recovery events refresh once. Dates support Calendar popups and
 timezones have a searchable list. Stay on top is remembered per profile. Tray tooltips
 include the current project; secondary text uses a readable blue accent. Normal
 headers show the app/version; Development remains identified.
@@ -77,8 +78,8 @@ Do not commit personal settings, databases, or exports.
 
 Read the English [user guide](docs/user-guide.md). The build ships its PDF, third-party
 notices, and a version/hash manifest with the EXE in AttentionFocus-VERSION-windows-x64.zip.
-Application icons are neutral blue (purple for Development); only the tray's green play
-or gray pause icon indicates tracking. Development tray icons have a purple D badge.
+Application icons are neutral blue (purple for Development); a filled green tray light
+means tracking and a hollow gray ring means stopped. Development tray icons have a D badge.
 
 For PDF build dependencies, run `./scripts/setup-docs.ps1` once. Use
 `./scripts/export-user-guide.ps1` to re-export the PDF and automatically refresh the ZIP,

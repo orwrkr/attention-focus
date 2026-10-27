@@ -22,6 +22,10 @@ pub struct Panel {
     through_calendar: Calendar,
     zones: Vec<String>,
     zone_search: String,
+    active_start: Option<i64>,
+    needs_review: bool,
+    growing: bool,
+    was_open: bool,
 }
 
 impl Default for Panel {
@@ -49,6 +53,10 @@ impl Default for Panel {
             through_calendar: Calendar::default(),
             zones,
             zone_search: String::new(),
+            active_start: None,
+            needs_review: false,
+            growing: false,
+            was_open: false,
         }
     }
 }
@@ -82,29 +90,87 @@ impl Panel {
     pub fn invalidate(&mut self) {
         self.dirty = true;
     }
+    pub fn tracking_changed(&mut self, state: &tracking::Snapshot, committed: bool, wall_ms: i64) {
+        let next = if state.running {
+            state.active_start_ms
+        } else {
+            None
+        };
+        if committed || self.active_start != next || self.needs_review != state.needs_review {
+            if self.request.bounds().is_ok_and(|(begin, end)| {
+                [self.active_start, next]
+                    .into_iter()
+                    .flatten()
+                    .any(|start| start < end && wall_ms >= begin && wall_ms >= start)
+            }) {
+                self.dirty = true;
+            }
+            if self.needs_review != state.needs_review
+                && self.report.as_ref().is_some_and(|report| {
+                    report.range.request == self.request
+                        && (report.running_ms > 0
+                            || report.review_ms > 0
+                            || report
+                                .history
+                                .iter()
+                                .any(|row| row.record.state != reports::State::Saved))
+                })
+            {
+                self.dirty = true;
+            }
+        }
+        self.active_start = next;
+        self.needs_review = state.needs_review;
+    }
     fn edited(&mut self, now: Instant) {
         self.dirty = true;
         self.debounce = Some(now + Duration::from_millis(350));
     }
-    fn tick(&mut self, commands: &SyncSender<tracking::Command>, open: bool, now: Instant) {
-        if !open || self.debounce.is_some_and(|deadline| now < deadline) {
+    fn tick_at(
+        &mut self,
+        commands: &SyncSender<tracking::Command>,
+        open: bool,
+        now: Instant,
+        wall_ms: i64,
+    ) {
+        if !open {
+            self.was_open = false;
+            return;
+        }
+        if !self.was_open {
+            self.dirty = true;
+            self.was_open = true;
+        }
+        if self.debounce.is_some_and(|deadline| now < deadline) {
             return;
         }
         self.debounce = None;
         if self.pending {
             return;
         }
-        if !self.dirty
-            && self
-                .last_attempt
-                .is_some_and(|last| now.saturating_duration_since(last) < REFRESH_INTERVAL)
-        {
-            return;
-        }
         if let Some(days) = self.preset
             && let Ok(request) = reports::Request::recent(days, &self.request.timezone)
+            && request != self.request
         {
             self.request = request;
+            self.dirty = true;
+        }
+        let growing = self.active_start.is_some_and(|start| {
+            self.request
+                .bounds()
+                .is_ok_and(|(begin, end)| start <= wall_ms && begin <= wall_ms && wall_ms < end)
+        });
+        if self.growing && !growing {
+            self.dirty = true;
+        }
+        self.growing = growing;
+        if !self.dirty
+            && (!growing
+                || self
+                    .last_attempt
+                    .is_some_and(|last| now.saturating_duration_since(last) < REFRESH_INTERVAL))
+        {
+            return;
         }
         self.last_attempt = Some(now);
         self.dirty = false;
@@ -134,14 +200,20 @@ impl Panel {
                 egui::Grid::new("report-range")
                     .num_columns(2)
                     .show(ui, |ui| {
-                        ui.label("From (YYYY-MM-DD)");
+                        ui.label("From (included)");
                         dates_changed |=
                             self.from_calendar.show(ui, &mut self.request.from, "from");
                         ui.end_row();
-                        ui.label("Through (inclusive)");
+                        ui.label("From time (HH:MM)");
+                        dates_changed |= ui.add(egui::TextEdit::singleline(&mut self.request.from_time).desired_width(70.0)).changed();
+                        ui.end_row();
+                        ui.label("Until (excluded)");
                         dates_changed |=
                             self.through_calendar
                                 .show(ui, &mut self.request.through, "through");
+                        ui.end_row();
+                        ui.label("Until time (HH:MM)");
+                        dates_changed |= ui.add(egui::TextEdit::singleline(&mut self.request.through_time).desired_width(70.0)).on_hover_text("24:00 means the end of the selected date. The Until boundary is excluded.").changed();
                         ui.end_row();
                         ui.label("Time zone");
                         egui::ComboBox::from_id_salt("report-timezone")
@@ -204,9 +276,7 @@ impl Panel {
             if !ready {
                 ui.label("History is not available yet.");
             }
-            if self.pending {
-                ui.weak("Updating report...");
-            }
+            ui.weak(if self.pending {"Updating report..."} else if self.growing {"Auto-refresh: tracking is inside this range"} else {"Auto-refresh paused: no tracking time is growing in this range"});
             if let Some(error) = &self.error {
                 ui.colored_label(egui::Color32::LIGHT_RED, error);
             }
@@ -217,7 +287,12 @@ impl Panel {
             }
         });
         let open = response.body_returned.is_some() && ui.is_visible();
-        self.tick(commands, ready && open, now);
+        self.tick_at(
+            commands,
+            ready && open,
+            now,
+            jiff::Timestamp::now().as_millisecond(),
+        );
         if open && ready {
             ui.ctx()
                 .request_repaint_after(self.debounce.map_or(REFRESH_INTERVAL, |deadline| {
@@ -228,19 +303,20 @@ impl Panel {
     fn results(ui: &mut egui::Ui, report: &reports::Report) {
         let request = &report.range.request;
         ui.label(format!(
-            "Results: {} through {} | {}",
-            request.from, request.through, request.timezone
+            "Results: {} {} to {} {} (end excluded) | {}",
+            request.from,
+            request.from_time,
+            request.through,
+            request.through_time,
+            request.timezone
         ));
         ui.weak(format!(
             "Snapshot: {}",
             report.range.format_time(report.generated_ms)
         ));
         ui.strong(format!("Saved focus: {}", duration(report.saved_ms)));
-        ui.label(format!(
-            "Running (not finalized): {} | Needs review (excluded): {}",
-            duration(report.running_ms),
-            duration(report.review_ms)
-        ));
+        ui.label(format!("Running (not finalized): {}",duration(report.running_ms))).on_hover_text("Elapsed time from the active interval clipped to this filter. It is not included in Saved focus until the interval ends.");
+        ui.label(format!("Needs review (excluded): {}",duration(report.review_ms))).on_hover_text("Saved checkpoint time from interrupted intervals within this filter. It is excluded from Saved focus until you accept recovery.");
         for diagnostic in &report.diagnostics {
             ui.colored_label(egui::Color32::YELLOW, diagnostic);
         }
@@ -377,6 +453,8 @@ mod tests {
                 from: "2026-10-01".into(),
                 through: "2026-10-02".into(),
                 timezone: "UTC".into(),
+                from_time: "00:00".into(),
+                through_time: "24:00".into(),
             },
             preset: None,
             ..Panel::default()
@@ -386,23 +464,138 @@ mod tests {
         reports::compute(reports::Range::new(request).unwrap(), Vec::new(), 1_000_000)
     }
     #[test]
-    fn auto_refresh_stops_when_closed_bounds_inflight_and_obeys_interval() {
+    fn only_active_tracking_inside_current_filter_is_polled_periodically() {
+        for active in [false, true] {
+            for location in [-1, 0, 1] {
+                let mut panel = fixed();
+                let (begin, end) = panel.request.bounds().unwrap();
+                let wall = match location {
+                    -1 => begin - 1000,
+                    0 => begin + 1000,
+                    _ => end + 1000,
+                };
+                panel.active_start = active.then_some(wall - 1000);
+                let (sender, receiver) = mpsc::sync_channel(8);
+                let now = Instant::now();
+                panel.tick_at(&sender, true, now, wall);
+                receiver.try_recv().unwrap();
+                panel.receive(panel.request_id, Ok(response(&panel.request)));
+                panel.tick_at(&sender, true, now + REFRESH_INTERVAL, wall);
+                assert_eq!(receiver.try_recv().is_ok(), active && location == 0);
+            }
+        }
+    }
+    #[test]
+    fn leaving_filter_gets_one_final_snapshot_then_stop_reclassifies_overlap_once() {
         let mut panel = fixed();
+        panel.request.through = panel.request.from.clone();
+        panel.request.through_time = "00:02".into();
+        let (begin, end) = panel.request.bounds().unwrap();
+        panel.active_start = Some(begin);
         let (sender, receiver) = mpsc::sync_channel(8);
         let now = Instant::now();
-        panel.tick(&sender, false, now);
+        panel.tick_at(&sender, true, now, end - 1000);
+        receiver.try_recv().unwrap();
+        panel.receive(panel.request_id, Ok(response(&panel.request)));
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL, end);
+        receiver.try_recv().unwrap();
+        panel.receive(panel.request_id, Ok(response(&panel.request)));
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL * 2, end + 1000);
         assert!(receiver.try_recv().is_err());
-        panel.tick(&sender, true, now);
+        panel.tracking_changed(&tracking::Snapshot::default(), true, end + 10_000);
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL * 3, end + 10_000);
+        receiver.try_recv().unwrap();
+        panel.receive(panel.request_id, Ok(response(&panel.request)));
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL * 4, end + 20_000);
+        assert!(receiver.try_recv().is_err());
+    }
+    #[test]
+    fn unrelated_commits_do_not_reload_history_but_recovery_acceptance_does() {
+        let mut panel = fixed();
+        let (begin, end) = panel.request.bounds().unwrap();
+        let now = Instant::now();
+        let (sender, receiver) = mpsc::sync_channel(8);
+        panel.tick_at(&sender, true, now, end + 1000);
+        receiver.try_recv().unwrap();
+        panel.receive(panel.request_id, Ok(response(&panel.request)));
+        panel.tracking_changed(
+            &tracking::Snapshot {
+                running: true,
+                active_start_ms: Some(end + 500),
+                ..tracking::Snapshot::default()
+            },
+            true,
+            end + 1000,
+        );
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL, end + 2000);
+        assert!(receiver.try_recv().is_err());
+        panel.tracking_changed(&tracking::Snapshot::default(), true, end + 3000);
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL * 2, end + 4000);
+        assert!(receiver.try_recv().is_err());
+        panel.report = Some(reports::compute(
+            reports::Range::new(&panel.request).unwrap(),
+            vec![reports::Record {
+                id: 1,
+                start_ms: begin,
+                end_ms: begin + 1000,
+                elapsed_ms: 1000,
+                state: reports::State::Review,
+                activity: tracking::Activity::default(),
+                reason: "crash".into(),
+            }],
+            end,
+        ));
+        panel.needs_review = true;
+        panel.tracking_changed(&tracking::Snapshot::default(), true, end + 5000);
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL * 3, end + 5000);
+        assert!(receiver.try_recv().is_ok());
+        panel.receive(panel.request_id, Ok(response(&panel.request)));
+        panel.report = Some(reports::compute(
+            reports::Range::new(&panel.request).unwrap(),
+            vec![reports::Record {
+                id: 2,
+                start_ms: begin,
+                end_ms: begin + 1000,
+                elapsed_ms: 1000,
+                state: reports::State::Running,
+                activity: tracking::Activity::default(),
+                reason: String::new(),
+            }],
+            begin + 1000,
+        ));
+        panel.needs_review = false;
+        panel.active_start = Some(begin);
+        panel.tracking_changed(
+            &tracking::Snapshot {
+                needs_review: true,
+                ..tracking::Snapshot::default()
+            },
+            false,
+            begin - 1000,
+        );
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL * 4, begin - 1000);
+        assert!(receiver.try_recv().is_ok());
+    }
+    #[test]
+    fn auto_refresh_stops_when_closed_bounds_inflight_and_obeys_interval() {
+        let mut panel = fixed();
+        let wall = panel.request.bounds().unwrap().0 + 1000;
+        panel.active_start = Some(wall - 1000);
+        let (sender, receiver) = mpsc::sync_channel(8);
+        let now = Instant::now();
+        panel.tick_at(&sender, false, now, wall);
+        assert!(receiver.try_recv().is_err());
+        panel.tick_at(&sender, true, now, wall);
         assert!(matches!(
             receiver.try_recv().unwrap(),
             tracking::Command::Report { .. }
         ));
-        panel.tick(&sender, true, now + Duration::from_secs(10));
+        panel.tick_at(&sender, true, now + Duration::from_secs(10), wall);
         assert!(receiver.try_recv().is_err());
         panel.receive(panel.request_id, Ok(response(&panel.request)));
-        panel.tick(&sender, true, now + Duration::from_millis(1500));
+        panel.tick_at(&sender, true, now + Duration::from_millis(1500), wall);
         assert!(receiver.try_recv().is_err());
-        panel.tick(&sender, true, now + REFRESH_INTERVAL);
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL, wall);
         assert!(matches!(
             receiver.try_recv().unwrap(),
             tracking::Command::Report { .. }
@@ -411,25 +604,27 @@ mod tests {
     #[test]
     fn edited_filters_reject_stale_replies_and_debounce_without_losing_commit_invalidation() {
         let mut panel = fixed();
+        let wall = panel.request.bounds().unwrap().0 + 1000;
+        panel.active_start = Some(wall - 1000);
         let (sender, receiver) = mpsc::sync_channel(8);
         let now = Instant::now();
-        panel.tick(&sender, true, now);
+        panel.tick_at(&sender, true, now, wall);
         receiver.try_recv().unwrap();
         let old = response(&panel.request);
         panel.request.through = "2026-10-03".into();
         panel.edited(now);
         panel.receive(panel.request_id, Ok(old));
         assert!(panel.report.is_none());
-        panel.tick(&sender, true, now + Duration::from_millis(349));
+        panel.tick_at(&sender, true, now + Duration::from_millis(349), wall);
         assert!(receiver.try_recv().is_err());
-        panel.tick(&sender, true, now + Duration::from_millis(350));
+        panel.tick_at(&sender, true, now + Duration::from_millis(350), wall);
         receiver.try_recv().unwrap();
         let id = panel.request_id;
         panel.receive(id - 1, Err("Stale failure".into()));
         assert!(panel.pending);
         panel.invalidate();
         panel.receive(id, Ok(response(&panel.request)));
-        panel.tick(&sender, true, now + Duration::from_millis(351));
+        panel.tick_at(&sender, true, now + Duration::from_millis(351), wall);
         assert!(matches!(
             receiver.try_recv().unwrap(),
             tracking::Command::Report { .. }
@@ -439,22 +634,24 @@ mod tests {
     #[test]
     fn report_errors_keep_last_good_result_and_back_off_after_full_queue() {
         let mut panel = fixed();
+        let wall = panel.request.bounds().unwrap().0 + 1000;
+        panel.active_start = Some(wall - 1000);
         let (sender, receiver) = mpsc::sync_channel(1);
         let now = Instant::now();
         panel.report = Some(response(&panel.request));
-        panel.tick(&sender, true, now);
+        panel.tick_at(&sender, true, now, wall);
         receiver.try_recv().unwrap();
         panel.receive(panel.request_id, Err("Synthetic read failure".into()));
         assert!(panel.report.is_some());
         assert!(panel.error.is_some());
         sender.try_send(tracking::Command::Stop).unwrap();
         panel.invalidate();
-        panel.tick(&sender, true, now);
+        panel.tick_at(&sender, true, now, wall);
         assert!(!panel.pending);
         receiver.try_recv().unwrap();
-        panel.tick(&sender, true, now + Duration::from_secs(1));
+        panel.tick_at(&sender, true, now + Duration::from_secs(1), wall);
         assert!(receiver.try_recv().is_err());
-        panel.tick(&sender, true, now + REFRESH_INTERVAL);
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL, wall);
         assert!(matches!(
             receiver.try_recv().unwrap(),
             tracking::Command::Report { .. }
