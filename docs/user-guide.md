@@ -53,17 +53,40 @@ The selected project must be available in the loaded source. Completed or archiv
 projects and unavailable tasks cannot start a new session. Refresh MetaPlan or choose
 another activity if the window reports that a selection is unavailable.
 
-## Apply, start, stop, or switch
+## Change projects and tasks
 
 - **Start tracking** starts with the activity currently shown in the picker.
-- **Apply selection** saves the choice while stopped, including for the next tray start.
-- **Stop tracking** saves elapsed time and leaves the applied activity selected.
-- **Switch focus** ends the current session and begins the new activity at the same
-  boundary. Changing a picker or note alone does not change the active session.
+- Choosing a project or task while stopped saves the next activity, including for tray
+  starts. It does not start tracking.
+- While tracking, choosing another project or task immediately saves the old interval
+  and begins a new one at the same boundary. This is the default behavior.
+- Disable **Start a new interval when project or task changes** to correct the entire
+  current interval instead. All its elapsed time moves to the new project/task; its
+  original start stays unchanged. Saved earlier intervals are never changed. The option
+  is remembered separately for Production and Development.
+- Choosing the already selected project keeps its task and does not create an interval.
+- **Stop tracking** saves elapsed time and leaves the saved activity selected.
 
-The window shows the confirmed activity above the picker. Unapplied changes are
-identified explicitly. The tray's state changes only after the history update is saved.
-If saving fails, read the error and retry; do not assume a stop or switch succeeded.
+The heading **Tracking now (saved activity)** shows what the current timer belongs to.
+When stopped, **Next tracking activity (saved selection)** shows the next tray-start
+choice. These update after saving succeeds. During a save the controls briefly pause;
+on failure the confirmed heading stays unchanged and a retry button is available.
+
+Notes alone stay draft. Apply them with **Start new interval with changes** or
+**Save changes to current interval**, according to the option above; while stopped use
+**Apply selection**. A subsequent project/task change also includes the draft note.
+
+## Find recent choices
+
+Both project and task lists put the most recently tracked choice first, including
+Unassigned focus and No task. Unused choices follow alphabetically. Simply opening,
+searching, or choosing a next activity while stopped does not count as tracking use.
+Order survives restart and is seeded from existing history after updating. Separate
+sources and Production/Development keep independent usage.
+
+<!-- pagebreak -->
+
+# Tray controls and interruptions
 
 ## Use the tray and window controls
 
@@ -178,6 +201,9 @@ To back up history and settings, exit the relevant profile first and copy that e
 profile's data directory to a safe location. Do not copy only an open SQLite database
 while it may have a journal. Schema upgrades make a local backup before migrating old
 history. These backups complement, rather than replace, your own backups.
+
+Version 0.3 upgrades history to schema two and creates a `focus-before-v2-*.sqlite3`
+backup for schema-one databases. Earlier EXEs cannot open the upgraded history.
 
 ## Install an update
 

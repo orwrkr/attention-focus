@@ -4,6 +4,16 @@ Updated: 2026-10-27.
 
 ## State
 
+T-0012 implements version 0.3.0: project/task picker changes apply immediately. While
+running they create an atomic new interval by default; the per-profile checkbox can
+instead reassign the entire active interval without resetting its start/timer. While
+stopped they save the next activity without starting. The upper caption explicitly
+identifies committed tracking activity or the saved next selection. Notes alone remain
+draft until applied or included in a picker change. Projects/tasks sort by durable
+tracking-use order with deterministic alphabetical ties, scoped by source and profile.
+Schema two adds preferences/recency and backs up schema-one databases before one-time
+history backfill. See ADR-0012. Development and Production histories remain separate.
+
 T-0011 introduces version 0.2.0, neutral blue application icons and purple development
 identity; only tray states are green play/gray pause, with a D badge in Development.
 The common renderer feeds Windows resources, runtime window icons, tray icons, and the
@@ -92,13 +102,23 @@ Clean-machine runtime compatibility remains unverified.
 ## Next step
 
 Use dist/AttentionFocus-VERSION-windows-x64.zip for production and
-target/debug/attention-focus.exe for Development. No app was launched during T-0011.
-During T-0010 Windows discovery timed out on all three recovery attempts. Verify the
+target/debug/attention-focus.exe for Development. No app was launched during T-0012.
+Windows discovery timed out three times including reset during T-0012. Verify immediate
+picker changes, edit-mode timing, recent ordering, and the
 pinned buttons, two simultaneous visible profiles, and remaining T-0005/T-0002 tracking,
 tray, geometry, and lifecycle checks in Development. The earlier user-closed app remains
 closed according to the pre-build process inspection. Never create fake Production time.
 
 ## Verification and limitations
+
+T-0012: 39 Rust tests, five package tests, formatting, and Clippy pass. Both 0.3.0 EXEs
+and the automatically refreshed ZIP built and verify-release passed (versions, eight
+icon sizes each, exact members, build stamp, source fingerprint, and SHA-256 hashes).
+All six PDF pages visually inspected; the final PDF is byte-identical to that preview.
+New tests verify interval boundaries, current-interval edits, persisted/source-scoped
+recency and actual sorting, write rollback, backup/backfill and failed-migration rollback,
+plus recovery without auto-resume. Windows discovery timed out three times including
+reset. No app was launched or real profile/source data changed by development tools.
 
 T-0011: both 0.2.0 EXEs and the production ZIP built; 32 Rust tests, five Python tests,
 formatting, Clippy, output-lock checks, and PowerShell parsing pass. Verified file version

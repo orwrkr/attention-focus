@@ -79,7 +79,8 @@ The Windows LocalAppData known folder supplies fixed, independent profile direct
 - `%LOCALAPPDATA%/AttentionFocus/Development/`: debug/development data.
 - Each contains `window.ron` (geometry), `focus.sqlite3` (history/checkpoints/activity),
   and `source.sqlite3` (source identities and selected path).
-- A legacy database upgrade creates a `focus-before-v1-*.sqlite3` backup using SQLite.
+- Schema upgrades create `focus-before-v1-*.sqlite3` or `focus-before-v2-*.sqlite3`
+  backups using SQLite, according to the prior schema.
 - SQLite creates any journals/backups in the same profile directory.
 
 Legacy files directly under AttentionFocus are retained unchanged. New Production does
@@ -109,10 +110,17 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 
 - Startup restores the selected profile's window geometry and shows an English window.
 - Hide to tray and Exit are pinned above the scrolling content, including expanded reports.
-- A worker owns durable SQLite history. Choose a project and optional task or Unassigned
-  focus. Notes are optional. Start uses the draft selection; Apply selection saves it
-  for later tray starts. Switch focus closes the previous session and starts the next
-  in one transaction. Editing a picker alone does not change the active session.
+- A worker owns durable SQLite history. Project/task picker changes immediately save
+  the next selection while stopped, or begin a new interval by default while running.
+  The per-profile checkbox can instead reassign the entire active interval without
+  resetting its start/timer. Finalized history stays unchanged. Notes alone remain draft
+  until applied or included in another picker change. The upper caption identifies
+  confirmed state; controls pause during saves and failures expose retry actions.
+- Projects/tasks sort by durable tracking-use order, then deterministic alphabetical
+  ties. Unassigned and No task participate. Browsing and stopped selection do not
+  update recency. Source identity/path/slug isolates projects; task text distinguishes
+  tasks. Schema two backs up schema one to focus-before-v2-*.sqlite3, adds preferences
+  and recent-use tables, and seeds recency from existing session IDs. See ADR-0012.
 - Start/Stop in the window and tray use the same controller; the tray state changes
   only after the session update commits.
 - Closing the window or using Hide to tray keeps the process running.
@@ -144,8 +152,9 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 - Preview project names, statuses, priorities, archive placement, and unfinished tasks
   from the current cycle. Duplicate slugs are excluded; malformed/missing files produce
   diagnostics. Linked source files/directories are skipped; task paths are never followed.
-- MetaPlan is read only. Project/task attribution is saved with immutable title snapshots;
-  reports preserve history independently of current source availability or archival.
+- MetaPlan is read only. Finalized project/task snapshots retain recorded titles;
+  EditCurrent only reassigns the active interval. Reports preserve history independently
+  of current source availability or archival.
 - Search projects by imported title or slug. Search does not change active focus.
 - Expand Focus history and reports, choose inclusive From/Through dates and an IANA
   timezone, then refresh. Today/Last 7 days/Last 30 days use the chosen timezone.
@@ -178,6 +187,15 @@ The obsolete AttentionFocus-Update distribution was removed by T-0009. Always us
 scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 
 ## Verification record (2026-10-27)
+
+T-0012: 39 Rust tests, five packaging tests, formatting, and Clippy pass. Both 0.3.0 EXEs
+and the automatic ZIP build verified, including version/icon resources, fingerprint,
+stamp, allowlist, and hashes. All six PDF pages reviewed and matched byte-for-byte to
+the final guide. New tests cover both change modes, preserved boundaries/durations,
+finalized-history isolation, transactional rollback, durable/source-scoped ordering,
+schema-one backup/backfill, failed-backfill rollback, and no auto-resume after interruption.
+Windows discovery timed out three times including reset. No app was launched or real
+profile/source data changed; native picker/header interaction still needs manual review.
 
 T-0011: 0.2.0 Production and Development EXEs and versioned ZIP built. Verified version
 metadata and eight embedded neutral icon sizes per EXE. All five guide pages visually

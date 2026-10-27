@@ -21,6 +21,10 @@
 - Provide an English user guide and a PDF export script.
 - Automatically refresh a production ZIP with the EXE, guide PDF, and required notices.
 - Maintain consistent version metadata and appropriate versioned distribution filenames.
+- Clearly label the confirmed activity above the draft controls.
+- Project/task changes start a new interval by default, with a persistent opt-out to
+  edit the entire current interval without resetting its start.
+- Sort project/task choices by last tracking use, newest first.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

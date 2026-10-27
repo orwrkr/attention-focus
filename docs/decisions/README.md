@@ -17,5 +17,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0009](0009-focus-reports.md) | accepted | Date-range focus reports and timezone accounting |
 | [0010](0010-runtime-profiles.md) | accepted | Independent production/development and pinned actions |
 | [0011](0011-versioned-distribution.md) | accepted | Neutral status icons and versioned production packages |
+| [0012](0012-immediate-activity-changes.md) | accepted | Immediate interval changes and durable recent pickers |
 
-Next number: `0012`. Template: `templates/ADR.md` from the repository root.
+Next number: `0013`. Template: `templates/ADR.md` from the repository root.

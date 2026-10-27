@@ -75,6 +75,8 @@ pass the same boundary checks, including temporary files.
 
 - sources: local ID and canonical path.
 - settings: schema-versioned application options and selected source.
+- recent use: source/project/task identity and increasing committed-use order; updated
+  transactionally on start/switch/reassignment, never by browsing or stopped selection.
 - sessions: ID, source ID, project slug/title snapshot, optional task snapshot,
   start/end UTC timestamps, start offset, elapsed milliseconds, end reason,
   last checkpoint, and recovery status.
@@ -93,6 +95,9 @@ Do not claim a successful stop or switch until the transaction commits.
 | Idle / Start | Commit a new session, then show Running |
 | Running / Stop | Close the session; retain selection for a later Start |
 | Running / Switch | Close old and open new at one boundary in one transaction |
+| Idle / project or task picker change | Save the next activity; remain stopped |
+| Running / picker change, default mode | Atomically switch at one boundary |
+| Running / picker change, EditCurrent mode | Reassign the entire active interval; preserve ID/start/timer and finalized history |
 | Running / Start | Reject duplicate start; never create a second active row |
 | Running / lock or suspend | Close with an interruption reason; retain selection |
 | Interrupted / resume or unlock | Remain stopped until the user explicitly starts |
@@ -102,6 +107,10 @@ Do not claim a successful stop or switch until the transaction commits.
 
 No idle-input auto-stop: reading and thinking may involve no input. No automatic
 restart after unlock. Source priority and lifecycle statuses are never changed.
+
+The upper UI caption shows the committed activity, distinct from pending note drafts.
+Persist the picker mode independently per profile. Schema two backs up schema one and
+seeds recent use from existing history once; failed backfill rolls back. See ADR-0012.
 
 Use a monotonic clock for elapsed time and UTC for placement on the timeline.
 Persist checkpoints at most 15 seconds apart while running. On a missed heartbeat,

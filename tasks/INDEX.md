@@ -13,5 +13,6 @@
 | [T-0009](T-0009-release-output.md) | done | One Release Output | T-0008 |
 | [T-0010](T-0010-runtime-profiles.md) | done | Pinned Window Actions and Runtime Profiles | T-0009 |
 | [T-0011](T-0011-release-package-guide.md) | done | Status Icons, User Guide, and Versioned Packages | T-0010 |
+| [T-0012](T-0012-selection-switching.md) | done | Immediate Activity Changes and Recent Pickers | T-0011 |
 
 Task template: `templates/TASK.md` from the repository root.

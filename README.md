@@ -11,8 +11,11 @@ placement, and includes embedded application icons with running/stopped tray sta
 Click the tray to show the window; double-click to toggle tracking. Hover to see
 current session and total tracked time.
 Configure an Instance folder under MetaPlan source and projects, then choose a project
-and optional task. Start tracking or use Switch focus while running. The previous
-selection is retained for tray starts. Text fields support the system clipboard.
+and optional task. Changing a project/task while running starts a new interval by
+default; disable the checkbox to reassign the entire current interval instead. While
+stopped, a picker change saves the next tray-start activity. The upper caption identifies
+the confirmed activity. Project/task lists put the most recently tracked choice first.
+Notes alone remain draft until explicitly applied. Text fields support the clipboard.
 Search projects in the picker. Focus history and reports shows inclusive date ranges
 in a chosen time zone, saved totals by project/task/day, and up to 200 recent sessions.
 Running time and unreviewed checkpoints are shown separately from saved totals.

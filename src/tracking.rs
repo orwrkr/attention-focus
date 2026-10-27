@@ -25,6 +25,15 @@ pub struct Project {
     pub task: Option<String>,
 }
 impl Activity {
+    fn key(&self) -> ActivityKey {
+        ActivityKey {
+            project: self
+                .project
+                .as_ref()
+                .map(|p| (p.source_id, p.source_path.clone(), p.slug.clone())),
+            task: self.project.as_ref().and_then(|p| p.task.clone()),
+        }
+    }
     pub fn label(&self) -> &str {
         self.project
             .as_ref()
@@ -44,6 +53,22 @@ impl Activity {
         Ok(())
     }
 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct ActivityKey {
+    project: Option<(i64, String, String)>,
+    task: Option<String>,
+}
+#[derive(Clone, Debug)]
+pub struct RecentUse {
+    key: ActivityKey,
+    order: i64,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ChangeMode {
+    #[default]
+    NewInterval,
+    EditCurrent,
+}
 #[derive(Clone, Debug, Default)]
 pub struct Snapshot {
     pub running: bool,
@@ -52,6 +77,50 @@ pub struct Snapshot {
     pub completed: u64,
     pub needs_review: bool,
     pub activity: Activity,
+    pub change_mode: ChangeMode,
+    pub recent: Vec<RecentUse>,
+}
+impl Snapshot {
+    pub fn sort_projects(&self, choices: &mut [Activity]) {
+        choices.sort_by_cached_key(|a| {
+            (
+                std::cmp::Reverse(self.project_rank(a)),
+                a.label().to_lowercase(),
+                a.label().to_owned(),
+                a.key().project,
+            )
+        });
+    }
+    pub fn sort_tasks(&self, choices: &mut [Activity]) {
+        choices.sort_by_cached_key(|a| {
+            let label = a
+                .project
+                .as_ref()
+                .and_then(|p| p.task.as_deref())
+                .unwrap_or("No task");
+            (
+                std::cmp::Reverse(self.task_rank(a)),
+                label.to_lowercase(),
+                label.to_owned(),
+            )
+        });
+    }
+    pub fn project_rank(&self, activity: &Activity) -> i64 {
+        let key = activity.key();
+        self.recent
+            .iter()
+            .filter(|r| r.key.project == key.project)
+            .map(|r| r.order)
+            .max()
+            .unwrap_or(0)
+    }
+    pub fn task_rank(&self, activity: &Activity) -> i64 {
+        let key = activity.key();
+        self.recent
+            .iter()
+            .find(|r| r.key == key)
+            .map_or(0, |r| r.order)
+    }
 }
 pub enum Command {
     Toggle,
@@ -59,6 +128,8 @@ pub enum Command {
     Stop,
     Switch(Activity),
     Select(Activity),
+    ChangeActivity(Activity),
+    SetChangeMode(ChangeMode),
     AcceptRecovery,
     Report {
         id: u64,
@@ -103,7 +174,7 @@ impl Store {
         connection.busy_timeout(Duration::from_secs(2))?;
         connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")?;
         let version: i64 = connection.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version > 1 {
+        if version > 2 {
             return Err(invalid("History was created by a newer application version.").into());
         }
         if version == 0 {
@@ -135,6 +206,40 @@ impl Store {
                 INSERT INTO focus_selection VALUES(1, '{\"project\":null,\"note\":\"\"}'); PRAGMA user_version=1;")?;
             tx.commit()?;
         }
+        if version < 2 {
+            if version == 1 {
+                let file = tempfile::Builder::new()
+                    .prefix("focus-before-v2-")
+                    .suffix(".sqlite3")
+                    .tempfile_in(
+                        path.parent()
+                            .ok_or_else(|| invalid("Missing storage directory."))?,
+                    )?;
+                let mut destination = Connection::open(file.path())?;
+                {
+                    let backup = rusqlite::backup::Backup::new(&connection, &mut destination)?;
+                    backup.run_to_completion(64, Duration::from_millis(10), None)?;
+                }
+                destination.close().map_err(|(_, e)| e)?;
+                file.keep().map_err(|e| e.error)?;
+            }
+            let tx = connection.transaction()?;
+            tx.execute_batch("CREATE TABLE focus_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1), split_on_change INTEGER NOT NULL CHECK(split_on_change IN (0,1)));
+                INSERT INTO focus_preferences VALUES(1,1);
+                CREATE TABLE focus_recent(activity_key TEXT PRIMARY KEY, used_order INTEGER NOT NULL);
+                CREATE INDEX focus_recent_order ON focus_recent(used_order);")?;
+            {
+                let mut statement =
+                    tx.prepare("SELECT activity FROM focus_sessions ORDER BY id")?;
+                let rows = statement.query_map([], |r| r.get::<_, String>(0))?;
+                for text in rows {
+                    let activity: Activity = serde_json::from_str(&text?)?;
+                    Self::remember(&tx, &activity)?;
+                }
+            }
+            tx.execute_batch("PRAGMA user_version=2;")?;
+            tx.commit()?;
+        }
         connection.execute("UPDATE focus_sessions SET state='interrupted', ended_ms=checkpoint_ms, end_reason='crash' WHERE state='running'", [])?;
         let store = Self { connection };
         store.snapshot()?;
@@ -156,6 +261,39 @@ impl Store {
             "UPDATE focus_selection SET activity=?1 WHERE singleton=1",
             [serde_json::to_string(activity)?],
         )?;
+        Ok(())
+    }
+    fn change_mode(&self) -> Result<ChangeMode> {
+        let split: bool = self.connection.query_row(
+            "SELECT split_on_change FROM focus_preferences WHERE singleton=1",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(if split {
+            ChangeMode::NewInterval
+        } else {
+            ChangeMode::EditCurrent
+        })
+    }
+    fn remember(connection: &Connection, activity: &Activity) -> Result<()> {
+        activity.validate()?;
+        connection.execute("INSERT INTO focus_recent(activity_key,used_order) VALUES(?1,(SELECT COALESCE(MAX(used_order),0)+1 FROM focus_recent)) ON CONFLICT(activity_key) DO UPDATE SET used_order=excluded.used_order", [serde_json::to_string(&activity.key())?])?;
+        Ok(())
+    }
+    fn reassign(&mut self, activity: &Activity, now: i64, elapsed: u64) -> Result<()> {
+        activity.validate()?;
+        let text = serde_json::to_string(activity)?;
+        let tx = self.connection.transaction()?;
+        let changed = tx.execute("UPDATE focus_sessions SET activity=?1,checkpoint_ms=?2,elapsed_ms=?3 WHERE state='running' AND started_ms<=?2", params![text, now, bounded(elapsed)])?;
+        if changed != 1 {
+            return Err(invalid("No active interval can be edited at this time.").into());
+        }
+        tx.execute(
+            "UPDATE focus_selection SET activity=?1 WHERE singleton=1",
+            [text],
+        )?;
+        Self::remember(&tx, activity)?;
+        tx.commit()?;
         Ok(())
     }
     fn begin(&mut self, now: i64, activity: &Activity, switching: Option<u64>) -> Result<()> {
@@ -186,6 +324,7 @@ impl Store {
             "UPDATE focus_selection SET activity=?1 WHERE singleton=1",
             [text],
         )?;
+        Self::remember(&tx, activity)?;
         tx.commit()?;
         Ok(())
     }
@@ -217,6 +356,19 @@ impl Store {
         Ok(())
     }
     pub fn snapshot(&self) -> Result<Snapshot> {
+        let mut recent = Vec::new();
+        let mut statement = self
+            .connection
+            .prepare("SELECT activity_key,used_order FROM focus_recent ORDER BY used_order DESC")?;
+        let rows =
+            statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+        for row in rows {
+            let (key, order) = row?;
+            recent.push(RecentUse {
+                key: serde_json::from_str(&key)?,
+                order,
+            });
+        }
         let active: Option<i64> = self
             .connection
             .query_row(
@@ -238,6 +390,8 @@ impl Store {
             completed: count.max(0) as u64,
             needs_review: review,
             activity: self.selected()?,
+            change_mode: self.change_mode()?,
+            recent,
         })
     }
 
@@ -353,6 +507,32 @@ impl Engine {
                     return Err(invalid("Use Switch focus while tracking.").into());
                 }
                 self.store.select(&activity)?;
+            }
+            Some(Command::ChangeActivity(activity)) => {
+                if let Some(elapsed) = elapsed {
+                    if self.store.selected()? != activity {
+                        match self.store.change_mode()? {
+                            ChangeMode::NewInterval => self.start(now, &activity, Some(elapsed))?,
+                            ChangeMode::EditCurrent => {
+                                self.store.reassign(&activity, now.wall_ms, elapsed)?;
+                                self.checkpoint_mono = now.mono_ms;
+                            }
+                        }
+                    }
+                } else {
+                    if self.store.snapshot()?.needs_review {
+                        return Err(
+                            invalid("Review interrupted time before changing activity.").into()
+                        );
+                    }
+                    self.store.select(&activity)?;
+                }
+            }
+            Some(Command::SetChangeMode(mode)) => {
+                self.store.connection.execute(
+                    "UPDATE focus_preferences SET split_on_change=?1 WHERE singleton=1",
+                    [mode == ChangeMode::NewInterval],
+                )?;
             }
             Some(Command::Stop) => {
                 if let Some(elapsed) = elapsed {
@@ -549,6 +729,372 @@ mod tests {
     }
     fn engine(dir: &Path) -> Engine {
         Engine::new(Store::open(&dir.join("focus.sqlite3")).unwrap(), at(0))
+    }
+
+    #[test]
+    fn picker_changes_split_by_default_at_one_boundary_and_never_start_while_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        engine
+            .apply(Some(Command::ChangeActivity(activity("First"))), at(0))
+            .unwrap();
+        assert!(!engine.snapshot(at(0)).unwrap().running);
+        assert!(engine.snapshot(at(0)).unwrap().recent.is_empty());
+        assert_eq!(
+            engine.snapshot(at(0)).unwrap().change_mode,
+            ChangeMode::NewInterval
+        );
+        engine.apply(Some(Command::Toggle), at(10)).unwrap();
+        engine
+            .apply(Some(Command::ChangeActivity(activity("Second"))), at(510))
+            .unwrap();
+        let mut task = activity("Second");
+        task.project.as_mut().unwrap().task = Some("Another task".into());
+        engine
+            .apply(Some(Command::ChangeActivity(task.clone())), at(810))
+            .unwrap();
+        engine
+            .apply(Some(Command::ChangeActivity(task)), at(910))
+            .unwrap();
+        engine.apply(Some(Command::Stop), at(1010)).unwrap();
+        let state = engine.snapshot(at(1010)).unwrap();
+        assert_eq!((state.total_ms, state.completed), (1000, 3));
+        let intervals: Vec<(i64, i64)> = engine
+            .store
+            .connection
+            .prepare("SELECT started_ms,ended_ms FROM focus_sessions ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(
+            intervals,
+            vec![
+                (at(10).wall_ms, at(510).wall_ms),
+                (at(510).wall_ms, at(810).wall_ms),
+                (at(810).wall_ms, at(1010).wall_ms)
+            ]
+        );
+    }
+
+    #[test]
+    fn editing_current_interval_preserves_its_start_elapsed_and_finalized_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("Saved"))), at(0))
+            .unwrap();
+        engine
+            .apply(Some(Command::Switch(activity("Original"))), at(100))
+            .unwrap();
+        engine
+            .apply(
+                Some(Command::SetChangeMode(ChangeMode::EditCurrent)),
+                at(150),
+            )
+            .unwrap();
+        engine
+            .apply(
+                Some(Command::ChangeActivity(activity("Corrected"))),
+                at(300),
+            )
+            .unwrap();
+        let state = engine.snapshot(at(500)).unwrap();
+        assert_eq!(
+            (state.total_ms, state.completed, state.elapsed_ms),
+            (100, 1, 400)
+        );
+        assert_eq!(state.activity, activity("Corrected"));
+        assert_eq!(engine.started.unwrap().mono_ms, 100);
+        let rows: Vec<String> = engine
+            .store
+            .connection
+            .prepare("SELECT activity FROM focus_sessions ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            serde_json::from_str::<Activity>(&rows[0]).unwrap(),
+            activity("Saved")
+        );
+        assert_eq!(
+            serde_json::from_str::<Activity>(&rows[1]).unwrap(),
+            activity("Corrected")
+        );
+        // Reassignment durably checkpoints the corrected interval without restarting it.
+        drop(engine);
+        let restored = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        let state = restored.snapshot().unwrap();
+        assert_eq!(state.change_mode, ChangeMode::EditCurrent);
+        assert!(state.needs_review);
+        let checkpoint: i64 = restored
+            .connection
+            .query_row(
+                "SELECT elapsed_ms FROM focus_sessions WHERE state='interrupted'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(checkpoint, 200);
+    }
+
+    #[test]
+    fn recency_is_durable_source_scoped_and_drives_project_and_task_ordering() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let mut first = activity("Alpha");
+        first.project.as_mut().unwrap().task = Some("First task".into());
+        let mut second = first.clone();
+        second.project.as_mut().unwrap().task = Some("Second task".into());
+        for (ms, choice) in [
+            (0, activity("Zulu")),
+            (10, first.clone()),
+            (20, second.clone()),
+            (30, Activity::default()),
+        ] {
+            engine
+                .apply(
+                    Some(if ms == 0 {
+                        Command::Start(choice)
+                    } else {
+                        Command::ChangeActivity(choice)
+                    }),
+                    at(ms),
+                )
+                .unwrap();
+        }
+        engine.apply(Some(Command::Stop), at(40)).unwrap();
+        engine
+            .apply(Some(Command::ChangeActivity(activity("Zulu"))), at(50))
+            .unwrap();
+        let state = engine.snapshot(at(50)).unwrap();
+        let mut projects = vec![
+            activity("Zulu"),
+            activity("Unused"),
+            first.clone(),
+            Activity::default(),
+        ];
+        state.sort_projects(&mut projects);
+        assert_eq!(
+            projects.iter().map(|p| p.label()).collect::<Vec<_>>(),
+            vec!["Unassigned focus", "Alpha", "Zulu", "Unused"]
+        );
+        let mut no_task = first.clone();
+        no_task.project.as_mut().unwrap().task = None;
+        let mut tasks = vec![no_task, first.clone(), second.clone()];
+        state.sort_tasks(&mut tasks);
+        assert_eq!(tasks[0], second);
+        assert_eq!(tasks[1], first);
+        let mut other_source = first.clone();
+        other_source.project.as_mut().unwrap().source_id = 2;
+        assert_eq!(state.project_rank(&other_source), 0);
+        other_source.project.as_mut().unwrap().source_id = 1;
+        other_source.project.as_mut().unwrap().source_path = "another-source".into();
+        assert_eq!(state.project_rank(&other_source), 0);
+        let mut renamed = first.clone();
+        renamed.project.as_mut().unwrap().title = "New display title".into();
+        renamed.note = "Different note".into();
+        assert_eq!(state.project_rank(&renamed), state.project_rank(&first));
+        let mut unused = vec![activity("Unused Z"), activity("Unused A")];
+        state.sort_projects(&mut unused);
+        assert_eq!(unused[0].label(), "Unused A");
+        drop(engine);
+        let restored = Store::open(&dir.path().join("focus.sqlite3"))
+            .unwrap()
+            .snapshot()
+            .unwrap();
+        assert_eq!(restored.project_rank(&first), state.project_rank(&first));
+        assert_eq!(restored.task_rank(&second), state.task_rank(&second));
+    }
+
+    #[test]
+    fn failed_activity_updates_keep_history_selection_recency_and_timer_unchanged() {
+        for mode in [ChangeMode::NewInterval, ChangeMode::EditCurrent] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut engine = engine(dir.path());
+            engine
+                .apply(Some(Command::Start(activity("Original"))), at(0))
+                .unwrap();
+            engine
+                .apply(Some(Command::SetChangeMode(mode)), at(10))
+                .unwrap();
+            let recent = engine.snapshot(at(10)).unwrap().recent;
+            engine.store.connection.execute_batch("CREATE TRIGGER fail_recent BEFORE INSERT ON focus_recent BEGIN SELECT RAISE(ABORT,'Synthetic failure'); END;").unwrap();
+            assert!(
+                engine
+                    .apply(Some(Command::ChangeActivity(activity("Rejected"))), at(500))
+                    .is_err()
+            );
+            let state = engine.snapshot(at(600)).unwrap();
+            assert_eq!(state.activity, activity("Original"));
+            assert_eq!(
+                (state.running, state.elapsed_ms, state.completed),
+                (true, 600, 0)
+            );
+            assert_eq!(state.recent.len(), recent.len());
+            assert_eq!(state.project_rank(&activity("Rejected")), 0);
+            assert_eq!(
+                engine
+                    .store
+                    .connection
+                    .query_row("SELECT COUNT(*) FROM focus_sessions", [], |r| r
+                        .get::<_, i64>(0))
+                    .unwrap(),
+                1
+            );
+            engine
+                .store
+                .connection
+                .execute_batch("DROP TRIGGER fail_recent; PRAGMA query_only=ON;")
+                .unwrap();
+            assert!(
+                engine
+                    .apply(
+                        Some(Command::SetChangeMode(if mode == ChangeMode::NewInterval {
+                            ChangeMode::EditCurrent
+                        } else {
+                            ChangeMode::NewInterval
+                        })),
+                        at(700)
+                    )
+                    .is_err()
+            );
+            assert_eq!(engine.snapshot(at(700)).unwrap().change_mode, mode);
+        }
+    }
+
+    #[test]
+    fn schema_one_upgrade_backs_up_rows_and_seeds_recent_use_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("focus.sqlite3");
+        let mut engine = engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("Older"))), at(0))
+            .unwrap();
+        engine
+            .apply(Some(Command::Switch(activity("Newest"))), at(100))
+            .unwrap();
+        engine.apply(Some(Command::Stop), at(200)).unwrap();
+        engine
+            .store
+            .connection
+            .execute_batch(
+                "DROP TABLE focus_preferences; DROP TABLE focus_recent; PRAGMA user_version=1;",
+            )
+            .unwrap();
+        drop(engine);
+        let store = Store::open(&path).unwrap();
+        let state = store.snapshot().unwrap();
+        assert_eq!((state.total_ms, state.completed), (200, 2));
+        assert_eq!(state.change_mode, ChangeMode::NewInterval);
+        assert!(state.project_rank(&activity("Newest")) > state.project_rank(&activity("Older")));
+        let backups: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("focus-before-v2-")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+        let backup = Connection::open(&backups[0]).unwrap();
+        assert_eq!(
+            backup
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            backup
+                .query_row("SELECT SUM(elapsed_ms) FROM focus_sessions", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            200
+        );
+        drop(store);
+        Store::open(&path).unwrap();
+        assert_eq!(
+            std::fs::read_dir(dir.path())
+                .unwrap()
+                .filter(|e| e
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("focus-before-v2-"))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn activity_change_after_interruption_cannot_resume_or_reassign_checkpoint() {
+        for mode in [ChangeMode::NewInterval, ChangeMode::EditCurrent] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut engine = engine(dir.path());
+            engine
+                .apply(Some(Command::SetChangeMode(mode)), at(0))
+                .unwrap();
+            engine
+                .apply(Some(Command::Start(activity("Original"))), at(0))
+                .unwrap();
+            engine.apply(None, at(10_000)).unwrap();
+            assert!(
+                engine
+                    .apply(
+                        Some(Command::ChangeActivity(activity("Rejected"))),
+                        at(50_000)
+                    )
+                    .is_err()
+            );
+            let state = engine.snapshot(at(50_000)).unwrap();
+            assert!(state.needs_review);
+            assert!(!state.running);
+            assert_eq!(state.activity, activity("Original"));
+            assert_eq!(state.project_rank(&activity("Rejected")), 0);
+        }
+    }
+
+    #[test]
+    fn failed_recency_backfill_keeps_schema_one_and_original_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("focus.sqlite3");
+        let mut engine = engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("Original"))), at(0))
+            .unwrap();
+        engine.apply(Some(Command::Stop), at(100)).unwrap();
+        engine.store.connection.execute_batch("DROP TABLE focus_preferences; DROP TABLE focus_recent; UPDATE focus_sessions SET activity='invalid synthetic JSON'; PRAGMA user_version=1;").unwrap();
+        drop(engine);
+        assert!(Store::open(&path).is_err());
+        let original = Connection::open(&path).unwrap();
+        assert_eq!(
+            original
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(original.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('focus_recent','focus_preferences')",[],|r|r.get::<_,i64>(0)).unwrap(),0);
+        assert_eq!(
+            original
+                .query_row("SELECT activity FROM focus_sessions", [], |r| r
+                    .get::<_, String>(0))
+                .unwrap(),
+            "invalid synthetic JSON"
+        );
+        assert_eq!(
+            original
+                .query_row("SELECT elapsed_ms FROM focus_sessions", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            100
+        );
     }
 
     #[test]

@@ -265,17 +265,30 @@ impl Desktop {
     }
 
     fn activity_picker(&mut self, ui: &mut egui::Ui) {
+        let before = self.activity.project.clone();
+        let mut split = self.state.change_mode == tracking::ChangeMode::NewInterval;
+        if ui
+            .checkbox(
+                &mut split,
+                "Start a new interval when project or task changes",
+            )
+            .changed()
+        {
+            self.command(tracking::Command::SetChangeMode(if split {
+                tracking::ChangeMode::NewInterval
+            } else {
+                tracking::ChangeMode::EditCurrent
+            }));
+        }
+        if !split {
+            ui.label("Changes reassign the entire current interval, including its elapsed time.");
+        }
         ui.add(egui::TextEdit::singleline(&mut self.project_search).hint_text("Search projects"));
         let query = self.project_search.trim().to_lowercase();
         egui::ComboBox::from_id_salt("project")
             .selected_text(self.activity.label())
             .show_ui(ui, |ui| {
-                if ui
-                    .selectable_label(self.activity.project.is_none(), "Unassigned focus")
-                    .clicked()
-                {
-                    self.activity.project = None;
-                }
+                let mut choices = vec![tracking::Activity::default()];
                 if let Some(source) = &self.source_selection {
                     for project in self.catalog.projects.iter().filter(|p| {
                         !p.archived
@@ -284,20 +297,31 @@ impl Desktop {
                                 || p.title.to_lowercase().contains(&query)
                                 || p.slug.to_lowercase().contains(&query))
                     }) {
-                        let selected = self.activity.project.as_ref().is_some_and(|p| {
-                            p.source_id == source.id
-                                && p.source_path == source.path.to_string_lossy()
-                                && p.slug == project.slug
-                        });
-                        if ui.selectable_label(selected, &project.title).clicked() {
-                            self.activity.project = Some(tracking::Project {
+                        choices.push(tracking::Activity {
+                            project: Some(tracking::Project {
                                 source_id: source.id,
                                 source_path: source.path.to_string_lossy().into_owned(),
                                 slug: project.slug.clone(),
                                 title: project.title.clone(),
                                 task: None,
-                            });
+                            }),
+                            note: String::new(),
+                        });
+                    }
+                }
+                self.state.sort_projects(&mut choices);
+                for choice in choices {
+                    let selected = match (&self.activity.project, &choice.project) {
+                        (None, None) => true,
+                        (Some(a), Some(b)) => {
+                            a.source_id == b.source_id
+                                && a.source_path == b.source_path
+                                && a.slug == b.slug
                         }
+                        _ => false,
+                    };
+                    if ui.selectable_label(selected, choice.label()).clicked() && !selected {
+                        self.activity.project = choice.project;
                     }
                 }
             });
@@ -305,7 +329,12 @@ impl Desktop {
             egui::ComboBox::from_id_salt("task")
                 .selected_text(project.task.as_deref().unwrap_or("No task"))
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut project.task, None, "No task");
+                    let mut no_task = project.clone();
+                    no_task.task = None;
+                    let mut choices = vec![tracking::Activity {
+                        project: Some(no_task),
+                        note: String::new(),
+                    }];
                     if let Some(source) = &self.source_selection
                         && source.id == project.source_id
                         && source.path.to_string_lossy() == project.source_path
@@ -316,35 +345,51 @@ impl Desktop {
                             .find(|p| p.slug == project.slug)
                     {
                         for task in &snapshot.tasks {
-                            ui.selectable_value(&mut project.task, Some(task.clone()), task);
+                            let mut candidate = project.clone();
+                            candidate.task = Some(task.clone());
+                            choices.push(tracking::Activity {
+                                project: Some(candidate),
+                                note: String::new(),
+                            });
                         }
+                    }
+                    self.state.sort_tasks(&mut choices);
+                    for choice in choices {
+                        let task = choice.project.unwrap().task;
+                        let label = task.as_deref().unwrap_or("No task").to_owned();
+                        ui.selectable_value(&mut project.task, task, label);
                     }
                 });
         }
         ui.add(
             egui::TextEdit::singleline(&mut self.activity.note).hint_text("Optional session note"),
         );
+        if self.activity.project != before && self.available(&self.activity) {
+            self.command(tracking::Command::ChangeActivity(self.activity.clone()));
+        }
         if self.activity != self.state.activity {
-            ui.label("Selection has not been applied.");
+            ui.label(if self.pending {
+                "Saving selection..."
+            } else {
+                "Changes have not been saved."
+            });
             if ui
                 .add_enabled(
                     self.ready
                         && !self.pending
                         && !self.state.needs_review
                         && self.available(&self.activity),
-                    egui::Button::new(if self.state.running {
-                        "Switch focus"
+                    egui::Button::new(if self.state.running && split {
+                        "Start new interval with changes"
+                    } else if self.state.running {
+                        "Save changes to current interval"
                     } else {
                         "Apply selection"
                     }),
                 )
                 .clicked()
             {
-                self.command(if self.state.running {
-                    tracking::Command::Switch(self.activity.clone())
-                } else {
-                    tracking::Command::Select(self.activity.clone())
-                });
+                self.command(tracking::Command::ChangeActivity(self.activity.clone()));
             }
         }
         if !self.available(&self.activity) {
@@ -571,7 +616,12 @@ impl eframe::App for Desktop {
                 .id_salt("window-content")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.label(self.state.activity.label());
+                    ui.label(if self.state.running {
+                        "Tracking now (saved activity)"
+                    } else {
+                        "Next tracking activity (saved selection)"
+                    });
+                    ui.strong(self.state.activity.label());
                     if let Some(task) = self
                         .state
                         .activity
@@ -581,7 +631,10 @@ impl eframe::App for Desktop {
                     {
                         ui.label(task);
                     }
-                    self.activity_picker(ui);
+                    ui.add_enabled_ui(
+                        self.ready && !self.pending && !self.state.needs_review,
+                        |ui| self.activity_picker(ui),
+                    );
                     ui.add_space(12.0);
                     ui.label(
                         egui::RichText::new(duration(self.state.elapsed_ms))
