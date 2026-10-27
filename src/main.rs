@@ -93,6 +93,16 @@ impl Desktop {
     ) -> Self {
         let directory = paths.directory;
         let profile = paths.profile;
+        let width_error = platform::constrain_maximized_width(
+            context,
+            (760.0
+                * context
+                    .winit_window()
+                    .map_or(1.0, |window| window.scale_factor()))
+            .round() as u32,
+        )
+        .err()
+        .map(|error| format!("Cannot apply window width limit: {error}"));
         let stay_on_top = context
             .storage
             .and_then(|storage| eframe::get_value(storage, "stay_on_top"))
@@ -212,7 +222,7 @@ impl Desktop {
             state: tracking::Snapshot::default(),
             ready: false,
             pending: false,
-            error,
+            error: error.or(width_error),
             exiting: false,
             last_geometry: None,
             clicks: Clicks::default(),
@@ -666,8 +676,15 @@ impl eframe::App for Desktop {
                 }
             });
             ui.separator();
+            ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+            let gutter = ui.spacing().scroll.allocated_width() as i8;
             egui::ScrollArea::vertical()
                 .id_salt("window-content")
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
+                .content_margin(egui::Margin {
+                    left: gutter,
+                    ..egui::Margin::ZERO
+                })
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.label(
@@ -694,34 +711,12 @@ impl eframe::App for Desktop {
                         |ui| self.activity_picker(ui),
                     );
                     ui.add_space(12.0);
-                    ui.label(
-                        egui::RichText::new(duration(self.state.elapsed_ms))
-                            .size(36.0)
-                            .monospace(),
-                    );
-                    ui.label(if !self.ready {
-                        "Opening history..."
-                    } else if self.state.running {
-                        "Tracking"
-                    } else {
-                        "Stopped"
-                    });
-                    ui.add_space(12.0);
-                    if ui
-                        .add_enabled(
-                            self.ready
-                                && !self.pending
-                                && !self.state.needs_review
-                                && (self.state.running
-                                    || (self.lifecycle.is_some()
-                                        && self.available(&self.activity))),
-                            egui::Button::new(if self.state.running {
-                                "Stop tracking"
-                            } else {
-                                "Start tracking"
-                            }),
-                        )
-                        .clicked()
+                    let enabled = self.ready
+                        && !self.pending
+                        && !self.state.needs_review
+                        && (self.state.running
+                            || (self.lifecycle.is_some() && self.available(&self.activity)));
+                    if attention_focus::counters::show(ui, &self.state, self.ready, enabled).toggle
                     {
                         self.command(if self.state.running {
                             tracking::Command::Stop
@@ -729,9 +724,10 @@ impl eframe::App for Desktop {
                             tracking::Command::Start(self.activity.clone())
                         });
                     }
+                    ui.add_space(8.0);
                     ui.separator();
                     ui.label(format!(
-                        "Saved focus: {} in {} sessions",
+                        "All projects, all time (saved): {} in {} sessions",
                         duration(self.state.total_ms),
                         self.state.completed
                     ));
@@ -868,6 +864,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .with_app_id(profile.app_id())
                 .with_inner_size([620.0, 640.0])
                 .with_min_inner_size([420.0, 360.0])
+                .with_max_inner_size([760.0, 16_384.0])
                 .with_icon(egui::IconData {
                     rgba: icons::rgba(
                         64,

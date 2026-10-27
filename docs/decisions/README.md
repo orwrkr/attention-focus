@@ -24,4 +24,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0016](0016-ui-state-and-daily-tray.md) | accepted | UI restoration, native sizing and project-day tray totals |
 | [0017](0017-report-export.md) | accepted | Read-only background snapshots and protected CSV/Markdown output |
 
-Next number: `0018`. Template: `templates/ADR.md` from the repository root.
+| [0018](0018-window-counters-and-width.md) | accepted | Explicit window counters and a static native width limit |
+
+Next number: `0019`. Template: `templates/ADR.md` from the repository root.

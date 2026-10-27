@@ -29,18 +29,26 @@ fn shorten(text: &str, limit: usize) -> String {
 pub fn tooltip(profile: Profile, state: &Snapshot) -> String {
     let title = format!(
         "{} - {}",
-        profile.title(),
+        if profile == Profile::Development {
+            "Attention Focus [Dev]"
+        } else {
+            "Attention Focus"
+        },
         if state.running { "tracking" } else { "stopped" }
     );
     let times = format!(
-        "\nSession: {}\nToday: {}{}",
+        "\nSession: {}\nToday/project: {}\nToday/all: {}{}",
         duration(state.elapsed_ms),
         state
             .daily_project_ms
             .map(duration)
             .unwrap_or_else(|| "unavailable".into()),
+        state
+            .daily_all_ms
+            .map(duration)
+            .unwrap_or_else(|| "unavailable".into()),
         if state.needs_review {
-            "\nInterrupted time needs review"
+            "\nReview pending"
         } else {
             ""
         }
@@ -70,6 +78,7 @@ mod tests {
             elapsed_ms: 12_000,
             total_ms: 60_000,
             daily_project_ms: Some(42_000),
+            daily_all_ms: Some(55_000),
             activity: Activity {
                 project: Some(Project {
                     source_id: 1,
@@ -86,14 +95,15 @@ mod tests {
         assert!(text.encode_utf16().count() <= 127);
         assert!(text.contains("Project: Example project"));
         assert!(text.contains("Session: 00:00:12"));
-        assert!(text.contains("Today: 00:00:42"));
+        assert!(text.contains("Today/project: 00:00:42"));
+        assert!(text.contains("Today/all: 00:00:55"));
         assert!(text.contains("\nSession:"));
         state.activity.project.as_mut().unwrap().title = "Line\nNext".into();
         assert!(tooltip(Profile::Production, &state).contains("Project: Line Next\n"));
         state.running = false;
         assert!(tooltip(Profile::Production, &state).contains("Project:"));
         state.needs_review = true;
-        assert!(tooltip(Profile::Production, &state).contains("needs review"));
+        assert!(tooltip(Profile::Production, &state).contains("Review pending"));
         assert_eq!(shorten("\u{1f331}\u{1f331}", 4), "\u{1f331}\u{1f331}");
     }
 }

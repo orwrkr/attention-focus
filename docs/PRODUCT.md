@@ -31,6 +31,11 @@
 - Use status lights without action-like play/pause symbols. Allow minute boundaries
   and limit periodic refresh to live time growing inside the report filter.
 - Fit window size to useful content and save tracking on confirmed Windows session end.
+- Restore sections, filters, searches and note drafts between launches without restarting tracking.
+- Show distinct current-interval and project-day window counters, using the tray's
+  daily accounting. Limit width to useful content without dynamic height changes.
+- Show all-project Today in both window and tray, including unassigned focus; make
+  Start/Stop the visually prominent action. Keep frame margins and name hints consistent.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

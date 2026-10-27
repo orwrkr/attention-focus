@@ -76,6 +76,7 @@ pub struct Snapshot {
     pub elapsed_ms: u64,
     pub total_ms: u64,
     pub daily_project_ms: Option<u64>,
+    pub daily_all_ms: Option<u64>,
     pub completed: u64,
     pub needs_review: bool,
     pub activity: Activity,
@@ -391,6 +392,7 @@ impl Store {
             elapsed_ms: active.map_or(0, |a| a.0).max(0) as u64,
             total_ms: total.max(0) as u64,
             daily_project_ms: None,
+            daily_all_ms: None,
             completed: count.max(0) as u64,
             needs_review: review,
             activity: self.selected()?,
@@ -515,7 +517,14 @@ pub struct Engine {
     started: Option<Moment>,
     observed: Moment,
     checkpoint_mono: u64,
-    daily_cache: std::cell::RefCell<Option<(i64, i64, ActivityKey, u64)>>,
+    daily_cache: std::cell::RefCell<Option<DailyTotals>>,
+}
+struct DailyTotals {
+    begin: i64,
+    end: i64,
+    key: ActivityKey,
+    project_ms: u64,
+    all_ms: u64,
 }
 impl Engine {
     pub fn new(store: Store, now: Moment) -> Self {
@@ -535,7 +544,7 @@ impl Engine {
         if let Some(start) = self.started {
             snapshot.elapsed_ms = now.mono_ms.saturating_sub(start.mono_ms);
         }
-        let daily = (|| -> Result<u64> {
+        let daily = (|| -> Result<(u64, u64)> {
             let day = jiff::Timestamp::from_millisecond(now.wall_ms)?
                 .to_zoned(zone.clone())
                 .date();
@@ -555,9 +564,10 @@ impl Engine {
             let mut cache = self.daily_cache.borrow_mut();
             if cache
                 .as_ref()
-                .is_none_or(|(b, e, k, _)| *b != begin || *e != end || *k != key)
+                .is_none_or(|entry| entry.begin != begin || entry.end != end || entry.key != key)
             {
                 let mut total = 0u64;
+                let mut all = 0u64;
                 let mut query = self.store.connection.prepare("SELECT started_ms,ended_ms,elapsed_ms,activity FROM focus_sessions WHERE state='stopped' AND started_ms<?2 AND ended_ms>?1")?;
                 let rows = query.query_map(params![begin, end], |r| {
                     Ok((
@@ -570,27 +580,37 @@ impl Engine {
                 for row in rows {
                     let (start_ms, end_ms, elapsed, text) = row?;
                     let activity: Activity = serde_json::from_str(&text)?;
-                    if activity.key().project == key.project {
-                        total = total.saturating_add(reports::allocated(
-                            &reports::Record {
-                                id: 0,
-                                start_ms,
-                                end_ms,
-                                elapsed_ms: elapsed.max(0) as u64,
-                                state: reports::State::Saved,
-                                activity,
-                                reason: String::new(),
-                            },
-                            begin,
-                            end,
-                        ));
+                    let matches_project = activity.key().project == key.project;
+                    let allocated = reports::allocated(
+                        &reports::Record {
+                            id: 0,
+                            start_ms,
+                            end_ms,
+                            elapsed_ms: elapsed.max(0) as u64,
+                            state: reports::State::Saved,
+                            activity,
+                            reason: String::new(),
+                        },
+                        begin,
+                        end,
+                    );
+                    all = all.saturating_add(allocated);
+                    if matches_project {
+                        total = total.saturating_add(allocated);
                     }
                 }
-                *cache = Some((begin, end, key, total));
+                *cache = Some(DailyTotals {
+                    begin,
+                    end,
+                    key,
+                    project_ms: total,
+                    all_ms: all,
+                });
             }
-            let mut total = cache.as_ref().unwrap().3;
+            let mut total = cache.as_ref().unwrap().project_ms;
+            let mut all = cache.as_ref().unwrap().all_ms;
             if let Some(start) = self.started {
-                total = total.saturating_add(reports::allocated(
+                let live = reports::allocated(
                     &reports::Record {
                         id: 0,
                         start_ms: start.wall_ms,
@@ -602,12 +622,17 @@ impl Engine {
                     },
                     begin,
                     end,
-                ));
+                );
+                total = total.saturating_add(live);
+                all = all.saturating_add(live);
             }
-            Ok(total)
+            Ok((total, all))
         })();
         // A broken historical row must not prevent publishing successful Start/Stop state.
-        snapshot.daily_project_ms = daily.ok();
+        if let Ok((project, all)) = daily {
+            snapshot.daily_project_ms = Some(project);
+            snapshot.daily_all_ms = Some(all);
+        }
         Ok(snapshot)
     }
     /// Returns true only after a successful explicit exit.
@@ -855,6 +880,45 @@ pub fn spawn(
 mod tests {
     use super::*;
     #[test]
+    fn all_project_today_combines_projects_and_unassigned_without_double_counting_live_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("Alpha"))), at(0))
+            .unwrap();
+        engine
+            .apply(Some(Command::Switch(activity("Beta"))), at(10_000))
+            .unwrap();
+        engine
+            .apply(Some(Command::Switch(Activity::default())), at(20_000))
+            .unwrap();
+        for _ in 0..2 {
+            let state = engine
+                .snapshot_in_zone(at(25_000), jiff::tz::TimeZone::UTC)
+                .unwrap();
+            assert_eq!(state.elapsed_ms, 5_000);
+            assert_eq!(state.daily_project_ms, Some(5_000));
+            assert_eq!(state.daily_all_ms, Some(25_000));
+        }
+        engine.apply(Some(Command::Stop), at(25_000)).unwrap();
+        engine
+            .apply(Some(Command::Select(activity("Alpha"))), at(25_000))
+            .unwrap();
+        let state = engine
+            .snapshot_in_zone(at(25_000), jiff::tz::TimeZone::UTC)
+            .unwrap();
+        assert_eq!(state.daily_project_ms, Some(10_000));
+        assert_eq!(state.daily_all_ms, Some(25_000));
+        assert_eq!(state.elapsed_ms, 0);
+        assert_eq!(
+            engine
+                .snapshot_in_zone(at(86_425_000), jiff::tz::TimeZone::UTC)
+                .unwrap()
+                .daily_all_ms,
+            Some(0)
+        );
+    }
+    #[test]
     fn daily_totals_clip_midnight_combine_tasks_isolate_sources_and_exclude_review() {
         let dir = tempfile::tempdir().unwrap();
         let midnight = "2026-10-27T00:00:00Z"
@@ -897,6 +961,7 @@ mod tests {
             .snapshot_in_zone(moment(25_000), jiff::tz::TimeZone::UTC)
             .unwrap();
         assert_eq!(saved.daily_project_ms, Some(15_000));
+        assert_eq!(saved.daily_all_ms, Some(15_000));
         assert_eq!(saved.total_ms, 25_000);
         let mut other = first.clone();
         other.project.as_mut().unwrap().source_id = 2;
@@ -923,6 +988,7 @@ mod tests {
             .unwrap();
         assert!(review.needs_review);
         assert_eq!(review.daily_project_ms, Some(15_000));
+        assert_eq!(review.daily_all_ms, Some(15_000));
         engine
             .apply(Some(Command::AcceptRecovery), moment(81_000))
             .unwrap();

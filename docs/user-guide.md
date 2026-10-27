@@ -90,15 +90,24 @@ sources and Production/Development keep independent usage.
 
 # Tray controls and interruptions
 
+**Current interval** in the window counts only the running interval and returns to
+zero when stopped. Its large blue **Start tracking / Stop tracking** button is the
+primary action. **Today for project** combines the named project's tasks;
+**Today - all projects** includes every project and unassigned focus. Both use the local
+day and include live time once. **All projects, all time (saved)** counts finalized
+history only. The window and tray share both daily values.
+
 ## Use the tray and window controls
 
 - A single left click on the tray icon shows the window. Opening waits briefly for
   Windows to distinguish a single click from a double click.
 - A double left click starts or stops tracking using the last applied selection.
-- Hover shows status, the selected project, session time and **Today** for that project.
+- Hover shows status, project, **Session**, **Today/project** and **Today/all**.
   Today combines all its tasks and saved plus current time inside the Windows local
   calendar day, excluding unreviewed time. Report filters do not affect this value.
-  Long project names are shortened. While stopped, it refers to the saved next project.
+  All-project Today also includes unassigned focus and saved history from other sources.
+  Long names are shortened; the project's window label shows its full name in one hint.
+  While stopped, project Today refers to the saved next project.
 - A right click opens the menu with Show Focus, Start/Stop, and Exit.
 - **Hide to tray** hides the window. Closing the window normally hides it too.
 - **Exit** saves the active session and ends the app. Use Exit before replacing its EXE.
@@ -113,8 +122,8 @@ together with window placement, and does not prevent hiding to the tray. The nor
 header shows the app/version; the test version also shows Development. Secondary
 explanations use a blue accent to distinguish them from primary text.
 
-Resize or maximize the window normally. The app does not force its height or undo
-maximization. The content column has a readable width; long reports scroll, and header
+Resize or maximize the window normally. Width stops at a readable limit; vertical
+resizing remains independent. Long reports scroll, and header
 actions remain accessible. Expanded/collapsed sections, scroll positions, project and
 timezone searches, report filters and unapplied note drafts are restored on restart.
 Today/Last 7/Last 30 presets roll forward; custom dates and minutes stay as entered.

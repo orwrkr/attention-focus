@@ -1,102 +1,81 @@
 # Current Context
 
-Updated: 2026-10-27.
+Updated: 2026-10-28.
 
 ## Current state
 
-Current release: 0.8.0. T-0016 export, T-0017 UI restoration/daily tray and T-0005 are complete.
-T-0002 remains a separate native desktop acceptance gate. Next implementation card:
-T-0018 adds explicit window counters and stable horizontal limits. History editing, shortcuts,
-autostart, installer and updater are still deferred. Read task cards and ADRs for history.
+Current release: 0.10.0. T-0018 is complete; next implementation card is
+[T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
+That card is defined but not implemented. Global shortcuts, autostart, installer and
+updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
 
-The Rust app uses egui/eframe, tray-icon and bundled rusqlite. Dependencies are pinned
-in Cargo.lock. App/window/file icons are neutral; only filled-green/hollow-gray tray
-states indicate running/stopped, with a D badge in Development. Tray single click shows
-and double click toggles. Project/task changes split intervals by default; EditCurrent
-preserves the active interval start/timer. Pickers use durable recent-use order.
+The local Rust app uses egui/eframe, tray-icon and bundled SQLite. Cargo.lock pins
+versions. MetaPlan is read-only. Source normalization and directory-link resolution
+protect every write destination. Never use personal source data as repository fixtures.
 
-Reports accept half-open minute boundaries and bundled timezone choices. Until 24:00
-means end of day. Periodic queries run only while live time grows inside the filter;
-affected stop/edit/recovery events refresh once. Saved, Running and Needs review remain
-separate. Calendar/DST allocation is covered by tests. See ADR-0014.
+Current interval has the prominent blue Start/Stop action. Today for project and
+Today - all projects share cached local-calendar-day accounting with the tray. Include
+saved plus active time once, all tasks and (for the global sum) all sources/unassigned
+focus; exclude review time. Report filters/timezones do not change Today. Errors show
+unavailable without blocking successful tracking state. Schema remains two.
 
-Windows owns resizing/maximization; there are no per-frame native size commands.
-Only content width is capped. This supersedes ADR-0015 clamps, which caused jitter.
-Sections/scroll, report custom filters or rolling presets, searches and note draft
-persist per profile in window.ron. Native restart verified restoration without tracking.
-Today in the tray is the selected project's local-day saved plus active total across
-tasks, isolated by source ID/path/slug, excluding review time. Saved sums are cached;
-idle refresh is every 30 seconds. Unavailable daily data does not block state updates.
-See ADR-0016. Native maximization and downward sizing via Windows Size menu passed.
+Counter frames use measured margins and a mirrored reserved scrollbar gutter. Narrow
+windows place the interval above two daily cards; wide windows use three columns.
+Only egui's automatic elided-name tooltip is enabled. Native width is limited to 760
+logical pixels. The maximized-bounds subclass accounts for current monitor work area
+and DPI-scaled resize borders, including once at restored startup. No measured UI
+height or size/maximize commands run per frame. See ADR-0018.
 
-## Lifecycle and data boundaries
+Sections/scroll, custom report dates/minutes or rolling presets, timezone/project
+searches, note draft, window geometry and Stay on top persist separately per profile.
+Restoring preferences never restarts tracking. Relative report presets roll forward.
+Project/task changes split intervals by default; the persistent opt-out reassigns the
+current interval without changing its start. Pickers use durable recent-use ordering.
 
-Window close hides if the tray is available; tracking continues. Exit commits before
-closing. Received lock/suspend notifications finalize at their captured boundary;
-unlock/resume never restart. Confirmed WM_ENDSESSION also saves, with a bounded worker
-confirmation; canceled shutdown queries do not stop tracking. Force-kill, power loss,
-missed heartbeats or clock discontinuities use checkpoint review. Checkpoints run about
-every ten seconds, not a hard loss guarantee under IO failure. See ADR-0008/0015.
+Reports use half-open minute ranges and bundled timezone rules. Periodic queries run
+only while live time grows inside the filter; affected stop/edit/recovery events refresh
+once. Saved, Running and Needs review remain separate. CSV/Markdown exports read an
+independent immutable checkpoint snapshot, include every match beyond the UI preview,
+protect MetaPlan/app-storage paths and never overwrite. See ADR-0014/0017 and T-0016.
 
-MetaPlan is strictly read-only and its Instance path is configurable. Resolve paths
-and directory links before writes. Application storage is outside the source in the
-Windows LocalAppData known folder under AttentionFocus/Production or Development.
-Debug builds reject Production. Histories, settings, mutexes and geometry are separate.
-Legacy root history stays untouched. Schema remains two since 0.3.0; upgrading schema
-one backs it up first; EXEs before 0.3.0 cannot read schema two. See ADR-0010/0012.
+## Lifecycle and profile boundaries
 
-All agent-created sessions are synthetic and Development-only. The ignored fixture is
-under target/manual-instance. Development was exited normally after checks; the external
-portable Production app stayed open and untouched. The user explicitly approved repeated
-agent-launched Development test runs and normal UI Exit for verification. Do not ask
-again for that scope; this does not authorize closing Production or force-killing apps.
+Closing the window hides it if the tray is available; Exit saves before closing.
+Received lock/suspend notifications stop without automatic resume. Confirmed Windows
+session end saves with bounded acknowledgement; canceled queries do not stop tracking.
+Forced exits, missed heartbeats and clock discontinuities use checkpoint review.
+Checkpoints are approximately ten seconds apart, not a loss guarantee under IO failure.
 
-## Checks and limits
+Settings/history live in the Windows LocalAppData known folder under AttentionFocus/
+Production or Development, outside MetaPlan. Debug builds reject Production. Profile
+locks, histories and geometry are independent. Legacy root history remains untouched.
+Schema two dates from 0.3.0; schema-one upgrade backs up first. Older EXEs cannot read
+schema two. T-0019 must research compatibility before introducing further migrations.
 
-T-0016: 59 Rust tests and Clippy passed; both 0.8.0 EXEs/ZIP passed verification.
-All eight PDF pages inspected. Native CSV Save produced four synthetic Session rows
-and a Summary with exact totals/version; Markdown dialog cancellation worked. No
-Production data was used. Exports use independent read-only snapshots and last durable
-running checkpoints, preserve all matches, guard source/storage paths and never overwrite.
+## Checks and exact next step
 
-T-0017: 54 Rust tests, formatting and Clippy passed; both 0.7.1 EXEs and automatic ZIP
-passed verification. All seven guide pages inspected. Native restoration and stable
-maximization/downward sizing passed; native tray and multi-monitor gates remain.
+64 Rust tests, formatting, Clippy and five package tests passed. Restricted junction
+creation failed in one rerun; all 64 passed with the required Windows link permissions.
+Tests cover responsive margins at 100-200 percent scale, mirrored scrollbar gutters,
+a single name hint, native monitor/frame bounds and project/global daily accounting.
+Native Development verified prominent Start/Stop, live daily counting, stopped reset,
+previous-day report independence, restored maximized startup and final narrow/wide
+layouts. Earlier downward sizing passed without snapback. Both 0.10.0 EXEs, generated
+notices, eight-page PDF and automatic ZIP passed verify-release metadata/icon/hash/
+fingerprint/allowlist checks. All eight rendered guide pages were visually inspected.
 
-52 Rust tests, five package tests, formatting and Clippy passed. Junction tests initially
-hit restricted permissions; the permitted rerun passed all tests. Native listener tests
-used synthetic messages, not actual machine shutdown. Both 0.6.1 EXEs and automatic ZIP
-passed verify-release metadata/icons/fingerprint/stamp/member/hash checks. All seven
-PDF pages were rendered and visually inspected. An initial 0.6.0 archive is retained;
-0.6.1 adds the explicit shrink correction found during native testing.
+All agent-created sessions are synthetic and Development-only under the ignored
+manual fixture. Development exited normally after checks; a process check confirmed
+only the external portable Production app remained running. Production was untouched.
+The user already approved repeated agent-launched Development runs and normal UI Exit;
+do not ask again for that scope. Never force-kill or close Production.
 
-Native checks covered synthetic source settings/search/calendars (T-0014), task split,
-EditCurrent timing, recency, saved task totals and UTC selection. Exit during tracking
-saved the interval; restart was stopped, without unfinished/overlapping rows in read-only
-Development inspection. Maximize/collapse, pinned actions and placement/preference
-restoration passed. Minimum-width drag did not establish a resize, so remains unverified.
-Actual topmost Z-order, tray input/rendering, multiple monitors, real lock/sleep/hibernate/
-logoff/shutdown and clean-machine compatibility are unverified. The native helper exposes
-app windows but did not expose a targetable taskbar/tray window. Do not disrupt the
-user's live environment for real power/session tests.
+Real tray-shell hover/rendering, multiple native monitor/DPI combinations, actual
+lock/sleep/hibernate/logoff/shutdown and clean-machine validation remain unverified
+T-0002 gates. Do not interrupt the user's working machine to test power/session events.
 
-Pre-commit follow-up: the earlier final Computer Use observation was interrupted by
-physical Escape. Current read-only process inspection confirms Development has exited
-and only the external Production process remains. No GUI input was needed. Repeated
-52 Rust tests, five package tests, formatting, Clippy and release verification passed.
-
-## Next step
-
-Complete the remaining T-0002 checklist with suitable native access or human verification
-on a safe test environment. Proceed with T-0018 window counters/horizontal sizing.
-Keep one primary implementation task selected. Export decisions are in ADR-0017.
-Publish changes only through scripts/build.ps1, which builds both canonical EXEs and
-regenerates the PDF/notices/ZIP; run verify-release.ps1 before handoff. Canonical paths:
-dist/AttentionFocus/attention-focus.exe and target/debug/attention-focus.exe. A locked
-EXE is an error, never a reason to create alternate copies. Cargo.toml owns the version;
-changed shipped inputs of an archived version require a bump and complete rebuild.
-
-Use ATTENTION_FOCUS_PYTHON with the bundled Python runtime when the default Python
-lacks ReportLab/Pillow/pypdf. Poppler renders previews under ignored target/pdf-preview.
-All stored project content stays English; chat can use the user's language. Never commit
-personal source data, profile history, machine-specific paths or generated artifacts.
+Select T-0019 next, read its card and relevant storage/recovery/report ADRs, define
+validation/audit/compatibility decisions before changing the history model. Keep one
+primary implementation task active. Publish only through scripts/build.ps1, preserving
+canonical EXE paths; locked output must fail without alternate copies. Every shipped
+change requires consistent Cargo version, both builds and fresh verified ZIP/PDF.

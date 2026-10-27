@@ -19,8 +19,10 @@
 | [T-0015](T-0015-lifecycle-and-compact-window.md) | done | Confirmed Shutdown and Compact Window | T-0014 |
 | [T-0016](T-0016-report-export.md) | done | CSV and Markdown Report Export | T-0005 |
 | [T-0017](T-0017-ui-state-and-daily-tray.md) | done | Restored UI State, Stable Resize and Daily Tray Total | T-0015 |
+| [T-0018](T-0018-window-counters-and-width.md) | done | Explicit Window Counters and Stable Width Limit | T-0017 |
+| [T-0019](T-0019-history-correction.md) | ready | History Correction and Manual Intervals | T-0018 |
 
 Task template: `templates/TASK.md` from the repository root.
 
-Next implementation task: T-0018, explicit window counters and horizontal limits. T-0002 remains a separate
+Next task: [T-0019](T-0019-history-correction.md). T-0002 remains a separate
 desktop acceptance gate and does not authorize disruptive real system tests.
