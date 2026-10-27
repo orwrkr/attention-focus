@@ -46,8 +46,10 @@ not prevent stopping an already running session or viewing saved history.
 ## Storage boundary
 
 Use a fixed per-user local application directory, resolved through the Windows known
-folder API, with focus.sqlite3 inside it. No arbitrary storage-directory setting in
-the first release. Settings, journals, temporary backups, and migrations use this root.
+folder API, with independent Production/Development subdirectories (ADR-0010). Each
+contains focus.sqlite3 and its own settings/window state. Source containment checks use
+the shared parent root. Debug builds cannot select Production. No arbitrary storage-directory
+setting is exposed. Journals, backups, and migrations stay within the selected profile.
 
 Before creating directories or opening a writable database:
 - Resolve existing ancestors, junctions, symbolic links, and case-insensitive identities.

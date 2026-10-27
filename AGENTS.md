@@ -51,6 +51,11 @@ explain their meaning in English. Do not use escapes to disguise non-English pro
   On a locked EXE, report the error without creating alternate files or directories.
   Never terminate a running app automatically. If you launched it, offer to exit it
   and wait for user approval before closing it. Cargo target files are build intermediates.
+- Use Development for agent work and manual test sessions. scripts/dev.ps1 and debug
+  builds use LocalAppData/AttentionFocus/Development; the packaged release uses Production.
+  Never reset, seed synthetic sessions into, or copy development history into Production.
+  Legacy root history is retained untouched. Keep profile instance locks and source
+  containment checks independent. Development builds must not replace the production EXE.
 
 ## End of session
 

@@ -13,6 +13,9 @@
 - Use a shared application logo for the executable, window, taskbar, and tray.
 - Distinguish running/stopped tracking in the tray; double click toggles tracking.
 - Single-click the tray to show the window; hover to see session and total tracked time.
+- Keep Hide to tray and Exit visible above scrolling content.
+- Separate production/development data and allow simultaneous independent instances.
+- Start new production with empty history while retaining the previous development history.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

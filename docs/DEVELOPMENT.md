@@ -20,7 +20,8 @@ cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 ./scripts/test-release-output.ps1
 ./scripts/build.ps1
-cargo run --locked
+./scripts/dev.ps1 -BuildOnly
+./scripts/dev.ps1
 ```
 
 The only distributed executable is `dist/AttentionFocus/attention-focus.exe`; that folder
@@ -43,24 +44,42 @@ by the Windows target configuration. The PDB is optional debugging information.
 Windows system libraries and a working graphics driver are still required. No Rust,
 Node, WebView2, or .NET runtime installation is needed for this native build.
 
-The Windows LocalAppData known folder supplies the fixed application data location:
+The Windows LocalAppData known folder supplies fixed, independent profile directories:
 
-- `%LOCALAPPDATA%/AttentionFocus/window.ron`: position, size, and maximization.
-- `%LOCALAPPDATA%/AttentionFocus/focus.sqlite3`: unassigned sessions and checkpoints.
-- The history database also stores project/task snapshots and the last applied selection.
+- `%LOCALAPPDATA%/AttentionFocus/Production/`: packaged release data.
+- `%LOCALAPPDATA%/AttentionFocus/Development/`: debug/development data.
+- Each contains `window.ron` (geometry), `focus.sqlite3` (history/checkpoints/activity),
+  and `source.sqlite3` (source identities and selected path).
 - A legacy database upgrade creates a `focus-before-v1-*.sqlite3` backup using SQLite.
-- `%LOCALAPPDATA%/AttentionFocus/source.sqlite3`: source identities and selected path.
-- SQLite may create temporary journal files in that same directory.
+- SQLite creates any journals/backups in the same profile directory.
+
+Legacy files directly under AttentionFocus are retained unchanged. New Production does
+not inherit old history, active selection, or geometry. Only a valid legacy MetaPlan path
+is seeded into each new profile's independent settings. Production is not reset again
+on later launches. Development tests never create records in Production.
+
+Debug/cargo run defaults to Development; explicit `--profile production` is rejected
+by debug builds. The packaged release defaults to Production. A release may explicitly
+run `--profile development` for an optimized development session. Fixed data paths cannot
+be overridden. Mutexes/window identities are per profile; each permits one instance.
+Development has a distinct title, visible profile label, app ID, and tray menu/tooltip.
+Both profiles may read the same external MetaPlan instance without modifying it.
+
+Development builds stay under target/debug and do not replace the production EXE.
+Use scripts/dev.ps1 while Production is running. Updating the production EXE still
+requires exiting Production; locked-file rules apply. Exit a running Development
+instance before rebuilding its executable. Never create fallback release copies.
 
 Moving the EXE does not reset history. Back up the data directory after exiting.
-Source selection rejects equality or containment with this storage root after resolving
+Source selection rejects equality or containment with the shared AttentionFocus root after resolving
 existing ancestors and junctions. Startup reads settings read-only before any persistent
 initialization. Linked entries inside app storage are rejected. Nothing is stored beside
 the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threat model.
 
 ## Current behavior
 
-- Startup restores window geometry and opens a visible English window with a tray icon.
+- Startup restores the selected profile's window geometry and shows an English window.
+- Hide to tray and Exit are pinned above the scrolling content, including expanded reports.
 - A worker owns durable SQLite history. Choose a project and optional task or Unassigned
   focus. Notes are optional. Start uses the draft selection; Apply selection saves it
   for later tray starts. Switch focus closes the previous session and starts the next
@@ -129,6 +148,14 @@ The obsolete AttentionFocus-Update distribution was removed by T-0009. Always us
 scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 
 ## Verification record (2026-10-27)
+
+T-0010: 32 tests, formatting, Clippy, canonical packaging, and development build passed.
+Tests verify clean/profile-independent history and settings, unchanged legacy bytes,
+production persistence after restart, debug Production rejection, junction safeguards,
+and simultaneous native profile locks with duplicate rejection. Header controls are
+outside scrolling content. New GUI verification was unavailable: list_windows timed out
+three times including reset, so no app was launched. Production initializes cleanly on
+its next first launch; no old user database was modified by development tools.
 
 T-0005: 27 tests, formatting, Clippy, packaging safeguards, and the canonical release
 build passed. PE imports remain Windows-system-only. Visually checked source-field

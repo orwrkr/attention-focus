@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use attention_focus::{
-    icons, lifecycle, platform, report_ui, source, tracking, tray_interaction::Clicks,
+    icons, lifecycle, platform,
+    profiles::{Paths, Profile},
+    report_ui, source, tracking,
+    tray_interaction::Clicks,
 };
 use eframe::egui;
 use std::{
@@ -47,6 +50,8 @@ struct Desktop {
     lifecycle: Option<lifecycle::Listener>,
     reports: report_ui::Panel,
     project_search: String,
+    profile: Profile,
+    storage_root: std::path::PathBuf,
 }
 
 fn tray_icon(running: bool) -> Icon {
@@ -78,18 +83,29 @@ fn duration(ms: u64) -> String {
 impl Desktop {
     fn new(
         context: &eframe::CreationContext<'_>,
-        directory: std::path::PathBuf,
+        paths: Paths,
         selection: Option<source::Selection>,
+        source_warning: Option<String>,
     ) -> Self {
+        let directory = paths.directory;
+        let profile = paths.profile;
         let (sender, actions) = mpsc::channel();
         let menu = Menu::new();
-        let show = MenuItem::new("Show Focus", true, None);
+        let show = MenuItem::new(
+            if profile == Profile::Development {
+                "Show Development"
+            } else {
+                "Show Focus"
+            },
+            true,
+            None,
+        );
         let toggle = MenuItem::new("Start tracking", false, None);
         let exit = MenuItem::new("Exit", true, None);
         let tray_result = (|| -> Result<TrayIcon, Box<dyn std::error::Error>> {
             menu.append_items(&[&show, &toggle, &exit])?;
             Ok(TrayIconBuilder::new()
-                .with_tooltip("Attention Focus - opening history...")
+                .with_tooltip(format!("{} - opening history...", profile.title()))
                 .with_icon(tray_icon(false))
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
@@ -194,11 +210,13 @@ impl Desktop {
             source_selection: selection,
             catalog: source::Catalog::default(),
             source_pending: false,
-            source_error: None,
+            source_error: source_warning,
             activity: tracking::Activity::default(),
             lifecycle: listener,
             reports: report_ui::Panel::default(),
             project_search: String::new(),
+            profile,
+            storage_root: paths.root,
         };
         if desktop.source_selection.is_some() {
             desktop.load_source(&context.egui_ctx, false);
@@ -211,12 +229,13 @@ impl Desktop {
         self.source_error = None;
         let path = std::path::PathBuf::from(self.source_path.trim());
         let directory = self.directory.clone();
+        let storage_root = self.storage_root.clone();
         let selection = self.source_selection.clone();
         let sender = self.sender.clone();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             let result = (|| -> Result<_, Box<dyn std::error::Error + Send + Sync>> {
-                let path = source::validate_boundary(&path, &directory)?;
+                let path = source::validate_boundary(&path, &storage_root)?;
                 let catalog = source::read(&path)?;
                 let selection = if save {
                     source::save(&directory, &path)?
@@ -446,7 +465,8 @@ impl eframe::App for Desktop {
                     // active session once and excludes unreviewed recovery time.
                     if let Some(tray) = &self.tray {
                         let label = format!(
-                            "Attention Focus - {}\nSession: {}\nTotal: {}{}",
+                            "{} - {}\nSession: {}\nTotal: {}{}",
+                            self.profile.title(),
                             if state.running { "tracking" } else { "stopped" },
                             duration(state.elapsed_ms),
                             duration(state.total_ms.saturating_add(state.elapsed_ms)),
@@ -521,11 +541,30 @@ impl eframe::App for Desktop {
             }
         }
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
+            // These actions stay outside the scrolling body at every content height.
+            ui.horizontal(|ui| {
+                ui.heading("Attention Focus");
+                ui.weak(self.profile.folder());
+            });
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
+                    .clicked()
+                {
+                    Self::hide(&ctx);
+                }
+                if ui
+                    .add_enabled(!self.pending, egui::Button::new("Exit"))
+                    .clicked()
+                {
+                    self.command(tracking::Command::Exit);
+                }
+            });
+            ui.separator();
             egui::ScrollArea::vertical()
                 .id_salt("window-content")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.heading("Attention Focus");
                     ui.label(self.state.activity.label());
                     if let Some(task) = self
                         .state
@@ -653,39 +692,29 @@ impl eframe::App for Desktop {
                             });
                     });
                     self.reports.show(ui, &self.commands, self.ready);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
-                            .clicked()
-                        {
-                            Self::hide(&ctx);
-                        }
-                        if ui
-                            .add_enabled(!self.pending, egui::Button::new("Exit"))
-                            .clicked()
-                        {
-                            self.command(tracking::Command::Exit);
-                        }
-                    });
                 });
         });
     }
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let _instance = platform::Instance::acquire()?;
-    let directory = platform::data_dir()?;
+    let profile = Profile::parse(
+        &std::env::args().skip(1).collect::<Vec<_>>(),
+        cfg!(debug_assertions),
+    )?;
+    let paths = Paths::new(&platform::data_root()?, profile)?;
+    let _instance = platform::Instance::acquire(&paths.directory, profile.title())?;
     // Restore read-only and validate source overlap before SQLite or eframe can write.
-    let selection =
-        source::restore(&directory).map_err(|error| -> Box<dyn std::error::Error> { error })?;
-    let directory = source::resolve(&directory)?;
-    std::fs::create_dir_all(&directory)?;
-    let window_state = directory.join("window.ron");
+    let (selection, warning) = paths
+        .prepare()
+        .map_err(|error| -> Box<dyn std::error::Error> { error })?;
+    std::fs::create_dir_all(&paths.directory)?;
+    let window_state = paths.directory.join("window.ron");
     eframe::run_native(
-        "Attention Focus",
+        profile.title(),
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_app_id("AttentionFocus")
+                .with_app_id(profile.app_id())
                 .with_inner_size([620.0, 640.0])
                 .with_min_inner_size([420.0, 360.0])
                 .with_icon(egui::IconData {
@@ -697,7 +726,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             persistence_path: Some(window_state),
             ..Default::default()
         },
-        Box::new(move |context| Ok(Box::new(Desktop::new(context, directory, selection)))),
+        Box::new(move |context| Ok(Box::new(Desktop::new(context, paths, selection, warning)))),
     )?;
     Ok(())
 }

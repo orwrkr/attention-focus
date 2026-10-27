@@ -11,5 +11,6 @@
 | [T-0007](T-0007-tray-click-tooltip.md) | done | Tray Single Click and Tracked-Time Tooltip | T-0006 |
 | [T-0008](T-0008-system-clipboard.md) | done | System Clipboard | T-0003 |
 | [T-0009](T-0009-release-output.md) | done | One Release Output | T-0008 |
+| [T-0010](T-0010-runtime-profiles.md) | done | Pinned Window Actions and Runtime Profiles | T-0009 |
 
 Task template: `templates/TASK.md` from the repository root.

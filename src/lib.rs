@@ -5,6 +5,7 @@ pub mod icons;
 pub mod lifecycle;
 #[cfg(windows)]
 pub mod platform;
+pub mod profiles;
 pub mod report_ui;
 pub mod reports;
 pub mod source;

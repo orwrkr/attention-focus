@@ -107,9 +107,17 @@ fn check_storage(directory: &Path) -> io::Result<()> {
 /// Read settings without creating a database or running migrations.
 pub fn restore(directory: &Path) -> Result<Option<Selection>> {
     check_storage(directory)?;
+    restore_source_only(directory)
+}
+
+/// Read only the legacy settings file; unrelated profile directories stay independent.
+pub fn restore_source_only(directory: &Path) -> Result<Option<Selection>> {
     let file = directory.join("source.sqlite3");
     if !file.try_exists()? {
         return Ok(None);
+    }
+    if linked(&file)? {
+        return Err(invalid("Linked source settings are not supported.").into());
     }
     let db = Connection::open_with_flags(file, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     let selected: Option<(i64, String)> = db.query_row(

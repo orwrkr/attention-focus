@@ -4,6 +4,13 @@ Updated: 2026-10-27.
 
 ## State
 
+T-0010 pins Hide to tray/Exit above scrolling content and isolates Production and
+Development under LocalAppData/AttentionFocus. The release defaults to Production;
+debug and scripts/dev.ps1 use Development and reject explicit Production. Profiles
+have separate history, source settings, geometry, mutexes, and app/window identities.
+Old root files remain untouched. Only a valid old source path is seeded; new production
+history starts empty and persists normally after that. See ADR-0010.
+
 T-0005 implements project search and worker-owned date-range reports: inclusive dates,
 an explicit IANA timezone, project/task/day totals, and 200 recent session details.
 Saved, live, and unreviewed time are separate. Jiff 0.2.38 bundles timezone rules.
@@ -49,6 +56,8 @@ installer support remain deferred.
 - Rust with egui/eframe, tray-icon, and rusqlite with bundled SQLite: ADR-0004.
 - Configurable MetaPlan/Instance source, strictly read-only: ADR-0001.
 - Fixed application storage outside the source; validate resolved paths before writes.
+- Validate source containment against the shared application root, not just one profile.
+- Development is the only profile for agent experiments; never reset or seed Production.
 - English-only authored and stored content/UI: ADR-0002.
 - Chat may follow the user's language: ADR-0003.
 - External Unicode data remains unchanged.
@@ -71,18 +80,17 @@ Clean-machine runtime compatibility remains unverified.
 
 ## Next step
 
-Verify the checklist in docs/DEVELOPMENT.md with an operational UI helper or human:
-geometry restoration, real double-click routing, both tray states, and exit while hidden.
-The user exited the agent-launched app after report/clipboard checks. Process inspection
-found no app, and the canonical build was republished successfully. An earlier intentional
-build while it ran returned the expected locked-file error without fallback copies.
-The last UI discovery request was stopped with physical Escape; no further UI input
-was sent. Complete T-0005's full manual tracking gate and T-0002's
-remaining tray/geometry/lifecycle checks using disposable history, not fake real sessions.
+The canonical Production release and internal target/debug Development EXE are built.
+No app was launched during T-0010: Windows window discovery timed out on all three
+recovery attempts. First production launch will create its clean profile. Verify the
+pinned buttons, two simultaneous visible profiles, and remaining T-0005/T-0002 tracking,
+tray, geometry, and lifecycle checks in Development. The earlier user-closed app remains
+closed according to the pre-build process inspection. Never create fake Production time.
 
 ## Verification and limitations
 
-Twenty-seven automated tests pass, including source integrity/junctions, atomic switching,
+Thirty-two automated tests pass, including profile isolation/defaults/legacy preservation,
+native simultaneous profile mutexes, junction rejection, source integrity, atomic switching,
 write-failure rollback, backup migration, immutable activity snapshots, crash recovery,
 clock changes, and delayed suspend processing using its original event timestamp.
 A real hidden native listener was registered and routed synthetic Windows lock/suspend
@@ -97,9 +105,10 @@ Tests cover persistence, interrupted recovery, duplicate starts, failed-stop rol
 worker exit confirmation, and ICO structure. ICO artwork was visually inspected.
 Rust emitted only an incremental-cache hard-link fallback warning on the final lint run.
 Windows Computer Use list_windows again timed out three times, including after reset.
-The current helper can capture the app. Clipboard paste, search filtering, report refresh,
+Earlier helper captures verified clipboard paste, search filtering, report refresh,
 totals sections, details, invalid-date errors, and valid refresh were visually verified.
-The background now fills the window. Full tracking actions, window restoration, real tray
+The latest helper cannot enumerate windows (three timeouts including reset). The pinned
+header/two-app GUI changes are not visually verified. Full tracking actions, window restoration, real tray
 events, and Windows shell rendering still need interactive verification.
 Release/import-audit results are recorded in T-0006.
 T-0006 implementation is complete. Release build and PE import audit passed; the

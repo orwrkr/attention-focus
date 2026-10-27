@@ -1,13 +1,16 @@
 //! Windows profile storage and process ownership.
 
-use std::{io, path::PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE},
     System::{Com::CoTaskMemFree, Threading::CreateMutexW},
     UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
 };
 
-pub fn data_dir() -> io::Result<PathBuf> {
+pub fn data_root() -> io::Result<PathBuf> {
     let mut pointer = std::ptr::null_mut();
     // The shell allocates a null-terminated UTF-16 buffer; release it with COM.
     let status = unsafe {
@@ -41,10 +44,13 @@ pub fn data_dir() -> io::Result<PathBuf> {
 pub struct Instance(HANDLE);
 
 impl Instance {
-    pub fn acquire() -> io::Result<Self> {
-        // Include the profile in the name so independent Windows users do not collide.
-        let name: Vec<u16> = format!("Local\\AttentionFocus-{}", data_dir()?.display())
-            .replace(['\\', '/'], "_")
+    pub fn acquire(directory: &Path, title: &str) -> io::Result<Self> {
+        // The resolved directory distinguishes both the Windows user and runtime profile.
+        let identity = crate::source::resolve(directory)?
+            .to_string_lossy()
+            .to_lowercase()
+            .replace(['\\', '/'], "_");
+        let name: Vec<u16> = format!("Local\\AttentionFocus-{identity}")
             .encode_utf16()
             .chain(Some(0))
             .collect();
@@ -56,9 +62,9 @@ impl Instance {
             unsafe {
                 CloseHandle(handle);
             }
-            return Err(io::Error::other(
-                "Attention Focus is already running. Use Show Focus in its tray menu.",
-            ));
+            return Err(io::Error::other(format!(
+                "{title} is already running. Use its tray menu."
+            )));
         }
         Ok(Self(handle))
     }
@@ -69,5 +75,25 @@ impl Drop for Instance {
         unsafe {
             CloseHandle(self.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn production_and_development_can_run_together_but_duplicates_cannot() {
+        let root = tempfile::tempdir().unwrap();
+        let prod = root.path().join("Production");
+        let dev = root.path().join("Development");
+        let production = Instance::acquire(&prod, "Production test").unwrap();
+        let development = Instance::acquire(&dev, "Development test").unwrap();
+        assert!(Instance::acquire(&prod, "Production test").is_err());
+        assert!(Instance::acquire(&dev, "Development test").is_err());
+        std::fs::create_dir_all(&prod).unwrap();
+        assert!(Instance::acquire(&prod, "Production test").is_err());
+        drop(development);
+        drop(production);
+        assert!(Instance::acquire(&prod, "Production test").is_ok());
     }
 }

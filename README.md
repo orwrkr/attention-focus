@@ -52,9 +52,14 @@ Decisions: [docs/decisions/README.md](docs/decisions/README.md).
 ## Local environment
 
 Build and preview instructions: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
-Run `cargo run --locked` for development. Build the distributed EXE with
+Run `./scripts/dev.ps1` (or `cargo run --locked`) for Development. Build the distributed EXE with
 `./scripts/build.ps1`; its only output is `dist/AttentionFocus/attention-focus.exe`.
 If the EXE is locked, exit the running app and retry. No alternate copy is created.
 Only the EXE is required beside the application. Its data is created separately in
-`%LOCALAPPDATA%/AttentionFocus`; icons, fonts, and SQLite are compiled in.
+`%LOCALAPPDATA%/AttentionFocus/Production`; development uses the separate `Development`
+subdirectory. Both may run together. Debug builds cannot open Production. Window/tray
+labels identify Development, and Hide to tray/Exit remain pinned above scrolling content.
+Existing history directly under AttentionFocus stays untouched; new Production starts
+empty and keeps its history on later launches. Only the old source path is imported.
+Icons, fonts, and SQLite are compiled in.
 Do not commit personal settings, databases, or exports.
