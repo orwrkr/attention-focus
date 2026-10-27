@@ -2,194 +2,87 @@
 
 Updated: 2026-10-27.
 
-## State
+## Current state
 
-T-0014 implements version 0.5.0: tray status is a filled green light (running) or hollow
-gray ring (stopped), without transport symbols. Reports accept minute From/Until fields,
-start included/end excluded, with 24:00 as end of day. Whole-day presets remain intact;
-non-midnight DST gaps/folds are rejected, midnight retains first-valid-day behavior.
-Daily buckets clip to exact boundaries. Periodic refresh runs only while active time
-grows inside the filter; final boundary/affected stop/edit/recovery updates run once.
-Unrelated activity no longer reloads history. Search and unfinished/review totals have
-hover/guide explanations. Active-start timestamps are read into snapshots; SQLite schema
-remains two. See ADR-0014. T-0002/T-0005 remain manual gates, not missing core features;
-deferred export, saved-history edits, shortcuts, autostart and installer are not delivered.
+Current release: 0.6.1. T-0015 and the T-0005 settings-to-report workflow are complete.
+T-0002 remains a separate native desktop acceptance gate. Next implementation card:
+T-0016, CSV/Markdown export. It is planned, not implemented. History editing, shortcuts,
+autostart, installer and updater are still deferred. Read task cards and ADRs for history.
 
-T-0013 implements version 0.4.0: visible expanded reports refresh every two seconds
-and on committed tracking changes, with a single in-flight request, editable/debounced
-filters, stale-parameter reply rejection, and last-good-result retention. Date fields
-have Jiff calendar popups; timezone selection searches bundled names. Stay on top uses
-native WindowLevel and immediate per-profile window.ron persistence. Tracking schema
-remains two, as in 0.3; upgrades from 0.2 still migrate/backup schema one on app startup.
-Tooltips name the active project within 127 UTF-16 units. Production headers omit the
-profile word; Development stays explicit. Secondary text uses theme-aware blue.
-No new dependencies were added. See ADR-0013 and T-0013.
+The Rust app uses egui/eframe, tray-icon and bundled rusqlite. Dependencies are pinned
+in Cargo.lock. App/window/file icons are neutral; only filled-green/hollow-gray tray
+states indicate running/stopped, with a D badge in Development. Tray single click shows
+and double click toggles. Project/task changes split intervals by default; EditCurrent
+preserves the active interval start/timer. Pickers use durable recent-use order.
 
-T-0012 implements version 0.3.0: project/task picker changes apply immediately. While
-running they create an atomic new interval by default; the per-profile checkbox can
-instead reassign the entire active interval without resetting its start/timer. While
-stopped they save the next activity without starting. The upper caption explicitly
-identifies committed tracking activity or the saved next selection. Notes alone remain
-draft until applied or included in a picker change. Projects/tasks sort by durable
-tracking-use order with deterministic alphabetical ties, scoped by source and profile.
-Schema two adds preferences/recency and backs up schema-one databases before one-time
-history backfill. See ADR-0012. Development and Production histories remain separate.
+Reports accept half-open minute boundaries and bundled timezone choices. Until 24:00
+means end of day. Periodic queries run only while live time grows inside the filter;
+affected stop/edit/recovery events refresh once. Saved, Running and Needs review remain
+separate. Calendar/DST allocation is covered by tests. See ADR-0014.
 
-T-0011 introduces version 0.2.0, neutral blue application icons and purple development
-identity; only tray states are green play/gray pause, with a D badge in Development.
-The common renderer feeds Windows resources, runtime window icons, tray icons, and the
-five-page English guide. See ADR-0011 and docs/user-guide.md.
-scripts/build.ps1 now builds both EXEs and automatically publishes/verifies a versioned
-ZIP with the EXE, guide PDF, third-party notices, and release.json hashes. Exporting the
-PDF also refreshes the ZIP. Cargo owns the version; archived versions reject changed
-inputs. The build stamp rejects stale EXEs. Run scripts/verify-release.ps1 before handoff.
-Install documentation tools with setup-docs.ps1 or provide ATTENTION_FOCUS_PYTHON.
+Window width is capped at 760 logical pixels. Height follows measured content, with
+explicit shrinking after collapse. Maximize fits useful content; longer views scroll
+and header actions remain pinned. Single-monitor placement/size and Stay on top
+preference restoration were visually checked. See ADR-0015.
 
-T-0010 pins Hide to tray/Exit above scrolling content and isolates Production and
-Development under LocalAppData/AttentionFocus. The release defaults to Production;
-debug and scripts/dev.ps1 use Development and reject explicit Production. Profiles
-have separate history, source settings, geometry, mutexes, and app/window identities.
-Old root files remain untouched. Only a valid old source path is seeded; new production
-history starts empty and persists normally after that. See ADR-0010.
+## Lifecycle and data boundaries
 
-T-0005 implements project search and worker-owned date-range reports: inclusive dates,
-an explicit IANA timezone, project/task/day totals, and 200 recent session details.
-Saved, live, and unreviewed time are separate. Jiff 0.2.38 bundles timezone rules.
-Clipped duration allocation preserves adjacent-period totals (ADR-0009).
-The canonical EXE is published. Implementation and automated checks pass; T-0005 stays
-in_progress for full interactive tracking acceptance, which has not been claimed.
+Window close hides if the tray is available; tracking continues. Exit commits before
+closing. Received lock/suspend notifications finalize at their captured boundary;
+unlock/resume never restart. Confirmed WM_ENDSESSION also saves, with a bounded worker
+confirmation; canceled shutdown queries do not stop tracking. Force-kill, power loss,
+missed heartbeats or clock discontinuities use checkpoint review. Checkpoints run about
+every ten seconds, not a hard loss guarantee under IO failure. See ADR-0008/0015.
 
-T-0004 adds durable project/task/note snapshots, an applied selection restored on
-restart, and transactional Start/Stop/Switch. One clock-injected engine owns writes.
-Version-one migration backs up old unassigned history using SQLite's backup API.
-Windows lock/suspend messages stop at the captured event boundary; resume stays stopped.
-Missed heartbeats and clock changes require checkpoint review. See ADR-0008.
+MetaPlan is strictly read-only and its Instance path is configurable. Resolve paths
+and directory links before writes. Application storage is outside the source in the
+Windows LocalAppData known folder under AttentionFocus/Production or Development.
+Debug builds reject Production. Histories, settings, mutexes and geometry are separate.
+Legacy root history stays untouched. Schema remains two since 0.3.0; upgrading schema
+one backs it up first; EXEs before 0.3.0 cannot read schema two. See ADR-0010/0012.
 
-T-0008 enables eframe's native clipboard feature. The user confirmed direct path
-typing works; Ctrl+V previously used the disabled system-clipboard fallback.
-T-0009 establishes scripts/build.ps1 and dist/AttentionFocus/attention-focus.exe as
-the only canonical production EXE. T-0011 adds the versioned package. Obsolete
-AttentionFocus-Update was removed. Locked files
-are errors; never create fallback copies or terminate an app automatically. If an agent
-launched a blocking instance, offer to exit it and wait for user approval.
-Source-field Ctrl+C/clear/Ctrl+V was now visually verified without saving settings.
+All agent-created sessions are synthetic and Development-only. The ignored fixture is
+under target/manual-instance. Development was exited normally after checks; the external
+portable Production app stayed open and untouched. The user explicitly approved repeated
+agent-launched Development test runs and normal UI Exit for verification. Do not ask
+again for that scope; this does not authorize closing Production or force-killing apps.
 
-T-0003 now adds source settings and a read-only project/task preview (ADR-0007).
-Source identity and selection live in source.sqlite3. Startup reads settings read-only
-and validates canonical source/storage boundaries before opening writable app files.
-Background loading reports per-project diagnostics and excludes duplicate slugs and links.
-The project/task picker uses this snapshot; unavailable or archived activities cannot
-start new sessions. Stopping and exit remain available when the source cannot load.
+## Checks and limits
 
-Completed T-0007: single-click window access and a live native hover tooltip.
-ADR-0006 supersedes the old ignored-single-click rule. Double click still toggles
-tracking without accidentally showing the window; single click waits for the system
-double-click interval. Totals include active time once and exclude unreviewed time.
+52 Rust tests, five package tests, formatting and Clippy passed. Junction tests initially
+hit restricted permissions; the permitted rerun passed all tests. Native listener tests
+used synthetic messages, not actual machine shutdown. Both 0.6.1 EXEs and automatic ZIP
+passed verify-release metadata/icons/fingerprint/stamp/member/hash checks. All seven
+PDF pages were rendered and visually inspected. An initial 0.6.0 archive is retained;
+0.6.1 adds the explicit shrink correction found during native testing.
 
-T-0001 is complete. T-0002 remains blocked on interactive verification, but the user
-explicitly authorized continuing with desktop features. T-0006 adds remembered window
-geometry, embedded icons, two tray states, double-click tracking, and durable unassigned
-sessions. A worker owns SQLite and commits state before the UI updates.
-Search and reports are implemented; export, corrections, shortcuts, autostart, and
-installer support remain deferred.
+Native checks covered synthetic source settings/search/calendars (T-0014), task split,
+EditCurrent timing, recency, saved task totals and UTC selection. Exit during tracking
+saved the interval; restart was stopped, without unfinished/overlapping rows in read-only
+Development inspection. Maximize/collapse, pinned actions and placement/preference
+restoration passed. Minimum-width drag did not establish a resize, so remains unverified.
+Actual topmost Z-order, tray input/rendering, multiple monitors, real lock/sleep/hibernate/
+logoff/shutdown and clean-machine compatibility are unverified. The native helper exposes
+app windows but did not expose a targetable taskbar/tray window. Do not disrupt the
+user's live environment for real power/session tests.
 
-## Decisions
-
-- Rust with egui/eframe, tray-icon, and rusqlite with bundled SQLite: ADR-0004.
-- Configurable MetaPlan/Instance source, strictly read-only: ADR-0001.
-- Fixed application storage outside the source; validate resolved paths before writes.
-- Validate source containment against the shared application root, not just one profile.
-- Development is the only profile for agent experiments; never reset or seed Production.
-- English-only authored and stored content/UI: ADR-0002.
-- Chat may follow the user's language: ADR-0003.
-- External Unicode data remains unchanged.
-- ADR-0005 authorizes desktop state before source selection and eframe RON geometry
-  alongside SQLite. Both use the LocalAppData/AttentionFocus directory.
-- Icons are generated from src/icons.rs and embedded at build time with winresource.
-- Static CRT linking is configured in .cargo/config.toml for Windows x64 MSVC.
-- Architecture and test expectations: docs/ARCHITECTURE.md.
-- UI selection rationale and its unmeasured assumptions are saved in ADR-0004.
-  The user accepted continuing with egui as a working hypothesis, not a benchmark winner.
-
-## Environment
-
-Verified Rust 1.98.0, Cargo 1.98.0, and stable-x86_64-pc-windows-msvc.
-Dependency resolution and linking passed. Cargo.lock records the tested dependency graph:
-eframe 0.37.0, tray-icon 0.26.1, rusqlite 0.41.0, tempfile 3.27.0, and winresource 0.1.34.
-The distributed executable is dist/AttentionFocus/attention-focus.exe. Cargo's primary
-release artifact is consumed by the packaging script; target remains internal build data.
-Clean-machine runtime compatibility remains unverified.
+Pre-commit follow-up: the earlier final Computer Use observation was interrupted by
+physical Escape. Current read-only process inspection confirms Development has exited
+and only the external Production process remains. No GUI input was needed. Repeated
+52 Rust tests, five package tests, formatting, Clippy and release verification passed.
 
 ## Next step
 
-Use dist/AttentionFocus-VERSION-windows-x64.zip for production and
-target/debug/attention-focus.exe for Development. The Windows helper recovered during
-T-0014. Development 0.5.0 remains open and stopped with synthetic projects under ignored
-target/manual-instance; a short synthetic interval was saved only in Development.
-Its EXE is locked until the user exits or approves our closing it. The external portable
-Production copy stayed open and untouched; never stop/replace it or create fake
-Production time. Complete real tray state/click, geometry, topmost restoration,
-timezone dropdown, task switching/edit-mode/recency and lock/suspend/recovery acceptance
-in Development. T-0002 is ready now that its tooling blocker is resolved; T-0005 remains
-in progress. Clean-machine runtime verification is also outstanding.
+Complete the remaining T-0002 checklist with suitable native access or human verification
+on a safe test environment. Proceed with T-0016 export as the next product change; research
+file selection and record its ADR first. Keep one primary implementation task selected.
+Publish changes only through scripts/build.ps1, which builds both canonical EXEs and
+regenerates the PDF/notices/ZIP; run verify-release.ps1 before handoff. Canonical paths:
+dist/AttentionFocus/attention-focus.exe and target/debug/attention-focus.exe. A locked
+EXE is an error, never a reason to create alternate copies. Cargo.toml owns the version;
+changed shipped inputs of an archived version require a bump and complete rebuild.
 
-## Verification and limitations
-
-T-0014: 51 Rust tests, five package tests, formatting and Clippy passed. Both 0.5.0
-EXEs and automatic ZIP passed verify-release versions/icons/fingerprints/stamp/members/
-hashes. All seven PDF pages were rendered and inspected; final PDF matched the preview.
-Native Development checks verified synthetic source settings, project search/dropdown,
-stopped selection caption, calendar selection and minute entry. A historical report
-kept its snapshot while tracking; Today enabled live Running time; Stop transferred
-it to Saved and paused polling. No Production history was opened for writing. Actual
-tray rendering/interactions and remaining desktop lifecycle gates are not claimed.
-
-T-0013: 45 Rust tests, five package tests, formatting, and Clippy pass. Both 0.4.0 EXEs
-and automatic ZIP built; verify-release passed versions/icons/fingerprint/stamp/members/
-hashes. Six PDF pages inspected and byte-matched to final output. New checks cover
-refresh scheduling/staleness/backoff, leap/month grids, bundled timezone resolution,
-and Unicode tooltip state/length. Native UI/topmost/persistence/theme checks remain
-unverified: two list_windows timeouts, then initialization timeout after reset. No app
-was launched, real database changed, or running portable copy replaced/stopped.
-
-T-0012: 39 Rust tests, five package tests, formatting, and Clippy pass. Both 0.3.0 EXEs
-and the automatically refreshed ZIP built and verify-release passed (versions, eight
-icon sizes each, exact members, build stamp, source fingerprint, and SHA-256 hashes).
-All six PDF pages visually inspected; the final PDF is byte-identical to that preview.
-New tests verify interval boundaries, current-interval edits, persisted/source-scoped
-recency and actual sorting, write rollback, backup/backfill and failed-migration rollback,
-plus recovery without auto-resume. Windows discovery timed out three times including
-reset. No app was launched or real profile/source data changed by development tools.
-
-T-0011: both 0.2.0 EXEs and the production ZIP built; 32 Rust tests, five Python tests,
-formatting, Clippy, output-lock checks, and PowerShell parsing pass. Verified file version
-metadata and all eight embedded neutral icon sizes per EXE. Inspected every one of five
-PDF pages and proved the final packaged PDF byte-identical. ZIP allowlist/hashes/stamp
-and automatic refresh through both build and PDF export pass. Both PE imports are
-Windows-system-only. No app was launched; real shell rendering remains unverified.
-
-Thirty-two automated tests pass, including profile isolation/defaults/legacy preservation,
-native simultaneous profile mutexes, junction rejection, source integrity, atomic switching,
-write-failure rollback, backup migration, immutable activity snapshots, crash recovery,
-clock changes, and delayed suspend processing using its original event timestamp.
-A real hidden native listener was registered and routed synthetic Windows lock/suspend
-messages while ignoring unlock/resume. These are not real machine sleep/lock tests.
-Formatting, Clippy, and release build passed; the final results are in T-0004.
-The report checks and canonical packaging results are recorded in T-0005/T-0009.
-The updated PE dependency audit remains Windows-system-only; wtsapi32 and advapi32
-are now included. The canonical EXE remains the only production executable. T-0009 packaging
-checks verified locked-file rejection, old-file preservation, and obsolete-copy cleanup.
-Formatting, lint, and release build results for the tray refinement are in T-0007.
-Tests cover persistence, interrupted recovery, duplicate starts, failed-stop rollback,
-worker exit confirmation, and ICO structure. ICO artwork was visually inspected.
-Rust emitted only an incremental-cache hard-link fallback warning on the final lint run.
-Windows Computer Use list_windows again timed out three times, including after reset.
-Earlier helper captures verified clipboard paste, search filtering, report refresh,
-totals sections, details, invalid-date errors, and valid refresh were visually verified.
-The latest helper cannot enumerate windows (three timeouts including reset). The pinned
-header/two-app GUI changes are not visually verified. Full tracking actions, window restoration, real tray
-events, and Windows shell rendering still need interactive verification.
-Release/import-audit results are recorded in T-0006.
-T-0006 implementation is complete. Release build and PE import audit passed. T-0011
-expands dist/AttentionFocus with the guide, notices, and manifest. Runtime imports are Windows-only.
-No writes were made to MetaPlan. No remote, installer, or published release exists.
+Use ATTENTION_FOCUS_PYTHON with the bundled Python runtime when the default Python
+lacks ReportLab/Pillow/pypdf. Poppler renders previews under ignored target/pdf-preview.
+All stored project content stays English; chat can use the user's language. Never commit
+personal source data, profile history, machine-specific paths or generated artifacts.

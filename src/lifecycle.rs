@@ -113,6 +113,11 @@ unsafe extern "system" fn window_proc(
     let reason = match message {
         WM_WTSSESSION_CHANGE if wparam == WTS_SESSION_LOCK as usize => Some("lock"),
         WM_POWERBROADCAST if wparam == PBT_APMSUSPEND as usize => Some("suspend"),
+        WM_ENDSESSION if wparam != 0 => Some(if lparam & ENDSESSION_LOGOFF as isize != 0 {
+            "logoff"
+        } else {
+            "shutdown"
+        }),
         _ => None,
     };
     if let Some(reason) = reason
@@ -123,6 +128,9 @@ unsafe extern "system" fn window_proc(
         }
     }
     match message {
+        // Agree immediately; save only when Windows confirms the session will end.
+        WM_QUERYENDSESSION => 1,
+        WM_ENDSESSION => 0,
         WM_CLOSE => {
             unsafe {
                 WTSUnRegisterSessionNotification(window);
@@ -145,7 +153,7 @@ unsafe extern "system" fn window_proc(
 mod tests {
     use super::*;
     #[test]
-    fn notification_window_routes_synthetic_lock_and_suspend_but_ignores_resume() {
+    fn notification_window_routes_confirmed_interruptions_but_ignores_resume_and_cancellation() {
         let (sender, receiver) = mpsc::channel();
         let listener = Listener::start(move |reason| {
             let _ = sender.send(reason);
@@ -190,6 +198,37 @@ mod tests {
                 .recv_timeout(std::time::Duration::from_secs(3))
                 .unwrap(),
             "suspend"
+        );
+        assert!(receiver.try_recv().is_err());
+        let window = listener.window as HWND;
+        unsafe {
+            assert_eq!(
+                SendMessageW(window, WM_QUERYENDSESSION, 0, ENDSESSION_LOGOFF as isize),
+                1
+            );
+            SendMessageW(window, WM_ENDSESSION, 0, ENDSESSION_LOGOFF as isize);
+        }
+        assert!(receiver.try_recv().is_err());
+        unsafe {
+            SendMessageW(
+                window,
+                WM_ENDSESSION,
+                1,
+                (ENDSESSION_LOGOFF | ENDSESSION_CRITICAL) as isize,
+            );
+            SendMessageW(window, WM_ENDSESSION, 1, 0);
+        }
+        assert_eq!(
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap(),
+            "logoff"
+        );
+        assert_eq!(
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap(),
+            "shutdown"
         );
         assert!(receiver.try_recv().is_err());
     }

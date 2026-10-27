@@ -100,6 +100,8 @@ Do not claim a successful stop or switch until the transaction commits.
 | Running / picker change, EditCurrent mode | Reassign the entire active interval; preserve ID/start/timer and finalized history |
 | Running / Start | Reject duplicate start; never create a second active row |
 | Running / lock or suspend | Close with an interruption reason; retain selection |
+| Running / confirmed Windows session end | Save at the event boundary with a bounded confirmation wait |
+| Any / canceled shutdown query | Keep tracking state unchanged |
 | Interrupted / resume or unlock | Remain stopped until the user explicitly starts |
 | Running / explicit Exit | Stop durably, then exit; stay open on save failure |
 | Any / window close | Hide only when the tray is available; never stop implicitly |
@@ -107,6 +109,10 @@ Do not claim a successful stop or switch until the transaction commits.
 
 No idle-input auto-stop: reading and thinking may involve no input. No automatic
 restart after unlock. Source priority and lifecycle statuses are never changed.
+The hidden listener agrees immediately to WM_QUERYENDSESSION and saves only for a
+confirmed WM_ENDSESSION. Force termination/power loss still use checkpoint recovery;
+see ADR-0015. Width is capped; measured content bounds height, and oversized windows
+are explicitly shrunk after collapse. Maximize fits content with scrolling.
 
 The upper UI caption shows the committed activity, distinct from pending note drafts.
 Persist the picker mode independently per profile. Schema two backs up schema one and

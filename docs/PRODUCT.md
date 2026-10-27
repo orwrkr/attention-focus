@@ -30,6 +30,7 @@
   distinction, and omit Production from the normal header.
 - Use status lights without action-like play/pause symbols. Allow minute boundaries
   and limit periodic refresh to live time growing inside the report filter.
+- Fit window size to useful content and save tracking on confirmed Windows session end.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

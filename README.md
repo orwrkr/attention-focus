@@ -25,6 +25,9 @@ timezones have a searchable list. Stay on top is remembered per profile. Tray to
 include the current project; secondary text uses a readable blue accent. Normal
 headers show the app/version; Development remains identified.
 Some interactive desktop checks remain pending.
+Window size follows useful content with a capped width. Confirmed Windows logoff or
+shutdown saves tracking; canceled shutdown queries do not stop it. Sleep/hibernate
+stops tracking without automatic resume. Forced exits use checkpoint recovery.
 See [docs/CONTEXT.md](docs/CONTEXT.md) for current status and next steps.
 
 ## Accepted constraints

@@ -20,5 +20,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0012](0012-immediate-activity-changes.md) | accepted | Immediate interval changes and durable recent pickers |
 | [0013](0013-live-reports-and-desktop-controls.md) | accepted | Live reports, calendars, timezone list, and window controls |
 | [0014](0014-minute-ranges-and-status-lights.md) | accepted | Minute boundaries, relevant refresh, and tray status lights |
+| [0015](0015-shutdown-and-compact-window.md) | accepted | Confirmed session end and content-fitted window limits |
 
-Next number: `0015`. Template: `templates/ADR.md` from the repository root.
+Next number: `0016`. Template: `templates/ADR.md` from the repository root.

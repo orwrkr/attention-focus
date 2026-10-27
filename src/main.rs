@@ -188,7 +188,7 @@ impl Desktop {
                 || saved.recv_timeout(Duration::from_millis(1500)).is_err()
             {
                 let _ = lifecycle_sender.send(Action::PlatformError(
-                    "Cannot confirm saving before lock or suspend. Check session recovery.".into(),
+                    "Cannot confirm saving before the Windows interruption. Check session recovery.".into(),
                 ));
                 ctx.request_repaint();
             }
@@ -605,6 +605,7 @@ impl eframe::App for Desktop {
             }
         }
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
+            ui.set_max_width(ui.available_width().min(744.0));
             // These actions stay outside the scrolling body at every content height.
             ui.horizontal(|ui| {
                 ui.heading("Attention Focus");
@@ -646,7 +647,8 @@ impl eframe::App for Desktop {
                 }
             });
             ui.separator();
-            egui::ScrollArea::vertical()
+            let body_top = ui.cursor().top();
+            let body = egui::ScrollArea::vertical()
                 .id_salt("window-content")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
@@ -790,6 +792,24 @@ impl eframe::App for Desktop {
                     });
                     self.reports.show(ui, &self.commands, self.ready);
                 });
+            // Fit actual content, including expanded reports, while keeping vertical scrolling.
+            let viewport = ctx.input(|input| input.viewport().clone());
+            let monitor = viewport.monitor_size.unwrap_or(egui::vec2(1280.0, 960.0));
+            let header = body_top - ui.min_rect().top();
+            let limit = egui::vec2(
+                760.0_f32.min(monitor.x),
+                (body.content_size.y + header + 24.0).clamp(360.0, (monitor.y - 80.0).max(360.0)),
+            );
+            ctx.send_viewport_cmd(egui::ViewportCommand::MaxInnerSize(limit));
+            if viewport.maximized == Some(true) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(limit));
+            } else if let Some(rect) = viewport.inner_rect
+                && (rect.width() > limit.x + 1.0 || rect.height() > limit.y + 1.0)
+            {
+                // Windows size constraints alone do not shrink an already oversized window.
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(rect.size().min(limit)));
+            }
         });
     }
 }
@@ -814,6 +834,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .with_app_id(profile.app_id())
                 .with_inner_size([620.0, 640.0])
                 .with_min_inner_size([420.0, 360.0])
+                .with_max_inner_size([760.0, 4096.0])
                 .with_icon(egui::IconData {
                     rgba: icons::rgba(
                         64,

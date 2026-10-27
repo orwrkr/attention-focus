@@ -1174,6 +1174,44 @@ mod tests {
     }
 
     #[test]
+    fn confirmed_windows_shutdown_is_durable_and_does_not_resume_on_reopen() {
+        for reason in ["logoff", "shutdown", "suspend"] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut engine = engine(dir.path());
+            engine
+                .apply(Some(Command::Start(activity("Synthetic work"))), at(100))
+                .unwrap();
+            engine.apply(None, at(10_100)).unwrap();
+            engine
+                .apply(
+                    Some(Command::Interrupt {
+                        reason,
+                        boundary: None,
+                        done: None,
+                    }),
+                    at(12_400),
+                )
+                .unwrap();
+            drop(engine);
+            let store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+            let snapshot = store.snapshot().unwrap();
+            assert!(!snapshot.running);
+            assert!(!snapshot.needs_review);
+            assert_eq!(snapshot.total_ms, 12_300);
+            assert_eq!(snapshot.completed, 1);
+            let record: (i64, String) = store
+                .connection
+                .query_row(
+                    "SELECT elapsed_ms,end_reason FROM focus_sessions",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(record, (12_300, reason.into()));
+        }
+    }
+
+    #[test]
     fn crash_review_counts_only_checkpoint_not_overnight_downtime() {
         let dir = tempfile::tempdir().unwrap();
         let mut engine = engine(dir.path());

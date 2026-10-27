@@ -1,6 +1,6 @@
 # T-0005: Focus Workflow and Time Reports
 
-Status: in_progress.
+Status: done.
 Dependencies: T-0004.
 
 ## Goal
@@ -26,12 +26,12 @@ and unreviewed time separate. Verify clipping, DST, midnight, identity, and UI b
 - [x] Show confirmed timer state and actionable storage/source errors in English.
 - [x] Display session history and project/task totals for a selected date range with uncertain time separated.
 - [x] Test clipped intervals, midnight and daylight-saving boundaries, Unicode titles, and project archival.
-- [ ] Manually verify the full settings-to-report workflow and record release build instructions.
+- [x] Manually verify the full settings-to-report workflow and record release build instructions.
 - [x] Document deferred export, editing, shortcuts, autostart, and installer work without presenting them as delivered.
 
-## Checks
+## Earlier implementation checks
 
-Implementation is complete; full interactive tracking acceptance remains pending.
+Initial implementation was complete; interactive acceptance was pending until T-0015 below.
 Twenty-seven tests passed with cargo test --offline --locked. Added checks cover
 calendar-day boundaries (23/25-hour DST days, midnight gaps, skipped dates), clipped
 and adjacent interval additivity, monotonic/wall drift allocation, Unicode snapshots,
@@ -60,11 +60,17 @@ was sent. This does not invalidate the report/clipboard checks already recorded 
 
 ## Handoff
 
-Complete the remaining manual tracking/tray/lifecycle checks with disposable history,
-then mark this task done. T-0014 added native Development evidence for synthetic source
-settings, project filtering/selection, minute/calendar filters and start/stop reporting.
-Historical ranges paused while Today updated live; Stop moved Running to Saved.
-Task switching/edit mode, real tray, geometry and lock/suspend/recovery still need
-acceptance. Development 0.5.0 remains open and stopped on synthetic data; obtain approval
-before closing it. The external portable Production instance was left untouched.
+T-0014 verified synthetic source settings, project filtering/selection, calendar/minute
+filters and start/stop reports. T-0015 completed the native task workflow: Plan work
+started; Review work finalized the previous interval and reset its timer. EditCurrent
+reassigned it back without resetting elapsed time. Recency put the latest task first.
+Stop finalized it; task totals agreed with saved focus subject to whole-second rounding.
+UTC selection retained totals with UTC labels. Exit during tracking saved its interval;
+restart remained stopped. Read-only Development inspection found no unfinished or
+overlapping rows. Both EXEs and the 0.6.1 package passed release checks; instructions
+remain docs/DEVELOPMENT.md. The settings-to-report criterion is complete.
+
+Actual tray input, minimum-width resizing, multi-monitor geometry, topmost Z-order and
+real OS interruptions remain separate T-0002 gates. Production was untouched.
+Development was exited normally with the user's approval.
 Export and manual corrections remain deferred; do not expand this task to include them.

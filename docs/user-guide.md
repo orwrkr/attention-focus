@@ -111,15 +111,24 @@ together with window placement, and does not prevent hiding to the tray. The nor
 header shows the app/version; the test version also shows Development. Secondary
 explanations use a blue accent to distinguish them from primary text.
 
+Window width is capped at 760 logical pixels. Its height limit follows expanded
+content and available screen space. Maximize fits the useful content instead of
+filling the monitor; long reports still scroll and header actions stay accessible.
+Collapsing content also shrinks a window that exceeds the new height limit.
+
 ## Interruptions and returning to work
 
-Windows lock and sleep notifications stop the session. Unlocking or waking does not
-restart it: start explicitly when ready. The timer does not stop merely because you
-are reading or thinking without keyboard or mouse input.
+Windows lock, sleep and hibernation notifications stop the session at the received
+event boundary. Unlocking or waking does not restart it: start explicitly when ready.
+Confirmed Windows logoff, shutdown or restart saves the active interval before the
+notification returns. A canceled shutdown query does not stop tracking. Saving has a
+bounded wait; a forced termination or failed write can still require recovery.
 
 If the app closes unexpectedly or detects a clock change or missed heartbeat, it asks
 you to review saved checkpoint time. **Accept saved time** retains the last durable
 checkpoint; time after it is excluded. Restarting never counts the time the app was off.
+Checkpoints are written about every ten seconds. Force-killing the process or losing
+power can lose the unsaved tail. Reading or thinking without input does not stop time.
 
 <!-- pagebreak -->
 

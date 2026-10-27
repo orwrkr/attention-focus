@@ -57,3 +57,12 @@ Verify close-to-hide, real tray state/click restoration, Show Focus and approved
 both visible and hidden, geometry, topmost restoration and lifecycle recovery. Record
 results before marking done. Later implementation tasks already proceeded under the
 user's override; clean-machine compatibility is still unverified.
+
+T-0015 verified clean Exit during synthetic tracking, stopped restart, single-monitor
+placement/size restoration and Stay on top preference restoration. Native maximize
+fitted content; collapse shrank the window. Full settings-to-report workflow is now
+accepted in T-0005. Actual tray input/rendering, topmost Z-order, minimum-width resizing,
+multiple monitors and real lock/sleep/hibernate/logoff/shutdown still need acceptance.
+The helper did not expose a targetable taskbar/tray window. Do not shut down the user's
+working machine for testing. The user approved repeated agent-launched Development
+launch/normal-Exit checks; that approval does not authorize closing Production.
