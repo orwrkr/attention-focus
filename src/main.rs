@@ -103,13 +103,11 @@ impl Desktop {
     ) -> Self {
         let directory = paths.directory;
         let profile = paths.profile;
-        let width_error = platform::constrain_maximized_width(
+        let width_error = platform::constrain_window_bounds(
             context,
-            (760.0
-                * context
-                    .winit_window()
-                    .map_or(1.0, |window| window.scale_factor()))
-            .round() as u32,
+            context
+                .winit_window()
+                .map_or(1.0, |window| window.scale_factor()),
         )
         .err()
         .map(|error| format!("Cannot apply window width limit: {error}"));

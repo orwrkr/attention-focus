@@ -26,5 +26,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0018](0018-window-counters-and-width.md) | accepted | Explicit window counters and a static native width limit |
 | [0019](0019-scroll-and-selection-controls.md) | accepted | Stable scroll reflow, visible window edges and selection controls |
 | [0020](0020-calm-tracking-motion.md) | accepted | Restrained running indicators and Windows motion preferences |
+| [0021](0021-startup-window-recovery.md) | accepted | Safe startup maximization and collapsed-size recovery |
 
-Next number: `0021`. Template: `templates/ADR.md` from the repository root.
+Next number: `0022`. Template: `templates/ADR.md` from the repository root.

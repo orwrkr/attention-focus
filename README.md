@@ -37,6 +37,7 @@ include the current project; secondary text uses a readable blue accent. Normal
 headers show the app/version; Development remains identified.
 Some interactive desktop checks remain pending.
 Native resizing/maximizing is stable; the content column has a readable width.
+Startup repairs previously collapsed window sizes without resetting other preferences.
 Sections, scroll, filters/searches and note drafts restore separately per profile.
 Confirmed Windows logoff or
 shutdown saves tracking; canceled shutdown queries do not stop it. Sleep/hibernate

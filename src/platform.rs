@@ -78,19 +78,19 @@ impl Drop for Instance {
     }
 }
 
-/// Apply the configured tracking-width limit to maximization as well as dragging.
+/// Repair collapsed restored geometry and constrain restored maximization once.
 /// Install on the root window's owning UI thread before its first rendered frame.
-pub fn constrain_maximized_width(
+pub fn constrain_window_bounds(
     window: &impl raw_window_handle::HasWindowHandle,
-    max_client_width: u32,
+    scale_factor: f64,
 ) -> io::Result<()> {
     use windows_sys::Win32::{
         Foundation::RECT,
         UI::{
             Shell::SetWindowSubclass,
             WindowsAndMessaging::{
-                GetClientRect, GetWindowRect, IsZoomed, MINMAXINFO, SWP_NOACTIVATE, SWP_NOMOVE,
-                SWP_NOZORDER, SendMessageW, SetWindowPos, WM_GETMINMAXINFO,
+                GetClientRect, GetWindowRect, IsZoomed, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER,
+                SetWindowPos,
             },
         },
     };
@@ -104,26 +104,21 @@ pub fn constrain_maximized_width(
     if unsafe { SetWindowSubclass(hwnd, Some(width_limit), 0xAF18, 0) } == 0 {
         return Err(io::Error::last_os_error());
     }
+    let max_client_width = (760.0 * scale_factor).round() as i32;
     if unsafe { IsZoomed(hwnd) } != 0
-        && let Some((monitor, _, _)) = unsafe { monitor_frame(hwnd) }
+        && let Some((monitor, x, y)) = unsafe { monitor_frame(hwnd) }
     {
-        let mut limits = MINMAXINFO::default();
-        unsafe {
-            SendMessageW(
-                hwnd,
-                WM_GETMINMAXINFO,
-                0,
-                (&mut limits as *mut MINMAXINFO) as isize,
-            )
-        };
+        // Do not synthesize WM_GETMINMAXINFO: Windows normally seeds its structure,
+        // while winit may not yet have installed its min/max constraints here.
+        let bounds = maximized_bounds(&monitor, x, y, max_client_width + 2 * x);
         if unsafe {
             SetWindowPos(
                 hwnd,
                 std::ptr::null_mut(),
-                monitor.rcMonitor.left + limits.ptMaxPosition.x,
-                monitor.rcMonitor.top + limits.ptMaxPosition.y,
-                limits.ptMaxSize.x,
-                limits.ptMaxSize.y,
+                bounds.left,
+                bounds.top,
+                bounds.right - bounds.left,
+                bounds.bottom - bounds.top,
                 SWP_NOZORDER | SWP_NOACTIVATE,
             )
         } == 0
@@ -138,11 +133,12 @@ pub fn constrain_maximized_width(
     {
         return Err(io::Error::last_os_error());
     }
-    let client_width = client.right - client.left;
-    if client_width > max_client_width as i32 {
-        // Correct restored oversized geometry once, while eframe still keeps it hidden.
-        // Keep position, height, maximized state and activation unchanged.
-        let width = outer.right - outer.left - client_width + max_client_width as i32;
+    let current = [client.right - client.left, client.bottom - client.top];
+    let repaired = restored_client_size(current, scale_factor);
+    if repaired != current {
+        // Repair legacy collapsed geometry once, without clearing any saved preferences.
+        let width = outer.right - outer.left - current[0] + repaired[0];
+        let height = outer.bottom - outer.top - current[1] + repaired[1];
         if unsafe {
             SetWindowPos(
                 hwnd,
@@ -150,7 +146,7 @@ pub fn constrain_maximized_width(
                 0,
                 0,
                 width,
-                outer.bottom - outer.top,
+                height,
                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
             )
         } == 0
@@ -159,6 +155,41 @@ pub fn constrain_maximized_width(
         }
     }
     Ok(())
+}
+
+fn restored_client_size(current: [i32; 2], scale: f64) -> [i32; 2] {
+    let min = [420.0, 360.0].map(|v| (v * scale).round() as i32);
+    let fallback = [620.0, 640.0].map(|v| (v * scale).round() as i32);
+    let max = (760.0 * scale).round() as i32;
+    [
+        if current[0] < min[0] {
+            fallback[0]
+        } else {
+            current[0].min(max)
+        },
+        if current[1] < min[1] {
+            fallback[1]
+        } else {
+            current[1]
+        },
+    ]
+}
+
+fn maximized_bounds(
+    monitor: &windows_sys::Win32::Graphics::Gdi::MONITORINFO,
+    x: i32,
+    y: i32,
+    max_outer_width: i32,
+) -> windows_sys::Win32::Foundation::RECT {
+    let left = monitor.rcWork.left - x;
+    let top = monitor.rcWork.top - y;
+    windows_sys::Win32::Foundation::RECT {
+        left,
+        top,
+        right: left
+            + (monitor.rcWork.right - monitor.rcWork.left + 2 * x).min(max_outer_width.max(1)),
+        bottom: monitor.rcWork.bottom + y,
+    }
 }
 
 unsafe extern "system" fn width_limit(
@@ -181,13 +212,23 @@ unsafe extern "system" fn width_limit(
     if message == WM_GETMINMAXINFO && lparam != 0 {
         let limits = unsafe { &mut *(lparam as *mut MINMAXINFO) };
         if let Some((monitor, x, y)) = unsafe { monitor_frame(hwnd) } {
-            // Include the invisible resize borders, so the caption/client start inside
-            // the work area instead of being clipped above it at non-default DPI.
-            limits.ptMaxPosition.x = monitor.rcWork.left - monitor.rcMonitor.left - x;
-            limits.ptMaxPosition.y = monitor.rcWork.top - monitor.rcMonitor.top - y;
-            limits.ptMaxSize.x =
-                (monitor.rcWork.right - monitor.rcWork.left + 2 * x).min(limits.ptMaxTrackSize.x);
-            limits.ptMaxSize.y = monitor.rcWork.bottom - monitor.rcWork.top + 2 * y;
+            // A real Windows message supplies defaults, but tolerate unset tracking
+            // limits during startup. Never let a zero upper bound collapse the window.
+            let fallback = (760.0
+                * unsafe { windows_sys::Win32::UI::HiDpi::GetDpiForWindow(hwnd) }.max(96) as f64
+                / 96.0)
+                .round() as i32
+                + 2 * x;
+            let cap = if limits.ptMaxTrackSize.x > 0 {
+                limits.ptMaxTrackSize.x
+            } else {
+                fallback
+            };
+            let bounds = maximized_bounds(&monitor, x, y, cap);
+            limits.ptMaxPosition.x = bounds.left - monitor.rcMonitor.left;
+            limits.ptMaxPosition.y = bounds.top - monitor.rcMonitor.top;
+            limits.ptMaxSize.x = bounds.right - bounds.left;
+            limits.ptMaxSize.y = bounds.bottom - bounds.top;
         }
     }
     if matches!(
@@ -266,6 +307,28 @@ unsafe fn monitor_frame(
 mod tests {
     use super::*;
     #[test]
+    fn collapsed_restore_recovers_without_changing_valid_dimensions() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let physical = |value: f64| (value * scale).round() as i32;
+            assert_eq!(
+                restored_client_size([64, 64], scale),
+                [physical(620.0), physical(640.0)]
+            );
+            assert_eq!(
+                restored_client_size([physical(500.0), physical(900.0)], scale),
+                [physical(500.0), physical(900.0)]
+            );
+            assert_eq!(
+                restored_client_size([physical(500.0), 0], scale),
+                [physical(500.0), physical(640.0)]
+            );
+            assert_eq!(
+                restored_client_size([physical(1000.0), physical(900.0)], scale),
+                [physical(760.0), physical(900.0)]
+            );
+        }
+    }
+    #[test]
     fn maximize_subclass_chains_original_limits_and_accounts_for_monitor_frame() {
         use windows_sys::Win32::{
             Foundation::{HWND, LPARAM, LRESULT, WPARAM},
@@ -279,6 +342,11 @@ mod tests {
             lparam: LPARAM,
         ) -> LRESULT {
             if message == WM_GETMINMAXINFO {
+                // Match winit startup before min/max constraints are installed:
+                // it consumes the message without filling Windows default fields.
+                if wparam == 1 {
+                    return 0;
+                }
                 let limits = unsafe { &mut *(lparam as *mut MINMAXINFO) };
                 limits.ptMaxSize.x = 2000;
                 limits.ptMaxSize.y = 1000;
@@ -339,6 +407,20 @@ mod tests {
                 monitor.rcWork.top - monitor.rcMonitor.top - y
             );
             assert_eq!(limits.ptMaxTrackSize.y, 16000);
+            let mut startup = MINMAXINFO::default();
+            SendMessageW(
+                window,
+                WM_GETMINMAXINFO,
+                1,
+                (&mut startup as *mut MINMAXINFO) as isize,
+            );
+            let dpi = windows_sys::Win32::UI::HiDpi::GetDpiForWindow(window).max(96);
+            let expected_width = (760.0 * dpi as f64 / 96.0).round() as i32 + 2 * x;
+            assert_eq!(
+                startup.ptMaxSize.x,
+                expected_width.min(monitor.rcWork.right - monitor.rcWork.left + 2 * x)
+            );
+            assert!(startup.ptMaxSize.y > 0);
             assert_ne!(DestroyWindow(window), 0);
             assert_ne!(UnregisterClassW(name.as_ptr(), instance), 0);
         }

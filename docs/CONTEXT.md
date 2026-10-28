@@ -4,7 +4,7 @@ Updated: 2026-10-28.
 
 ## Current state
 
-Current release: 0.12.1. T-0018, T-0020 and T-0021 are complete; next implementation card is
+Current release: 0.12.2. T-0022 fixes collapsed startup geometry; next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, autostart, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -26,6 +26,10 @@ logical pixels. The maximized-bounds subclass accounts for current monitor work 
 and DPI-scaled resize borders, including once at restored startup. Native non-client
 painting and a client outline make the constrained maximized boundary explicit.
 No measured UI height or size/maximize commands run per frame. See ADR-0018/0019.
+Startup now computes maximized bounds directly instead of sending a synthetic zeroed
+MINMAXINFO query before winit constraints exist. Missing native tracking limits fall
+back to an explicit width cap. Each undersized normal axis recovers to its initial
+default once, preserving valid axes, position and all other preferences. See ADR-0021.
 
 Running Current interval has a green frame/tint and explicit Tracking dot/text. An
 eight-second cosine gently varies its accent at up to twenty frames per second while
@@ -72,7 +76,7 @@ schema two. T-0019 must research compatibility before introducing further migrat
 
 ## Checks and exact next step
 
-69 Rust tests, formatting, Clippy and five package tests passed for T-0021. Windows
+70 Rust tests, formatting and Clippy passed for T-0022. Windows
 junction checks ran with the required link permissions.
 Tests cover responsive margins at 100-200 percent scale, mirrored scrollbar gutters,
 a single name hint, native monitor/frame bounds and project/global daily accounting.
@@ -86,7 +90,11 @@ verified running/stopped accents and advancing interval/daily counters without m
 cards. Its short synthetic Unassigned interval belongs only to Development. Normal
 Exit completed and process lookup confirmed only external Production remained running.
 Native tray-shell animation and Windows animation-preference changes were not exercised.
-Release 0.12.1 package/PDF checks are recorded in the T-0021 card.
+T-0022 Development 0.12.2 recovered a seeded 64-by-64 saved size to 620-by-640 at
+150-percent scale. Maximize/Exit/relaunch retained the full constrained maximized size;
+Restore returned to the recovered normal size. Other preferences remained intact and
+no session was started. Development exited normally. Production remained untouched.
+Release 0.12.2 package checks are recorded in the T-0022 card.
 
 All agent-created sessions are synthetic and Development-only under the ignored
 manual fixture. No input was sent to Production, which remained untouched.
