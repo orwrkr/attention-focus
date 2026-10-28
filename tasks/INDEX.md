@@ -22,6 +22,7 @@
 | [T-0018](T-0018-window-counters-and-width.md) | done | Explicit Window Counters and Stable Width Limit | T-0017 |
 | [T-0019](T-0019-history-correction.md) | ready | History Correction and Manual Intervals | T-0018 |
 | [T-0020](T-0020-ui-interaction-and-scroll.md) | done | Scroll Reflow, Window Edges and Selection Controls | T-0018 |
+| [T-0021](T-0021-tracking-motion.md) | done | Calm Tracking Activity Indicators | T-0020 |
 
 Task template: `templates/TASK.md` from the repository root.
 

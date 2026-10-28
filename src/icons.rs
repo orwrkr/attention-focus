@@ -11,11 +11,21 @@ pub enum State {
 }
 
 pub fn rgba(size: u32, state: State) -> Vec<u8> {
+    tracking_rgba(size, state, 4)
+}
+
+/// Brightness varies only for running tray lights; identity and stopped marks stay static.
+pub fn tracking_rgba(size: u32, state: State, level: u8) -> Vec<u8> {
     let accent = match state {
         State::App => [112.0, 160.0, 255.0],
         State::AppDevelopment => [194.0, 145.0, 255.0],
         State::Running | State::RunningDevelopment => [42.0, 212.0, 160.0],
         State::Stopped | State::StoppedDevelopment => [169.0, 181.0, 198.0],
+    };
+    let accent = if matches!(state, State::Running | State::RunningDevelopment) {
+        accent.map(|channel| channel * (0.88 + 0.03 * level.min(4) as f32))
+    } else {
+        accent
     };
     let mut pixels = Vec::with_capacity((size * size * 4) as usize);
     for y in 0..size {
@@ -128,6 +138,40 @@ pub fn ico(state: State) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn subtle_tray_levels_preserve_status_shape_alpha_and_development_badge() {
+        for state in [State::Running, State::RunningDevelopment] {
+            let bright = tracking_rgba(32, state, 4);
+            let dim = tracking_rgba(32, state, 0);
+            assert_ne!(bright, dim);
+            for (a, b) in bright.as_chunks::<4>().0.iter().zip(dim.as_chunks::<4>().0) {
+                assert_eq!(a[3], b[3]);
+                for channel in 0..3 {
+                    assert!((a[channel] as i16 - b[channel] as i16).abs() <= 26);
+                }
+            }
+            let center = (16 * 32 + 16) * 4;
+            assert!(dim[center + 1] > 180);
+            assert!(dim[center + 1] > dim[center + 2]);
+            if matches!(state, State::RunningDevelopment) {
+                for y in 23..29 {
+                    for x in 23..29 {
+                        let offset = (y * 32 + x) * 4;
+                        assert_eq!(&bright[offset..offset + 4], &dim[offset..offset + 4]);
+                    }
+                }
+            }
+        }
+        for state in [
+            State::App,
+            State::AppDevelopment,
+            State::Stopped,
+            State::StoppedDevelopment,
+        ] {
+            assert_eq!(tracking_rgba(32, state, 0), tracking_rgba(32, state, 4));
+        }
+    }
 
     #[test]
     fn states_differ_and_keep_transparent_corners() {

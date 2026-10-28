@@ -18,7 +18,28 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
     let mut toggle = false;
     let mut bounds = [Rect::NOTHING; 3];
     let mut card = |ui: &mut egui::Ui, index: usize, width: f32| {
-        bounds[index] = frame
+        let active = index == 0 && state.running && ready;
+        let animate = active && crate::motion::allowed();
+        let pulse = if animate {
+            crate::motion::level(ui.input(|input| input.time))
+        } else {
+            0.5
+        };
+        let accent = if ui.visuals().dark_mode {
+            egui::Color32::from_rgb(67, 177 + (pulse * 22.0) as u8, 143)
+        } else {
+            egui::Color32::from_rgb(28, 123 + (pulse * 22.0) as u8, 99)
+        };
+        let card_frame = if active {
+            frame.stroke(egui::Stroke::new(1.0, accent)).fill(
+                ui.visuals()
+                    .panel_fill
+                    .lerp_to_gamma(accent, 0.035 + pulse * 0.025),
+            )
+        } else {
+            frame
+        };
+        bounds[index] = card_frame
             .show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.set_width(width);
@@ -41,13 +62,24 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
                         ui.label("Unavailable");
                     }
                     if index == 0 {
-                        ui.label(if !ready {
-                            "Opening history..."
-                        } else if state.running {
-                            "Tracking"
+                        if active {
+                            ui.horizontal(|ui| {
+                                let (rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(10.0, 16.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().circle_filled(rect.center(), 3.0, accent);
+                                ui.label(egui::RichText::new("Tracking").strong().color(accent));
+                            });
                         } else {
-                            "Stopped"
-                        });
+                            ui.label(if !ready {
+                                "Opening history..."
+                            } else if state.running {
+                                "Tracking"
+                            } else {
+                                "Stopped"
+                            });
+                        }
                         toggle |= crate::ui_support::primary_action(
                             ui,
                             if state.running {
@@ -73,6 +105,13 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
             })
             .response
             .rect;
+        if animate
+            && ui.is_rect_visible(bounds[index])
+            && !ui.input(|input| input.viewport().minimized.unwrap_or(false))
+        {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(50));
+        }
     };
     if wide {
         ui.horizontal(|ui| {
@@ -96,6 +135,51 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn running_accent_preserves_counter_geometry_and_stopped_state_is_plain() {
+        for width in [404.0, 744.0] {
+            let mut bounds = Vec::new();
+            for running in [false, true] {
+                let context = egui::Context::default();
+                let mut output = context.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 800.0),
+                        )),
+                        time: Some(4.0),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        bounds.push(
+                            show(
+                                ui,
+                                &Snapshot {
+                                    running,
+                                    ..Default::default()
+                                },
+                                true,
+                                true,
+                            )
+                            .bounds,
+                        );
+                    },
+                );
+                let lights = output
+                    .shapes
+                    .iter()
+                    .filter(|shape| {
+                        matches!(
+                            &shape.shape, egui::Shape::Circle(circle) if circle.radius == 3.0
+                        )
+                    })
+                    .count();
+                assert_eq!(lights, usize::from(running));
+                output.textures_delta.clear();
+            }
+            assert_eq!(bounds[0], bounds[1], "status must not move counters");
+        }
+    }
     #[test]
     fn reserved_scrollbar_and_mirrored_gutter_keep_window_edge_margins_equal() {
         for width in [420.0, 620.0, 760.0] {

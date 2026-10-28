@@ -7,6 +7,7 @@ pub mod folder_picker;
 pub mod icons;
 #[cfg(windows)]
 pub mod lifecycle;
+pub mod motion;
 #[cfg(windows)]
 pub mod platform;
 pub mod profiles;

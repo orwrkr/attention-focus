@@ -23,7 +23,7 @@ a missing or malformed Markdown file; read the diagnostic shown in the source se
 
 The file, window, taskbar, Alt-Tab, and Task Manager use a neutral application logo.
 That logo identifies the application; it never means that tracking is running.
-Only the tray status icon and the window's **Tracking / Stopped** label indicate state.
+The tray status icon and the window's **Tracking / Stopped** label indicate state.
 
 <!-- icon-legend -->
 
@@ -348,6 +348,15 @@ Exit the running app through Exit; merely closing its window can leave it in the
 The build returns an error and does not create an alternate production EXE. Production
 is published only to `dist/AttentionFocus/attention-focus.exe`. Development builds use
 the separate internal `target/debug` output. Agents do not terminate apps automatically.
+
+## Tracking looks static
+
+While tracking, **Current interval** has a green frame, a light tint and a green status
+dot. Its accent gently breathes over eight seconds. The filled green tray light varies
+slightly in brightness on the same slow cycle, retaining its shape and Development badge.
+Stopped tracking has no motion. Windows **Animation effects** preferences are respected;
+with animations disabled, the green running accents stay static. Daily counters and
+the main window boundary do not animate. Motion never changes the recorded time.
 
 ## What is not included yet
 

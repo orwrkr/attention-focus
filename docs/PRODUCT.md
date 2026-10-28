@@ -39,6 +39,8 @@
 - Keep scrolling correct after section reflow and expose a visible maximized boundary.
   Give Start/Stop hover/pressed feedback, search within the project dropdown, distinguish
   Unassigned focus and provide an existing-folder browser beside the source path.
+- Make running tracking clear with calm window/tray motion that does not distract.
+  Preserve unambiguous stopped status and neutral permanent application icons.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

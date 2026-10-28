@@ -4,7 +4,7 @@ Updated: 2026-10-28.
 
 ## Current state
 
-Current release: 0.11.1. T-0018 and T-0020 are complete; next implementation card is
+Current release: 0.12.1. T-0018, T-0020 and T-0021 are complete; next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, autostart, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -26,6 +26,15 @@ logical pixels. The maximized-bounds subclass accounts for current monitor work 
 and DPI-scaled resize borders, including once at restored startup. Native non-client
 painting and a client outline make the constrained maximized boundary explicit.
 No measured UI height or size/maximize commands run per frame. See ADR-0018/0019.
+
+Running Current interval has a green frame/tint and explicit Tracking dot/text. An
+eight-second cosine gently varies its accent at up to twenty frames per second while
+visible. The tray uses five cached green brightness levels within twelve percent,
+updated by existing worker wakeups; shape, alpha and Development badge stay fixed.
+Stopped and permanent icons are static. Windows client-area animation preference
+disables motion; lookup failure also gives static status. No animation thread, new
+database queries or timekeeping changes. Hidden eframe windows run logic without UI
+painting. See ADR-0020 and T-0021.
 
 Scrollbars appear on overflow with a visible dormant handle. Symmetric 12-point margins
 keep content width constant, opaque framebuffer clearing prevents stale background,
@@ -63,8 +72,8 @@ schema two. T-0019 must research compatibility before introducing further migrat
 
 ## Checks and exact next step
 
-66 Rust tests, formatting, Clippy and five package tests passed. Windows junction
-checks ran with the required link permissions.
+69 Rust tests, formatting, Clippy and five package tests passed for T-0021. Windows
+junction checks ran with the required link permissions.
 Tests cover responsive margins at 100-200 percent scale, mirrored scrollbar gutters,
 a single name hint, native monitor/frame bounds and project/global daily accounting.
 Native T-0018 verified live counters, stopped reset, previous-day report independence,
@@ -72,16 +81,15 @@ restored maximized startup and narrow/wide layouts. T-0020 verified overflow-onl
 clean source/report collapse, visible maximized boundary, popup filtering without
 selection changes, distinguished Unassigned selection and folder confirm/save/cancel.
 Actual-paint tests verify button hover/pressed/disabled states and repeated reflow.
-Earlier downward sizing passed without snapback. Both 0.11.1 EXEs, generated
-notices, eight-page PDF and automatic ZIP passed verify-release metadata/icon/hash/
-fingerprint/allowlist checks. All eight rendered guide pages were visually inspected.
+Earlier downward sizing passed without snapback. T-0021 native Development 0.12.0
+verified running/stopped accents and advancing interval/daily counters without moving
+cards. Its short synthetic Unassigned interval belongs only to Development. Normal
+Exit completed and process lookup confirmed only external Production remained running.
+Native tray-shell animation and Windows animation-preference changes were not exercised.
+Release 0.12.1 package/PDF checks are recorded in the T-0021 card.
 
 All agent-created sessions are synthetic and Development-only under the ignored
-manual fixture. After resuming a turn interruption, the final hover capture could not
-find a Development window; a process check confirmed only the external portable
-Production app remained running. Its closure reason was not observed. No input was
-sent to Production, which remained untouched. Native UI was checked on 0.11.0; final
-0.11.1 only restores the old three-second hidden-window autosave repaint and bumps version.
+manual fixture. No input was sent to Production, which remained untouched.
 The user already approved repeated agent-launched Development runs and normal UI Exit;
 do not ask again for that scope. Never force-kill or close Production.
 

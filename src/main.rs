@@ -57,11 +57,18 @@ struct Desktop {
     profile: Profile,
     storage_root: std::path::PathBuf,
     stay_on_top: bool,
+    motion_epoch: Instant,
+    tray_level: Option<(bool, u8)>,
+    running_icons: Vec<Icon>,
 }
 
 fn tray_icon(running: bool, profile: Profile) -> Icon {
+    tray_icon_level(running, profile, 4)
+}
+
+fn tray_icon_level(running: bool, profile: Profile, level: u8) -> Icon {
     Icon::from_rgba(
-        icons::rgba(
+        icons::tracking_rgba(
             32,
             match (running, profile) {
                 (true, Profile::Production) => icons::State::Running,
@@ -69,6 +76,7 @@ fn tray_icon(running: bool, profile: Profile) -> Icon {
                 (true, Profile::Development) => icons::State::RunningDevelopment,
                 (false, Profile::Development) => icons::State::StoppedDevelopment,
             },
+            level,
         ),
         32,
         32,
@@ -217,6 +225,11 @@ impl Desktop {
             }
         };
         let mut desktop = Self {
+            motion_epoch: Instant::now(),
+            tray_level: Some((false, 4)),
+            running_icons: (0..=4)
+                .map(|level| tray_icon_level(true, profile, level))
+                .collect(),
             tray,
             toggle_item: toggle,
             actions,
@@ -586,12 +599,8 @@ impl eframe::App for Desktop {
                         tracking::Event::State(state) | tracking::Event::Committed(state) => state,
                         _ => unreachable!(),
                     };
-                    if (self.state.running != state.running || !self.ready)
-                        && let Some(tray) = &self.tray
-                        && let Err(error) =
-                            tray.set_icon(Some(tray_icon(state.running, self.profile)))
-                    {
-                        self.error = Some(format!("Cannot update tray icon: {error}"));
+                    if self.state.running != state.running {
+                        self.motion_epoch = Instant::now();
                     }
                     // Update the selected project's local-day total even while hidden.
                     if let Some(tray) = &self.tray {
@@ -635,6 +644,27 @@ impl eframe::App for Desktop {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
+        }
+        let level = attention_focus::motion::tray_level(
+            self.motion_epoch.elapsed().as_secs_f64(),
+            attention_focus::motion::allowed(),
+        );
+        let key = (
+            self.state.running,
+            if self.state.running { level } else { 4 },
+        );
+        if self.tray_level != Some(key)
+            && let Some(tray) = &self.tray
+        {
+            let icon = if self.state.running {
+                self.running_icons[level as usize].clone()
+            } else {
+                tray_icon(false, self.profile)
+            };
+            if let Err(error) = tray.set_icon(Some(icon)) {
+                self.error = Some(format!("Cannot update tray icon: {error}"));
+            }
+            self.tray_level = Some(key);
         }
         let (show, delay) = self.clicks.poll(Instant::now());
         if show {
