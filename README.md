@@ -13,6 +13,10 @@ current session and today's time for the selected project across all its tasks.
 The window separates Current interval, Today for project and Today - all projects.
 The prominent blue Start/Stop action belongs to the interval card. Counter frames fit
 narrow/wide windows; native maximize respects monitor work area, DPI and readable width.
+Overflow-only scrollbars retain stable content width during section reflow. Maximized
+windows have an explicit visible boundary. Start/Stop has hover/pressed feedback.
+Project search lives inside its dropdown; Unassigned focus is visually distinguished.
+Browse selects an existing source folder; Save and refresh validates and applies it.
 Configure an Instance folder under MetaPlan source and projects, then choose a project
 and optional task. Changing a project/task while running starts a new interval by
 default; disable the checkbox to reassign the entire current interval instead. While

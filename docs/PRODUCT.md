@@ -36,6 +36,9 @@
   daily accounting. Limit width to useful content without dynamic height changes.
 - Show all-project Today in both window and tray, including unassigned focus; make
   Start/Stop the visually prominent action. Keep frame margins and name hints consistent.
+- Keep scrolling correct after section reflow and expose a visible maximized boundary.
+  Give Start/Stop hover/pressed feedback, search within the project dropdown, distinguish
+  Unassigned focus and provide an existing-folder browser beside the source path.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

@@ -190,7 +190,47 @@ unsafe extern "system" fn width_limit(
             limits.ptMaxSize.y = monitor.rcWork.bottom - monitor.rcWork.top + 2 * y;
         }
     }
+    if matches!(
+        message,
+        windows_sys::Win32::UI::WindowsAndMessaging::WM_NCPAINT
+            | windows_sys::Win32::UI::WindowsAndMessaging::WM_NCACTIVATE
+            | windows_sys::Win32::UI::WindowsAndMessaging::WM_SIZE
+    ) {
+        unsafe { paint_maximized_frame(hwnd) };
+    }
     result
+}
+
+unsafe fn paint_maximized_frame(hwnd: windows_sys::Win32::Foundation::HWND) {
+    use windows_sys::Win32::{Foundation::RECT, Graphics::Gdi::*, UI::WindowsAndMessaging::*};
+    if unsafe { IsZoomed(hwnd) } == 0 {
+        return;
+    }
+    let Some((_, x, y)) = (unsafe { monitor_frame(hwnd) }) else {
+        return;
+    };
+    let mut bounds = RECT::default();
+    if unsafe { GetWindowRect(hwnd, &mut bounds) } == 0 {
+        return;
+    }
+    let visible = RECT {
+        left: x,
+        top: y,
+        right: bounds.right - bounds.left - x,
+        bottom: bounds.bottom - bounds.top - y,
+    };
+    let dc = unsafe { GetWindowDC(hwnd) };
+    if dc.is_null() {
+        return;
+    }
+    let brush = unsafe { CreateSolidBrush(135 | (145 << 8) | (155 << 16)) };
+    if !brush.is_null() {
+        unsafe {
+            FrameRect(dc, &visible, brush);
+            DeleteObject(brush.cast());
+        }
+    }
+    unsafe { ReleaseDC(hwnd, dc) };
 }
 
 unsafe fn monitor_frame(

@@ -17,6 +17,7 @@ use tray_icon::{
 };
 
 enum Action {
+    Folder(Result<Option<std::path::PathBuf>, String>),
     Export(Result<String, String>),
     Show,
     LeftRelease(Instant),
@@ -46,6 +47,7 @@ struct Desktop {
     source_selection: Option<source::Selection>,
     catalog: source::Catalog,
     source_pending: bool,
+    folder_pending: bool,
     source_error: Option<String>,
     activity: tracking::Activity,
     lifecycle: Option<lifecycle::Listener>,
@@ -235,6 +237,7 @@ impl Desktop {
             source_selection: selection,
             catalog: source::Catalog::default(),
             source_pending: false,
+            folder_pending: false,
             source_error: source_warning,
             activity: tracking::Activity::default(),
             lifecycle: listener,
@@ -315,11 +318,20 @@ impl Desktop {
         if !split {
             ui.label("Changes reassign the entire current interval, including its elapsed time.");
         }
-        ui.add(egui::TextEdit::singleline(&mut self.project_search).hint_text("Search projects")).on_hover_text("Filters the Project list by name or folder ID, ignoring case. Open the list to see matches. Search does not change the tracked activity.");
-        let query = self.project_search.trim().to_lowercase();
         egui::ComboBox::from_id_salt("project")
+            .width(ui.available_width().min(320.0))
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .selected_text(self.activity.label())
             .show_ui(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.project_search)
+                        .hint_text("Search projects"),
+                )
+                .on_hover_text(
+                    "Filter projects by name or folder ID. Searching does not change the activity.",
+                );
+                ui.separator();
+                let query = self.project_search.trim().to_lowercase();
                 let mut choices = vec![tracking::Activity::default()];
                 if let Some(source) = &self.source_selection {
                     for project in self.catalog.projects.iter().filter(|p| {
@@ -352,8 +364,19 @@ impl Desktop {
                         }
                         _ => false,
                     };
-                    if ui.selectable_label(selected, choice.label()).clicked() && !selected {
-                        self.activity.project = choice.project;
+                    let label = if choice.project.is_none() {
+                        egui::RichText::new("Unassigned focus (no project)")
+                            .strong()
+                            .italics()
+                            .color(ui.visuals().hyperlink_color)
+                    } else {
+                        egui::RichText::new(choice.label())
+                    };
+                    if ui.selectable_label(selected, label).clicked() {
+                        if !selected {
+                            self.activity.project = choice.project;
+                        }
+                        ui.close();
                     }
                 }
             });
@@ -462,6 +485,16 @@ impl Desktop {
 }
 
 impl eframe::App for Desktop {
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        let color = visuals.panel_fill;
+        [
+            color.r() as f32 / 255.0,
+            color.g() as f32 / 255.0,
+            color.b() as f32 / 255.0,
+            1.0,
+        ]
+    }
+
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
         eframe::set_value(storage, "project_search", &self.project_search);
@@ -480,6 +513,17 @@ impl eframe::App for Desktop {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(action) = self.actions.try_recv() {
             match action {
+                Action::Folder(result) => {
+                    self.folder_pending = false;
+                    match result {
+                        Ok(Some(path)) => {
+                            self.source_path = path.to_string_lossy().into_owned();
+                            self.source_error = None;
+                        }
+                        Ok(None) => {}
+                        Err(error) => self.source_error = Some(error),
+                    }
+                }
                 Action::Export(result) => self.reports.export_finished(result),
                 Action::PlatformError(error) => {
                     self.error = Some(error);
@@ -620,7 +664,7 @@ impl eframe::App for Desktop {
         let geometry = ctx.input(|input| input.viewport().outer_rect);
         if geometry != self.last_geometry {
             self.last_geometry = geometry;
-            ctx.request_repaint_after(Duration::from_secs(3));
+            ctx.request_repaint();
         }
         // Never reuse the stale close input available to hidden-window logic.
         if ctx.input(|input| input.viewport().close_requested()) && !self.exiting {
@@ -676,171 +720,181 @@ impl eframe::App for Desktop {
                 }
             });
             ui.separator();
-            ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
-            let gutter = ui.spacing().scroll.allocated_width() as i8;
-            egui::ScrollArea::vertical()
-                .id_salt("window-content")
-                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
-                .content_margin(egui::Margin {
-                    left: gutter,
-                    ..egui::Margin::ZERO
-                })
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(if self.state.running {
-                            "Tracking now (saved activity)"
-                        } else {
-                            "Next tracking activity (saved selection)"
-                        })
-                        .color(secondary)
-                        .strong(),
-                    );
-                    ui.strong(self.state.activity.label());
-                    if let Some(task) = self
-                        .state
-                        .activity
-                        .project
-                        .as_ref()
-                        .and_then(|p| p.task.as_ref())
+            attention_focus::ui_support::body(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(if self.state.running {
+                        "Tracking now (saved activity)"
+                    } else {
+                        "Next tracking activity (saved selection)"
+                    })
+                    .color(secondary)
+                    .strong(),
+                );
+                ui.strong(self.state.activity.label());
+                if let Some(task) = self
+                    .state
+                    .activity
+                    .project
+                    .as_ref()
+                    .and_then(|p| p.task.as_ref())
+                {
+                    ui.label(task);
+                }
+                ui.add_enabled_ui(
+                    self.ready && !self.pending && !self.state.needs_review,
+                    |ui| self.activity_picker(ui),
+                );
+                ui.add_space(12.0);
+                let enabled = self.ready
+                    && !self.pending
+                    && !self.state.needs_review
+                    && (self.state.running
+                        || (self.lifecycle.is_some() && self.available(&self.activity)));
+                if attention_focus::counters::show(ui, &self.state, self.ready, enabled).toggle {
+                    self.command(if self.state.running {
+                        tracking::Command::Stop
+                    } else {
+                        tracking::Command::Start(self.activity.clone())
+                    });
+                }
+                ui.add_space(8.0);
+                ui.separator();
+                ui.label(format!(
+                    "All projects, all time (saved): {} in {} sessions",
+                    duration(self.state.total_ms),
+                    self.state.completed
+                ));
+                if self.state.needs_review {
+                    ui.label("An interrupted session was saved up to its last checkpoint.");
+                    ui.label("Time after that checkpoint is excluded. Tracking has not resumed.");
+                    if ui
+                        .add_enabled(!self.pending, egui::Button::new("Accept saved time"))
+                        .clicked()
                     {
-                        ui.label(task);
+                        self.command(tracking::Command::AcceptRecovery);
                     }
-                    ui.add_enabled_ui(
-                        self.ready && !self.pending && !self.state.needs_review,
-                        |ui| self.activity_picker(ui),
-                    );
-                    ui.add_space(12.0);
-                    let enabled = self.ready
-                        && !self.pending
-                        && !self.state.needs_review
-                        && (self.state.running
-                            || (self.lifecycle.is_some() && self.available(&self.activity)));
-                    if attention_focus::counters::show(ui, &self.state, self.ready, enabled).toggle
-                    {
-                        self.command(if self.state.running {
-                            tracking::Command::Stop
-                        } else {
-                            tracking::Command::Start(self.activity.clone())
+                }
+                if let Some(error) = &self.error {
+                    ui.colored_label(egui::Color32::LIGHT_RED, error);
+                }
+                ui.add_space(12.0);
+                ui.label("Double-click the tray icon to start or stop.");
+                ui.label("Click the tray icon to show this window. Hover to see tracked time.");
+                ui.collapsing("MetaPlan source and projects", |ui| {
+                    ui.label("Instance folder (read-only)");
+                    ui.horizontal(|ui| {
+                        let width = (ui.available_width() - 84.0).max(80.0);
+                        ui.add_enabled_ui(!self.source_pending, |ui| {
+                            ui.add_sized(
+                                [width, 22.0],
+                                egui::TextEdit::singleline(&mut self.source_path),
+                            );
                         });
-                    }
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.label(format!(
-                        "All projects, all time (saved): {} in {} sessions",
-                        duration(self.state.total_ms),
-                        self.state.completed
-                    ));
-                    if self.state.needs_review {
-                        ui.label("An interrupted session was saved up to its last checkpoint.");
-                        ui.label(
-                            "Time after that checkpoint is excluded. Tracking has not resumed.",
-                        );
-                        if ui
-                            .add_enabled(!self.pending, egui::Button::new("Accept saved time"))
-                            .clicked()
-                        {
-                            self.command(tracking::Command::AcceptRecovery);
-                        }
-                    }
-                    if let Some(error) = &self.error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, error);
-                    }
-                    ui.add_space(12.0);
-                    ui.label("Double-click the tray icon to start or stop.");
-                    ui.label("Click the tray icon to show this window. Hover to see tracked time.");
-                    ui.collapsing("MetaPlan source and projects", |ui| {
-                        ui.label("Instance folder (read-only)");
-                        ui.add_enabled(
-                            !self.source_pending,
-                            egui::TextEdit::singleline(&mut self.source_path)
-                                .desired_width(f32::INFINITY),
-                        );
                         if ui
                             .add_enabled(
-                                !self.source_pending,
-                                egui::Button::new("Save and refresh"),
+                                !self.folder_pending && !self.source_pending,
+                                egui::Button::new("Browse..."),
                             )
                             .clicked()
                         {
-                            self.load_source(&ctx, true);
-                        }
-                        if self.source_pending {
-                            ui.label("Loading projects...");
-                        }
-                        if let Some(error) = &self.source_error {
-                            ui.colored_label(egui::Color32::LIGHT_RED, error);
-                        }
-                        ui.label("Projects are read only. Use the project picker to choose focus.");
-                        egui::ScrollArea::vertical()
-                            .id_salt("source-preview")
-                            .max_height(230.0)
-                            .show(ui, |ui| {
-                                for project in &self.catalog.projects {
-                                    ui.push_id((&project.slug, project.archived), |ui| {
-                                        ui.collapsing(
-                                            format!(
-                                                "{}{}",
-                                                project.title,
-                                                if project.archived { " (Archived)" } else { "" }
-                                            ),
-                                            |ui| {
-                                                ui.label(format!(
-                                                    "{} | {} | {}",
-                                                    project.slug, project.status, project.priority
-                                                ));
-                                                if project.tasks.is_empty() {
-                                                    ui.label("No unfinished current-cycle tasks.");
-                                                }
-                                                for task in &project.tasks {
-                                                    ui.label(task);
-                                                }
-                                            },
-                                        );
-                                    });
-                                }
-                                for diagnostic in &self.catalog.diagnostics {
-                                    ui.colored_label(egui::Color32::YELLOW, diagnostic);
-                                }
+                            self.folder_pending = true;
+                            let initial = std::path::PathBuf::from(&self.source_path);
+                            let owner = unsafe {
+                                windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow()
+                            } as usize;
+                            let sender = self.sender.clone();
+                            let ctx = ctx.clone();
+                            std::thread::spawn(move || {
+                                let result = attention_focus::folder_picker::pick(owner, &initial)
+                                    .map_err(|error| format!("Cannot choose folder: {error}"));
+                                let _ = sender.send(Action::Folder(result));
+                                ctx.request_repaint();
                             });
+                        }
                     });
-                    self.reports.show(ui, &self.commands, self.ready);
-                    if let Some((format, request)) = self.reports.take_export() {
-                        let directory = self.directory.clone();
-                        let root = self.storage_root.clone();
-                        let sender = self.sender.clone();
-                        let ctx = ctx.clone();
-                        let owner = unsafe {
-                            windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow()
-                        } as usize;
-                        std::thread::spawn(move || {
-                            let result =
-                                (|| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-                                    let snapshot = tracking::export_snapshot(
-                                        &directory.join("focus.sqlite3"),
-                                        &request,
-                                    )?;
-                                    let Some(path) = export::pick_path(owner, format)? else {
-                                        return Ok("Export canceled.".into());
-                                    };
-                                    let mut protected = source::known_paths(&directory)?;
-                                    protected.extend(snapshot.sources);
-                                    protected.push(root);
-                                    let path =
-                                        export::write(&snapshot.report, &path, format, &protected)?;
-                                    Ok(format!(
-                                        "Exported {} sessions to {}",
-                                        snapshot.report.matching_sessions,
-                                        path.display()
-                                    ))
-                                })()
-                                .map_err(|error| format!("Cannot export report: {error}"));
-                            let _ = sender.send(Action::Export(result));
-                            ctx.request_repaint();
-                        });
+                    if ui
+                        .add_enabled(!self.source_pending, egui::Button::new("Save and refresh"))
+                        .clicked()
+                    {
+                        self.load_source(&ctx, true);
                     }
+                    if self.source_pending {
+                        ui.label("Loading projects...");
+                    }
+                    if let Some(error) = &self.source_error {
+                        ui.colored_label(egui::Color32::LIGHT_RED, error);
+                    }
+                    ui.label("Projects are read only. Use the project picker to choose focus.");
+                    egui::ScrollArea::vertical()
+                        .id_salt("source-preview")
+                        .max_height(230.0)
+                        .show(ui, |ui| {
+                            for project in &self.catalog.projects {
+                                ui.push_id((&project.slug, project.archived), |ui| {
+                                    ui.collapsing(
+                                        format!(
+                                            "{}{}",
+                                            project.title,
+                                            if project.archived { " (Archived)" } else { "" }
+                                        ),
+                                        |ui| {
+                                            ui.label(format!(
+                                                "{} | {} | {}",
+                                                project.slug, project.status, project.priority
+                                            ));
+                                            if project.tasks.is_empty() {
+                                                ui.label("No unfinished current-cycle tasks.");
+                                            }
+                                            for task in &project.tasks {
+                                                ui.label(task);
+                                            }
+                                        },
+                                    );
+                                });
+                            }
+                            for diagnostic in &self.catalog.diagnostics {
+                                ui.colored_label(egui::Color32::YELLOW, diagnostic);
+                            }
+                        });
                 });
+                self.reports.show(ui, &self.commands, self.ready);
+                if let Some((format, request)) = self.reports.take_export() {
+                    let directory = self.directory.clone();
+                    let root = self.storage_root.clone();
+                    let sender = self.sender.clone();
+                    let ctx = ctx.clone();
+                    let owner = unsafe {
+                        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow()
+                    } as usize;
+                    std::thread::spawn(move || {
+                        let result =
+                            (|| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+                                let snapshot = tracking::export_snapshot(
+                                    &directory.join("focus.sqlite3"),
+                                    &request,
+                                )?;
+                                let Some(path) = export::pick_path(owner, format)? else {
+                                    return Ok("Export canceled.".into());
+                                };
+                                let mut protected = source::known_paths(&directory)?;
+                                protected.extend(snapshot.sources);
+                                protected.push(root);
+                                let path =
+                                    export::write(&snapshot.report, &path, format, &protected)?;
+                                Ok(format!(
+                                    "Exported {} sessions to {}",
+                                    snapshot.report.matching_sessions,
+                                    path.display()
+                                ))
+                            })()
+                            .map_err(|error| format!("Cannot export report: {error}"));
+                        let _ = sender.send(Action::Export(result));
+                        ctx.request_repaint();
+                    });
+                }
+            });
         });
+        attention_focus::ui_support::maximized_edge(&ctx);
     }
 }
 

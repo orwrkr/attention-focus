@@ -4,7 +4,7 @@ Updated: 2026-10-28.
 
 ## Current state
 
-Current release: 0.10.0. T-0018 is complete; next implementation card is
+Current release: 0.11.1. T-0018 and T-0020 are complete; next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, autostart, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -19,12 +19,21 @@ saved plus active time once, all tasks and (for the global sum) all sources/unas
 focus; exclude review time. Report filters/timezones do not change Today. Errors show
 unavailable without blocking successful tracking state. Schema remains two.
 
-Counter frames use measured margins and a mirrored reserved scrollbar gutter. Narrow
+Counter frames use measured margins and symmetric reserved scroll margins. Narrow
 windows place the interval above two daily cards; wide windows use three columns.
 Only egui's automatic elided-name tooltip is enabled. Native width is limited to 760
 logical pixels. The maximized-bounds subclass accounts for current monitor work area
-and DPI-scaled resize borders, including once at restored startup. No measured UI
-height or size/maximize commands run per frame. See ADR-0018.
+and DPI-scaled resize borders, including once at restored startup. Native non-client
+painting and a client outline make the constrained maximized boundary explicit.
+No measured UI height or size/maximize commands run per frame. See ADR-0018/0019.
+
+Scrollbars appear on overflow with a visible dormant handle. Symmetric 12-point margins
+keep content width constant, opaque framebuffer clearing prevents stale background,
+and content-size changes request another layout/repaint. Start/Stop uses scoped native
+egui widget visuals for distinct idle/hover/pressed states. Search is inside the project
+popup, which stays open for editing; Unassigned is distinguished without losing recency.
+Browse uses an STA folder picker with New Folder hidden. It only fills the draft;
+Save and refresh performs the existing source/storage validation. Cancel keeps the path.
 
 Sections/scroll, custom report dates/minutes or rolling presets, timezone/project
 searches, note draft, window geometry and Stay on top persist separately per profile.
@@ -54,19 +63,25 @@ schema two. T-0019 must research compatibility before introducing further migrat
 
 ## Checks and exact next step
 
-64 Rust tests, formatting, Clippy and five package tests passed. Restricted junction
-creation failed in one rerun; all 64 passed with the required Windows link permissions.
+66 Rust tests, formatting, Clippy and five package tests passed. Windows junction
+checks ran with the required link permissions.
 Tests cover responsive margins at 100-200 percent scale, mirrored scrollbar gutters,
 a single name hint, native monitor/frame bounds and project/global daily accounting.
-Native Development verified prominent Start/Stop, live daily counting, stopped reset,
-previous-day report independence, restored maximized startup and final narrow/wide
-layouts. Earlier downward sizing passed without snapback. Both 0.10.0 EXEs, generated
+Native T-0018 verified live counters, stopped reset, previous-day report independence,
+restored maximized startup and narrow/wide layouts. T-0020 verified overflow-only bars,
+clean source/report collapse, visible maximized boundary, popup filtering without
+selection changes, distinguished Unassigned selection and folder confirm/save/cancel.
+Actual-paint tests verify button hover/pressed/disabled states and repeated reflow.
+Earlier downward sizing passed without snapback. Both 0.11.1 EXEs, generated
 notices, eight-page PDF and automatic ZIP passed verify-release metadata/icon/hash/
 fingerprint/allowlist checks. All eight rendered guide pages were visually inspected.
 
 All agent-created sessions are synthetic and Development-only under the ignored
-manual fixture. Development exited normally after checks; a process check confirmed
-only the external portable Production app remained running. Production was untouched.
+manual fixture. After resuming a turn interruption, the final hover capture could not
+find a Development window; a process check confirmed only the external portable
+Production app remained running. Its closure reason was not observed. No input was
+sent to Production, which remained untouched. Native UI was checked on 0.11.0; final
+0.11.1 only restores the old three-second hidden-window autosave repaint and bumps version.
 The user already approved repeated agent-launched Development runs and normal UI Exit;
 do not ask again for that scope. Never force-kill or close Production.
 

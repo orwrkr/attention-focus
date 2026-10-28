@@ -48,22 +48,16 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
                         } else {
                             "Stopped"
                         });
-                        toggle |= ui
-                            .add_enabled(
-                                enabled,
-                                egui::Button::new(
-                                    egui::RichText::new(if state.running {
-                                        "Stop tracking"
-                                    } else {
-                                        "Start tracking"
-                                    })
-                                    .strong()
-                                    .color(egui::Color32::WHITE),
-                                )
-                                .fill(egui::Color32::from_rgb(31, 91, 151))
-                                .min_size(egui::vec2(ui.available_width(), 32.0)),
-                            )
-                            .clicked();
+                        toggle |= crate::ui_support::primary_action(
+                            ui,
+                            if state.running {
+                                "Stop tracking"
+                            } else {
+                                "Start tracking"
+                            },
+                            enabled,
+                        )
+                        .clicked();
                     } else {
                         ui.add(
                             egui::Label::new(if index == 1 {
@@ -116,27 +110,16 @@ mod tests {
                 },
                 |ui| {
                     egui::Frame::central_panel(ui.style()).show(ui, |ui| {
-                        ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
-                        let gutter = ui.spacing().scroll.allocated_width() as i8;
-                        egui::ScrollArea::vertical()
-                            .scroll_bar_visibility(
-                                egui::scroll_area::ScrollBarVisibility::AlwaysVisible,
-                            )
-                            .content_margin(egui::Margin {
-                                left: gutter,
-                                ..egui::Margin::ZERO
-                            })
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                let response = show(ui, &Snapshot::default(), true, false);
-                                let left = response.bounds[0].left();
-                                let right = width - response.bounds[2].right();
-                                assert!(
-                                    (left - right).abs() < 0.6,
-                                    "asymmetric gutters at {width}: {left}, {right}"
-                                );
-                                ui.add_space(1000.0);
-                            });
+                        crate::ui_support::body(ui, |ui| {
+                            let response = show(ui, &Snapshot::default(), true, false);
+                            let left = response.bounds[0].left();
+                            let right = width - response.bounds[2].right();
+                            assert!(
+                                (left - right).abs() < 0.6,
+                                "asymmetric gutters at {width}: {left}, {right}"
+                            );
+                            ui.add_space(1000.0);
+                        });
                     });
                 },
             );

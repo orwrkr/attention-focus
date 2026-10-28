@@ -23,7 +23,7 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0015](0015-shutdown-and-compact-window.md) | accepted | Confirmed session end and content-fitted window limits |
 | [0016](0016-ui-state-and-daily-tray.md) | accepted | UI restoration, native sizing and project-day tray totals |
 | [0017](0017-report-export.md) | accepted | Read-only background snapshots and protected CSV/Markdown output |
-
 | [0018](0018-window-counters-and-width.md) | accepted | Explicit window counters and a static native width limit |
+| [0019](0019-scroll-and-selection-controls.md) | accepted | Stable scroll reflow, visible window edges and selection controls |
 
-Next number: `0019`. Template: `templates/ADR.md` from the repository root.
+Next number: `0020`. Template: `templates/ADR.md` from the repository root.

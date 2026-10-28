@@ -21,6 +21,7 @@
 | [T-0017](T-0017-ui-state-and-daily-tray.md) | done | Restored UI State, Stable Resize and Daily Tray Total | T-0015 |
 | [T-0018](T-0018-window-counters-and-width.md) | done | Explicit Window Counters and Stable Width Limit | T-0017 |
 | [T-0019](T-0019-history-correction.md) | ready | History Correction and Manual Intervals | T-0018 |
+| [T-0020](T-0020-ui-interaction-and-scroll.md) | done | Scroll Reflow, Window Edges and Selection Controls | T-0018 |
 
 Task template: `templates/TASK.md` from the repository root.
 

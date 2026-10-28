@@ -10,8 +10,9 @@ watch your screen or keyboard, score productivity, or edit your MetaPlan files.
 ## Start in three steps
 
 1. Extract the production ZIP to a folder and run `attention-focus.exe`.
-2. Open **MetaPlan source and projects**, enter the full path to your `Instance`
-   folder, and click **Save and refresh**. Ctrl+V is supported.
+2. Open **MetaPlan source and projects**, type/paste the `Instance` path or use
+   **Browse...**, then click **Save and refresh**. Choosing a folder only fills the
+   field; cancel leaves it unchanged. Source/storage validation runs when saving.
 3. Choose a project and optional task, then click **Start tracking**.
 
 The folder must contain `PROJECTS/Active`. Data in `Archive` can be previewed but is
@@ -44,11 +45,13 @@ working graphics driver are required. Clean-machine compatibility is still being
 
 ## Choose an activity
 
-- Type in **Search projects** to filter by project title or directory slug.
-- Open the Project dropdown to see matches. Search ignores case, filters projects
+- Open the Project dropdown and type in its **Search projects** field to filter by
+  project title or directory slug. The search stays inside the open list.
+- Search ignores case, filters projects
   rather than tasks/history, and does not change the current tracked activity.
 - Select a project and optionally an unfinished task from its current cycle.
-- Choose **Unassigned focus** when no project is appropriate.
+- Choose the colored, bold italic **Unassigned focus (no project)** entry when no
+  project is appropriate. Its position still follows recent-use ordering.
 - Add an optional note to describe the session.
 
 The selected project must be available in the loaded source. Completed or archived
@@ -92,7 +95,7 @@ sources and Production/Development keep independent usage.
 
 **Current interval** in the window counts only the running interval and returns to
 zero when stopped. Its large blue **Start tracking / Stop tracking** button is the
-primary action. **Today for project** combines the named project's tasks;
+primary action, with distinct hover and pressed states. **Today for project** combines the named project's tasks;
 **Today - all projects** includes every project and unassigned focus. Both use the local
 day and include live time once. **All projects, all time (saved)** counts finalized
 history only. The window and tray share both daily values.
@@ -123,7 +126,9 @@ header shows the app/version; the test version also shows Development. Secondary
 explanations use a blue accent to distinguish them from primary text.
 
 Resize or maximize the window normally. Width stops at a readable limit; vertical
-resizing remains independent. Long reports scroll, and header
+resizing remains independent. A visible edge marks the constrained maximized window.
+The scrollbar appears only on overflow; reserved margins keep content width stable
+as sections open or close. Long reports scroll, and header
 actions remain accessible. Expanded/collapsed sections, scroll positions, project and
 timezone searches, report filters and unapplied note drafts are restored on restart.
 Today/Last 7/Last 30 presets roll forward; custom dates and minutes stay as entered.

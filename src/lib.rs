@@ -2,6 +2,8 @@
 
 pub mod counters;
 pub mod export;
+#[cfg(windows)]
+pub mod folder_picker;
 pub mod icons;
 #[cfg(windows)]
 pub mod lifecycle;
@@ -13,6 +15,7 @@ pub mod reports;
 pub mod source;
 pub mod tracking;
 pub mod tray_interaction;
+pub mod ui_support;
 
 /// Verify bundled SQLite persistence without leaving application data behind.
 pub fn sqlite_probe() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
