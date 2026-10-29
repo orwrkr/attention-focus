@@ -11,18 +11,70 @@ pub fn tray_level(seconds: f64, animate: bool) -> u8 {
     [0, 1, 2, 3, 4, 3, 2, 1][seconds.rem_euclid(8.0) as usize]
 }
 
-/// Decorative activity marker; fixed bounds keep timer controls stationary.
-pub fn paint_activity(
+/// Point on a rounded rectangle, clockwise from the top edge's left tangent.
+fn border_point(rect: eframe::egui::Rect, radius: f32, distance: f32) -> eframe::egui::Pos2 {
+    use eframe::egui::pos2;
+    let r = radius.max(0.1).min(rect.width().min(rect.height()) * 0.5);
+    let horizontal = (rect.width() - 2.0 * r).max(0.0);
+    let vertical = (rect.height() - 2.0 * r).max(0.0);
+    let arc = std::f32::consts::FRAC_PI_2 * r;
+    let perimeter = 2.0 * (horizontal + vertical) + 4.0 * arc;
+    let mut d = distance.rem_euclid(perimeter);
+    for side in 0..4 {
+        let length = if side % 2 == 0 { horizontal } else { vertical };
+        if d <= length {
+            return match side {
+                0 => pos2(rect.left() + r + d, rect.top()),
+                1 => pos2(rect.right(), rect.top() + r + d),
+                2 => pos2(rect.right() - r - d, rect.bottom()),
+                _ => pos2(rect.left(), rect.bottom() - r - d),
+            };
+        }
+        d -= length;
+        if d <= arc {
+            let center = match side {
+                0 => pos2(rect.right() - r, rect.top() + r),
+                1 => pos2(rect.right() - r, rect.bottom() - r),
+                2 => pos2(rect.left() + r, rect.bottom() - r),
+                _ => pos2(rect.left() + r, rect.top() + r),
+            };
+            let angle = (side as f32 - 1.0) * std::f32::consts::FRAC_PI_2 + d / r;
+            return center + eframe::egui::vec2(angle.cos(), angle.sin()) * r;
+        }
+        d -= arc;
+    }
+    pos2(rect.left() + r, rect.top())
+}
+
+/// A fading quarter-perimeter trail; paint only, with no layout or storage effects.
+pub fn paint_border(
     painter: &eframe::egui::Painter,
-    rect: eframe::egui::Rect,
+    bounds: eframe::egui::Rect,
+    radius: f32,
     color: eframe::egui::Color32,
-    phase: f32,
+    seconds: f64,
 ) {
-    use eframe::egui::{Stroke, pos2};
-    let left = pos2(rect.left() + 4.0, rect.center().y);
-    let right = pos2(rect.right() - 4.0, rect.center().y);
-    painter.line_segment([left, right], Stroke::new(1.0, color.gamma_multiply(0.35)));
-    painter.circle_filled(left.lerp(right, phase.clamp(0.0, 1.0)), 2.5, color);
+    use eframe::egui::Stroke;
+    let rect = bounds.shrink(1.5);
+    if rect.width() < 2.0 || rect.height() < 2.0 {
+        return;
+    }
+    let r = (radius - 1.5)
+        .max(0.1)
+        .min(rect.width().min(rect.height()) * 0.5);
+    let perimeter = 2.0 * (rect.width() + rect.height() - 4.0 * r) + std::f32::consts::TAU * r;
+    let head = (seconds.rem_euclid(8.0) / 8.0) as f32 * perimeter;
+    let tail = perimeter * 0.25;
+    for step in 0..96 {
+        let t = step as f32 / 96.0;
+        let next = (step + 1) as f32 / 96.0;
+        let from = border_point(rect, r, head - tail + tail * t);
+        let to = border_point(rect, r, head - tail + tail * next);
+        painter.line_segment(
+            [from, to],
+            Stroke::new(2.5, color.gamma_multiply(next * next)),
+        );
+    }
 }
 
 pub fn allowed() -> bool {
@@ -51,33 +103,39 @@ pub fn allowed() -> bool {
 mod tests {
     use super::*;
     #[test]
-    fn activity_marker_moves_visibly_inside_fixed_bounds() {
+    fn border_trail_is_periodic_graded_and_inside_the_card() {
         use eframe::egui::{self, Color32, Pos2, Rect, vec2};
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), vec2(220.0, 140.0));
         let context = egui::Context::default();
-        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), vec2(56.0, 16.0));
-        let mut centers = Vec::new();
-        for phase in [0.0, 0.5, 1.0] {
+        let mut frames = Vec::new();
+        for time in [0.0, 2.0, 4.0, 6.0, 8.0] {
             let mut output = context.run_ui(Default::default(), |ui| {
-                paint_activity(ui.painter(), rect, Color32::GREEN, phase);
+                paint_border(ui.painter(), rect, 6.0, Color32::GREEN, time);
             });
-            let center = output
+            let lines: Vec<_> = output
                 .shapes
                 .iter()
-                .find_map(|shape| {
-                    if let egui::Shape::Circle(circle) = &shape.shape {
-                        Some(circle.center)
+                .filter_map(|shape| {
+                    if let egui::Shape::LineSegment { points, stroke } = &shape.shape {
+                        for point in points {
+                            assert!(rect.shrink(1.0).contains(*point));
+                        }
+                        Some((*points, stroke.color))
                     } else {
                         None
                     }
                 })
-                .expect("activity marker must be painted");
-            assert!(rect.shrink(2.5).contains(center));
-            centers.push(center);
+                .collect();
+            assert_eq!(lines.len(), 96);
+            assert!(lines.first().unwrap().1.a() < lines.last().unwrap().1.a());
+            for pair in lines.windows(2) {
+                assert!(pair[0].0[1].distance(pair[1].0[0]) < 0.01);
+            }
+            frames.push(lines);
             output.textures_delta.clear();
         }
-        assert_eq!(centers[0].y, centers[2].y);
-        assert_eq!(centers[2].x - centers[0].x, 48.0);
-        assert_eq!(centers[1], rect.center());
+        assert_eq!(frames[0], frames[4]);
+        assert_ne!(frames[0], frames[1]);
     }
 
     #[test]

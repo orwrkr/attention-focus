@@ -20,22 +20,15 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
     let mut card = |ui: &mut egui::Ui, index: usize, width: f32| {
         let active = index == 0 && state.running && ready;
         let animate = active && crate::motion::allowed();
-        let pulse = if animate {
-            crate::motion::level(ui.input(|input| input.time))
-        } else {
-            0.5
-        };
         let accent = if ui.visuals().dark_mode {
-            egui::Color32::from_rgb(67, 177 + (pulse * 22.0) as u8, 143)
+            egui::Color32::from_rgb(67, 188, 143)
         } else {
-            egui::Color32::from_rgb(28, 123 + (pulse * 22.0) as u8, 99)
+            egui::Color32::from_rgb(28, 134, 99)
         };
         let card_frame = if active {
-            frame.stroke(egui::Stroke::new(1.0, accent)).fill(
-                ui.visuals()
-                    .panel_fill
-                    .lerp_to_gamma(accent, 0.035 + pulse * 0.025),
-            )
+            frame
+                .stroke(egui::Stroke::new(1.0, accent))
+                .fill(ui.visuals().panel_fill.lerp_to_gamma(accent, 0.05))
         } else {
             frame
         };
@@ -78,11 +71,6 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
                                     "Stopped"
                                 });
                             }
-                            let (track, _) = ui
-                                .allocate_exact_size(egui::vec2(56.0, 16.0), egui::Sense::hover());
-                            if active {
-                                crate::motion::paint_activity(ui.painter(), track, accent, pulse);
-                            }
                         });
                         toggle |= crate::ui_support::primary_action(
                             ui,
@@ -113,6 +101,13 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
             && ui.is_rect_visible(bounds[index])
             && !ui.input(|input| input.viewport().minimized.unwrap_or(false))
         {
+            crate::motion::paint_border(
+                ui.painter(),
+                bounds[index],
+                f32::from(frame.corner_radius.nw),
+                accent,
+                ui.input(|input| input.time),
+            );
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(50));
         }

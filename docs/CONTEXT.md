@@ -4,7 +4,7 @@ Updated: 2026-10-29.
 
 ## Current state
 
-Current release: 0.15.1, T-0027 visible activity motion and bounded UI persistence. Next implementation card is
+Current release: 0.16.0, T-0028 gradient tracking border. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -36,10 +36,12 @@ released on window destruction. First-run, collapsed, inaccessible and legacy to
 placement is centered in the work area; ordinary saved placement remains. Constrained
 maximization is centered horizontally. See ADR-0022.
 
-Running Current interval has a green frame/tint and explicit Tracking dot/text. An
-eight-second cosine moves a marker across a fixed short line beside Tracking and
-gently varies its accent at up to twenty frames per second while visible. The tray uses five cached green brightness levels within twelve percent,
-updated by existing worker wakeups; shape, alpha and Development badge stay fixed.
+Running Current interval has a static green frame/tint and Tracking dot/text. A fading
+quarter-perimeter trail follows its rounded border clockwise over eight seconds, with
+up to twenty frames per second while visible. The old status-row marker is removed.
+The trail is inset inside fixed card bounds and has no layout or storage effects.
+The tray keeps five cached brightness levels within twelve percent, driven by worker
+wakeups. See ADR-0025 and T-0028.
 Stopped and permanent icons are static. Windows client-area animation preference
 disables motion; lookup failure also gives static status. No animation thread, new
 database queries or timekeeping changes. Hidden eframe windows run logic without UI
@@ -160,6 +162,14 @@ physical disk write counts. Native Development verified marker movement and stat
 controls, then stopped the synthetic interval and exited normally. The computer-use
 session was reset. Both 0.15.1 EXEs and ZIP were verified; nine PDF pages were reviewed.
 Native reduced-motion switching and live Production IO profiling remain unexecuted.
+
+T-0028 replaces the status-row marker with a fading rounded-border trail. 76 tests,
+formatting and Clippy passed. Both 0.16.0 EXEs and ZIP were built and verified; all nine
+guide pages were reviewed. A permitted native check could not proceed: list_windows
+timed out three times including one reset/reinitialize attempt. Development was
+launched, but no UI input or tracking start was sent; it may remain open. The JS session
+was reset and the user was informed. Native visual acceptance is still unverified.
+Next immediate step: user review, or a fresh authorized check after helper recovery.
 
 Select T-0019 next, read its card and relevant storage/recovery/report ADRs, define
 validation/audit/compatibility decisions before changing the history model. Keep one

@@ -181,10 +181,10 @@ move it to a shorter path and retry. Other applications' startup entries are unc
 
 ## Understand the tracking animation
 
-When Windows allows client-area animations, a small marker beside **Tracking** moves
-smoothly back and forth along a short line over eight seconds. The running interval
-also gently changes its green frame/fill, and the tray
-light changes brightness by at most twelve percent. This is deliberately subtle.
+When Windows allows client-area animations, a green gradient trail travels clockwise
+around the **Current interval** frame, completing one lap every eight seconds. Its
+tail fades smoothly into the static frame. The tray light changes brightness by at
+most twelve percent.
 When Windows animation effects are disabled or unavailable, the running accent stays
 static. Stopped tracking never animates. The app does not change Windows motion settings.
 
@@ -400,7 +400,7 @@ the separate internal `target/debug` output. Agents do not terminate apps automa
 ## Tracking looks static
 
 While tracking, **Current interval** has a green frame, a light tint and a green status
-dot. Its accent gently breathes over eight seconds. The filled green tray light varies
+dot. A gradient trail travels around the frame over eight seconds. The filled green tray light varies
 slightly in brightness on the same slow cycle, retaining its shape and Development badge.
 Stopped tracking has no motion. Windows **Animation effects** preferences are respected;
 with animations disabled, the green running accents stay static. Daily counters and
