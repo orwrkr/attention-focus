@@ -42,6 +42,7 @@
 - Make running tracking clear with calm window/tray motion that does not distract.
   Preserve unambiguous stopped status and neutral permanent application icons.
 - Allow dragging from the app header above scrolling content and center default placement.
+- Offer Windows sign-in startup and optional tray-only startup for that invocation.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.
@@ -90,7 +91,7 @@ protected destinations; see ADR-0017.
 
 - Validate tray wakeup, packaging requirements, and Windows lifecycle behavior.
 - Complete real Windows validation of the implemented storage, backup, and recovery design.
-- Session correction/manual entry, shortcuts, and autostart.
+- Session correction/manual entry and shortcuts.
 - Project identity when slugs change or the source directory is replaced.
 - Complete interactive validation of implemented time zones, midnight boundaries, and clock changes.
 

@@ -25,6 +25,7 @@
 | [T-0021](T-0021-tracking-motion.md) | done | Calm Tracking Activity Indicators | T-0020 |
 | [T-0022](T-0022-startup-window-recovery.md) | done | Recover Collapsed Startup Windows | T-0021 |
 | [T-0023](T-0023-header-drag-and-centering.md) | done | Header Dragging and Centered Window Defaults | T-0022 |
+| [T-0024](T-0024-autostart-and-tray-launch.md) | done | Windows Sign-In Startup and Tray Launch | T-0023 |
 
 Task template: `templates/TASK.md` from the repository root.
 

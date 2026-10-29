@@ -62,9 +62,10 @@ impl Instance {
             unsafe {
                 CloseHandle(handle);
             }
-            return Err(io::Error::other(format!(
-                "{title} is already running. Use its tray menu."
-            )));
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!("{title} is already running. Use its tray menu."),
+            ));
         }
         Ok(Self(handle))
     }
@@ -185,9 +186,18 @@ pub fn constrain_window_bounds(
 #[derive(Clone, Default)]
 pub struct HeaderDragRegions(
     std::rc::Rc<std::cell::RefCell<Vec<windows_sys::Win32::Foundation::RECT>>>,
+    std::rc::Rc<std::cell::Cell<bool>>,
+    std::rc::Rc<std::cell::Cell<bool>>,
 );
 
 impl HeaderDragRegions {
+    pub fn suppress_first_show(&self) {
+        self.1.set(true);
+    }
+    /// Reconcile winit's cached visibility after the native first-show suppression.
+    pub fn take_startup_hide(&self) -> bool {
+        self.2.replace(false)
+    }
     pub fn set(&self, regions: &[eframe::egui::Rect], scale: f32) {
         use windows_sys::Win32::Foundation::RECT;
         let mut stored = self.0.borrow_mut();
@@ -270,6 +280,20 @@ unsafe extern "system" fn width_limit(
     }
     // Let winit calculate its DPI-aware frame/drag limits before adjusting maximize.
     let result = unsafe { DefSubclassProc(hwnd, message, wparam, lparam) };
+    if message == windows_sys::Win32::UI::WindowsAndMessaging::WM_WINDOWPOSCHANGING
+        && lparam != 0
+        && data != 0
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SWP_NOACTIVATE, SWP_SHOWWINDOW, WINDOWPOS,
+        };
+        let position = unsafe { &mut *(lparam as *mut WINDOWPOS) };
+        let state = unsafe { &*(data as *const HeaderDragRegions) };
+        if position.flags & SWP_SHOWWINDOW != 0 && state.1.replace(false) {
+            position.flags = (position.flags & !SWP_SHOWWINDOW) | SWP_NOACTIVATE;
+            state.2.set(true);
+        }
+    }
     if message == windows_sys::Win32::UI::WindowsAndMessaging::WM_NCHITTEST
         && result == windows_sys::Win32::UI::WindowsAndMessaging::HTCLIENT as isize
         && data != 0
@@ -549,6 +573,18 @@ mod tests {
                     expected as isize
                 );
             }
+            let header = &*regions;
+            header.suppress_first_show();
+            ShowWindow(window, SW_SHOW);
+            assert_eq!(
+                IsWindowVisible(window),
+                0,
+                "first autostart show must remain hidden"
+            );
+            assert!(header.take_startup_hide());
+            assert!(!header.take_startup_hide());
+            ShowWindow(window, SW_SHOW);
+            assert_ne!(IsWindowVisible(window), 0, "later explicit Show must work");
             assert_ne!(DestroyWindow(window), 0);
             assert_ne!(UnregisterClassW(name.as_ptr(), instance), 0);
         }

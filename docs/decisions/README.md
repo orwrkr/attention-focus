@@ -28,5 +28,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0020](0020-calm-tracking-motion.md) | accepted | Restrained running indicators and Windows motion preferences |
 | [0021](0021-startup-window-recovery.md) | accepted | Safe startup maximization and collapsed-size recovery |
 | [0022](0022-header-drag-and-centering.md) | accepted | Native header dragging and centered default placement |
+| [0023](0023-autostart-and-tray-launch.md) | accepted | Explicit per-user sign-in startup and hidden tray launch |
 
-Next number: `0023`. Template: `templates/ADR.md` from the repository root.
+Next number: `0024`. Template: `templates/ADR.md` from the repository root.

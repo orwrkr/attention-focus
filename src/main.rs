@@ -61,6 +61,7 @@ struct Desktop {
     tray_level: Option<(bool, u8)>,
     running_icons: Vec<Icon>,
     drag_regions: platform::HeaderDragRegions,
+    startup: attention_focus::startup_ui::Panel,
 }
 
 fn tray_icon(running: bool, profile: Profile) -> Icon {
@@ -101,6 +102,7 @@ impl Desktop {
         paths: Paths,
         selection: Option<source::Selection>,
         source_warning: Option<String>,
+        launch: attention_focus::startup::Launch,
     ) -> Self {
         let directory = paths.directory;
         let profile = paths.profile;
@@ -155,6 +157,9 @@ impl Desktop {
             Ok(tray) => (Some(tray), None),
             Err(error) => (None, Some(format!("Tray unavailable: {error}"))),
         };
+        if launch.hide_window(tray.is_some()) {
+            drag_regions.suppress_first_show();
+        }
         let menu_sender = sender.clone();
         let ctx = context.egui_ctx.clone();
         let show_id = show.id().clone();
@@ -230,6 +235,13 @@ impl Desktop {
             }
         };
         let mut desktop = Self {
+            startup: attention_focus::startup_ui::Panel::new(
+                profile,
+                context
+                    .storage
+                    .and_then(|s| eframe::get_value(s, "startup_tray"))
+                    .unwrap_or(false),
+            ),
             drag_regions,
             motion_epoch: Instant::now(),
             tray_level: Some((false, 4)),
@@ -516,6 +528,7 @@ impl eframe::App for Desktop {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
+        eframe::set_value(storage, "startup_tray", &self.startup.tray);
         eframe::set_value(storage, "project_search", &self.project_search);
         let draft =
             (self.activity.note != self.state.activity.note).then(|| self.activity.note.clone());
@@ -530,6 +543,9 @@ impl eframe::App for Desktop {
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.drag_regions.take_startup_hide() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
         while let Ok(action) = self.actions.try_recv() {
             match action {
                 Action::Folder(result) => {
@@ -825,6 +841,9 @@ impl eframe::App for Desktop {
                 ui.add_space(12.0);
                 ui.label("Double-click the tray icon to start or stop.");
                 ui.label("Click the tray icon to show this window. Hover to see tracked time.");
+                ui.collapsing("Application settings", |ui| {
+                    self.startup.show(ui);
+                });
                 ui.collapsing("MetaPlan source and projects", |ui| {
                     ui.label("Instance folder (read-only)");
                     ui.horizontal(|ui| {
@@ -945,12 +964,19 @@ impl eframe::App for Desktop {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let profile = Profile::parse(
+    let launch = attention_focus::startup::Launch::parse(
         &std::env::args().skip(1).collect::<Vec<_>>(),
         cfg!(debug_assertions),
     )?;
+    let profile = launch.profile;
     let paths = Paths::new(&platform::data_root()?, profile)?;
-    let _instance = platform::Instance::acquire(&paths.directory, profile.title())?;
+    let _instance = match platform::Instance::acquire(&paths.directory, profile.title()) {
+        Ok(instance) => instance,
+        Err(error) if launch.autostart && error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
+    };
     // Restore read-only and validate source overlap before SQLite or eframe can write.
     let (selection, warning) = paths
         .prepare()
@@ -981,7 +1007,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             persistence_path: Some(window_state),
             ..Default::default()
         },
-        Box::new(move |context| Ok(Box::new(Desktop::new(context, paths, selection, warning)))),
+        Box::new(move |context| {
+            Ok(Box::new(Desktop::new(
+                context, paths, selection, warning, launch,
+            )))
+        }),
     )?;
     Ok(())
 }

@@ -32,7 +32,7 @@ impl Profile {
             },
             _ => {
                 return Err(io::Error::other(
-                    "Usage: attention-focus [--profile production|development]",
+                    "Usage: attention-focus [--profile production|development] [--autostart [--start-in-tray]]",
                 ));
             }
         };

@@ -153,6 +153,41 @@ power can lose the unsaved tail. Reading or thinking without input does not stop
 
 <!-- pagebreak -->
 
+# Startup and animation settings
+
+Open **Application settings** below the counters.
+
+## Start with Windows
+
+- Enable **Start at Windows sign-in** to launch this EXE for your Windows account.
+  Startup is off by default and does not need administrator rights.
+- Enable **Start in tray when launched at sign-in** to keep that startup window hidden.
+  Click its tray icon to show it. If the tray cannot be created, the window remains visible.
+- Manual launches show the window, regardless of the saved tray preference.
+- Tracking starts **Stopped**. Sign-in startup never resumes a focus interval.
+
+Settings are separate for Production and Development. Enable the Production copy you
+intend to use every day. Enabling Development registers only its separate test copy.
+
+The startup command points to the EXE's current location. If you move it, run the new
+copy, open this section and choose **Use this EXE for startup**. The app does not silently
+change registration during launch. **Refresh startup status** reads the current entry.
+Disable startup before removing the portable application. Windows can delay sign-in
+programs; a startup item disabled in Windows Startup settings must be re-enabled there.
+
+A very long EXE path can exceed Windows' startup command limit. The app reports an error;
+move it to a shorter path and retry. Other applications' startup entries are unchanged.
+
+## Understand the tracking animation
+
+The settings show whether Windows allows client-area animations. When allowed, the
+running interval gently changes its green frame/fill over eight seconds, and the tray
+light changes brightness by at most twelve percent. This is deliberately subtle.
+When Windows animation effects are disabled or unavailable, the running accent stays
+static. Stopped tracking never animates. The app does not change Windows motion settings.
+
+<!-- pagebreak -->
+
 # Read history and reports
 
 Open **Focus history and reports** and choose a period:
@@ -363,7 +398,7 @@ the main window boundary do not animate. Motion never changes the recorded time.
 
 ## What is not included yet
 
-Manual time correction, global shortcuts, automatic startup,
+Manual time correction, global shortcuts,
 an installer, and an automatic in-app updater are not implemented. Real Windows tray,
 sleep/lock, multi-monitor geometry, and clean-machine compatibility still have manual
 acceptance checks outstanding. Unit tests and simulated notifications do not prove

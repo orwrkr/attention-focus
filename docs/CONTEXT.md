@@ -4,9 +4,9 @@ Updated: 2026-10-29.
 
 ## Current state
 
-Current release: 0.13.0, T-0023 header dragging/centering. Next implementation card is
+Current release: 0.14.0, T-0024 sign-in startup/tray launch. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
-That card is defined but not implemented. Global shortcuts, autostart, installer and
+That card is defined but not implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
 
 The local Rust app uses egui/eframe, tray-icon and bundled SQLite. Cargo.lock pins
@@ -44,6 +44,13 @@ Stopped and permanent icons are static. Windows client-area animation preference
 disables motion; lookup failure also gives static status. No animation thread, new
 database queries or timekeeping changes. Hidden eframe windows run logic without UI
 painting. See ADR-0020 and T-0021.
+Application settings now report the motion preference and offer explicit per-user
+Windows Run registration, with independent Production/Development value names. No
+registration is written on ordinary launch. The optional tray preference is included
+only in the marked autostart command; manual launch remains visible and never starts
+tracking. Tray failure keeps the window visible. The native subclass suppresses the
+first show once and logic reconciles winit's cached visibility before later Show/errors.
+Duplicate autostart exits quietly. See ADR-0023 and T-0024.
 
 Scrollbars appear on overflow with a visible dormant handle. Symmetric 12-point margins
 keep content width constant, opaque framebuffer clearing prevents stale background,
@@ -81,7 +88,7 @@ schema two. T-0019 must research compatibility before introducing further migrat
 
 ## Checks and exact next step
 
-71 Rust tests, formatting and Clippy passed for T-0023. Windows
+74 Rust tests, formatting and Clippy passed for T-0024. Windows
 junction checks ran with the required link permissions.
 Tests cover responsive margins at 100-200 percent scale, mirrored scrollbar gutters,
 a single name hint, native monitor/frame bounds and project/global daily accounting.
@@ -105,6 +112,16 @@ Final agent capture was stopped with physical Escape; the user subsequently repo
 checking the rebuilt Development app and approved the release/commit. Native acceptance
 is user-reported; do not claim an agent replay of every drag/restore/restart scenario.
 Release 0.13.0 package checks are recorded in the T-0023 card.
+T-0024 verified isolated HKCU fixture round trips, profile/value isolation, quoted Unicode
+commands, length/flag validation, hidden-first-show and later native Show. Development
+UI confirmed settings, Windows motion enabled, tray-preference persistence and visible
+manual launch. A duplicate marked autostart exited quietly with code zero. Test tray
+preference was reset and Development exited normally. No real Run registration was
+enabled and no tracking session was started. Real sign-in and full shell tray-start
+acceptance remain unexecuted; never log off the user's session for these checks.
+Both 0.14.0 EXEs and the automatically rebuilt ZIP passed verify-release metadata,
+neutral icons, source fingerprint, allowlist and hashes. The shipped nine-page PDF
+matched the fully rendered/reviewed preview. See the completed T-0024 card.
 
 All agent-created sessions are synthetic and Development-only under the ignored
 manual fixture. No input was sent to Production, which remained untouched.

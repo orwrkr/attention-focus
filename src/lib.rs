@@ -14,6 +14,10 @@ pub mod profiles;
 pub mod report_ui;
 pub mod reports;
 pub mod source;
+#[cfg(windows)]
+pub mod startup;
+#[cfg(windows)]
+pub mod startup_ui;
 pub mod tracking;
 pub mod tray_interaction;
 pub mod ui_support;
