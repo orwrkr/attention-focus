@@ -85,8 +85,5 @@ impl Panel {
         if let Some(error) = &self.error {
             ui.colored_label(egui::Color32::LIGHT_RED, error);
         }
-        ui.weak(if crate::motion::allowed() {
-            "Tracking animation: subtle eight-second brightness cycle."
-        } else { "Tracking animation: static because Windows animation effects are disabled or unavailable." });
     }
 }

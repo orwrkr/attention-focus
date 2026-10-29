@@ -62,24 +62,23 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
                         ui.label("Unavailable");
                     }
                     if index == 0 {
-                        if active {
-                            ui.horizontal(|ui| {
-                                let (rect, _) = ui.allocate_exact_size(
-                                    egui::vec2(10.0, 16.0),
-                                    egui::Sense::hover(),
-                                );
+                        // Reserve the same row and indicator space in every state.
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui
+                                .allocate_exact_size(egui::vec2(10.0, 16.0), egui::Sense::hover());
+                            if active {
                                 ui.painter().circle_filled(rect.center(), 3.0, accent);
                                 ui.label(egui::RichText::new("Tracking").strong().color(accent));
-                            });
-                        } else {
-                            ui.label(if !ready {
-                                "Opening history..."
-                            } else if state.running {
-                                "Tracking"
                             } else {
-                                "Stopped"
-                            });
-                        }
+                                ui.label(if !ready {
+                                    "Opening history..."
+                                } else if state.running {
+                                    "Tracking"
+                                } else {
+                                    "Stopped"
+                                });
+                            }
+                        });
                         toggle |= crate::ui_support::primary_action(
                             ui,
                             if state.running {
@@ -139,6 +138,7 @@ mod tests {
     fn running_accent_preserves_counter_geometry_and_stopped_state_is_plain() {
         for width in [404.0, 744.0] {
             let mut bounds = Vec::new();
+            let mut button_positions = Vec::new();
             for running in [false, true] {
                 let context = egui::Context::default();
                 let mut output = context.run_ui(
@@ -165,6 +165,24 @@ mod tests {
                         );
                     },
                 );
+                button_positions.push(
+                    output
+                        .shapes
+                        .iter()
+                        .find_map(|shape| {
+                            if let egui::Shape::Text(text) = &shape.shape
+                                && matches!(
+                                    text.galley.job.text.as_str(),
+                                    "Start tracking" | "Stop tracking"
+                                )
+                            {
+                                Some(text.pos)
+                            } else {
+                                None
+                            }
+                        })
+                        .expect("tracking button must be painted"),
+                );
                 let lights = output
                     .shapes
                     .iter()
@@ -178,6 +196,10 @@ mod tests {
                 output.textures_delta.clear();
             }
             assert_eq!(bounds[0], bounds[1], "status must not move counters");
+            assert_eq!(
+                button_positions[0], button_positions[1],
+                "status must not move the tracking action"
+            );
         }
     }
     #[test]

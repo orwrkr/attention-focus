@@ -42,7 +42,7 @@ New windows open centered; drag the app heading or free header space to move the
 The fixed Settings button opens application settings above the counters and scrolls
 them into view. Application settings offer per-user Windows sign-in startup and optional tray startup.
 Both are explicit profile-specific choices; manual launches show the window and tracking
-never starts automatically. The settings also explain the Windows animation preference.
+never starts automatically. The guide explains the Windows animation preference.
 Sections, scroll, filters/searches and note drafts restore separately per profile.
 Confirmed Windows logoff or
 shutdown saves tracking; canceled shutdown queries do not stop it. Sleep/hibernate

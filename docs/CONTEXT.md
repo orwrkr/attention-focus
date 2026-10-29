@@ -4,7 +4,7 @@ Updated: 2026-10-29.
 
 ## Current state
 
-Current release: 0.14.2, T-0025 visible Settings entry. Next implementation card is
+Current release: 0.14.3, T-0026 stable tracking controls and settings cleanup. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -44,7 +44,7 @@ Stopped and permanent icons are static. Windows client-area animation preference
 disables motion; lookup failure also gives static status. No animation thread, new
 database queries or timekeeping changes. Hidden eframe windows run logic without UI
 painting. See ADR-0020 and T-0021.
-Application settings now report the motion preference and offer explicit per-user
+Application settings offer explicit per-user
 Windows Run registration, with independent Production/Development value names. No
 registration is written on ordinary launch. The optional tray preference is included
 only in the marked autostart command; manual launch remains visible and never starts
@@ -139,6 +139,15 @@ counters and scrolls it into view. Native opening/closing and reveal after scrol
 passed with user permission. Both 0.14.2 EXEs and ZIP were rebuilt and verified;
 the nine-page guide was rendered/reviewed. 74 tests, formatting and Clippy passed.
 No startup registration or tracking changes were made during the UI check.
+
+T-0026 orders the header buttons Settings, Hide to tray, Exit and removes the animation
+diagnostic from settings. Refresh still explicitly rereads Windows registration.
+The same status-row layout reserves indicator space while stopped and running, fixing
+a reproduced five-point Start/Stop shift. The actual-paint regression now passes in
+narrow and wide layouts. All 74 tests, formatting and Clippy passed. Native Development
+confirmed toolbar order, simplified settings and stationary start/stop with a short
+synthetic interval; normal Exit completed and the computer-use session was reset.
+Both 0.14.3 EXEs and ZIP were rebuilt and verified; all nine guide pages were reviewed.
 
 Select T-0019 next, read its card and relevant storage/recovery/report ADRs, define
 validation/audit/compatibility decisions before changing the history model. Keep one

@@ -155,7 +155,7 @@ power can lose the unsaved tail. Reading or thinking without input does not stop
 
 # Startup and animation settings
 
-Click **Settings** in the fixed top toolbar. Application settings open above the
+Click **Settings**, the first button in the fixed top toolbar. Application settings open above the
 counters and scroll into view. Click **Settings** again to close the panel.
 
 ## Start with Windows
@@ -181,8 +181,7 @@ move it to a shorter path and retry. Other applications' startup entries are unc
 
 ## Understand the tracking animation
 
-The settings show whether Windows allows client-area animations. When allowed, the
-running interval gently changes its green frame/fill over eight seconds, and the tray
+When Windows allows client-area animations, the running interval gently changes its green frame/fill over eight seconds, and the tray
 light changes brightness by at most twelve percent. This is deliberately subtle.
 When Windows animation effects are disabled or unavailable, the running accent stays
 static. Stopped tracking never animates. The app does not change Windows motion settings.

@@ -765,6 +765,13 @@ impl eframe::App for Desktop {
                     ));
                 }
                 if ui
+                    .add(egui::Button::new("Settings").selected(self.settings_open))
+                    .clicked()
+                {
+                    self.settings_open = !self.settings_open;
+                    reveal_settings = self.settings_open;
+                }
+                if ui
                     .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
                     .clicked()
                 {
@@ -775,13 +782,6 @@ impl eframe::App for Desktop {
                     .clicked()
                 {
                     self.command(tracking::Command::Exit);
-                }
-                if ui
-                    .add(egui::Button::new("Settings").selected(self.settings_open))
-                    .clicked()
-                {
-                    self.settings_open = !self.settings_open;
-                    reveal_settings = self.settings_open;
                 }
                 let free = ui.available_rect_before_wrap();
                 let rect = egui::Rect::from_min_size(
