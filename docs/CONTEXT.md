@@ -4,7 +4,7 @@ Updated: 2026-10-29.
 
 ## Current state
 
-Current release: 0.14.0, T-0024 sign-in startup/tray launch. Next implementation card is
+Current release: 0.14.2, T-0025 visible Settings entry. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -125,12 +125,20 @@ matched the fully rendered/reviewed preview. See the completed T-0024 card.
 
 All agent-created sessions are synthetic and Development-only under the ignored
 manual fixture. No input was sent to Production, which remained untouched.
-The user already approved repeated agent-launched Development runs and normal UI Exit;
-do not ask again for that scope. Never force-kill or close Production.
+Ask for fresh user permission before each new computer-use session, even for
+Development. End the session immediately after UI checks; do not leave it idle while
+coding or building. Normal Exit of agent-launched Development remains authorized
+within an approved session. Never force-kill or close Production.
 
 Real tray-shell hover/rendering, multiple native monitor/DPI combinations, actual
 lock/sleep/hibernate/logoff/shutdown and clean-machine validation remain unverified
 T-0002 gates. Do not interrupt the user's working machine to test power/session events.
+
+T-0025 adds a fixed Settings button next to Exit; it opens the panel above the
+counters and scrolls it into view. Native opening/closing and reveal after scrolling
+passed with user permission. Both 0.14.2 EXEs and ZIP were rebuilt and verified;
+the nine-page guide was rendered/reviewed. 74 tests, formatting and Clippy passed.
+No startup registration or tracking changes were made during the UI check.
 
 Select T-0019 next, read its card and relevant storage/recovery/report ADRs, define
 validation/audit/compatibility decisions before changing the history model. Keep one

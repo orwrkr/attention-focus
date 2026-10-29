@@ -62,6 +62,7 @@ struct Desktop {
     running_icons: Vec<Icon>,
     drag_regions: platform::HeaderDragRegions,
     startup: attention_focus::startup_ui::Panel,
+    settings_open: bool,
 }
 
 fn tray_icon(running: bool, profile: Profile) -> Icon {
@@ -235,6 +236,7 @@ impl Desktop {
             }
         };
         let mut desktop = Self {
+            settings_open: false,
             startup: attention_focus::startup_ui::Panel::new(
                 profile,
                 context
@@ -730,6 +732,7 @@ impl eframe::App for Desktop {
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
         let mut drag_regions = Vec::new();
+        let mut reveal_settings = false;
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_max_width(ui.available_width().min(744.0));
             // These actions stay outside the scrolling body at every content height.
@@ -773,6 +776,13 @@ impl eframe::App for Desktop {
                 {
                     self.command(tracking::Command::Exit);
                 }
+                if ui
+                    .add(egui::Button::new("Settings").selected(self.settings_open))
+                    .clicked()
+                {
+                    self.settings_open = !self.settings_open;
+                    reveal_settings = self.settings_open;
+                }
                 let free = ui.available_rect_before_wrap();
                 let rect = egui::Rect::from_min_size(
                     free.min,
@@ -782,6 +792,16 @@ impl eframe::App for Desktop {
             });
             ui.separator();
             attention_focus::ui_support::body(ui, |ui| {
+                if self.settings_open {
+                    let settings = ui.group(|ui| {
+                        ui.heading("Application settings");
+                        self.startup.show(ui);
+                    });
+                    if reveal_settings {
+                        settings.response.scroll_to_me(Some(egui::Align::Min));
+                    }
+                    ui.separator();
+                }
                 ui.label(
                     egui::RichText::new(if self.state.running {
                         "Tracking now (saved activity)"
@@ -841,9 +861,6 @@ impl eframe::App for Desktop {
                 ui.add_space(12.0);
                 ui.label("Double-click the tray icon to start or stop.");
                 ui.label("Click the tray icon to show this window. Hover to see tracked time.");
-                ui.collapsing("Application settings", |ui| {
-                    self.startup.show(ui);
-                });
                 ui.collapsing("MetaPlan source and projects", |ui| {
                     ui.label("Instance folder (read-only)");
                     ui.horizontal(|ui| {

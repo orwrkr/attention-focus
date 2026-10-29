@@ -26,6 +26,7 @@
 | [T-0022](T-0022-startup-window-recovery.md) | done | Recover Collapsed Startup Windows | T-0021 |
 | [T-0023](T-0023-header-drag-and-centering.md) | done | Header Dragging and Centered Window Defaults | T-0022 |
 | [T-0024](T-0024-autostart-and-tray-launch.md) | done | Windows Sign-In Startup and Tray Launch | T-0023 |
+| [T-0025](T-0025-settings-entry.md) | done | Visible Settings Entry | T-0024 |
 
 Task template: `templates/TASK.md` from the repository root.
 

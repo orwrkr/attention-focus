@@ -155,7 +155,8 @@ power can lose the unsaved tail. Reading or thinking without input does not stop
 
 # Startup and animation settings
 
-Open **Application settings** below the counters.
+Click **Settings** in the fixed top toolbar. Application settings open above the
+counters and scroll into view. Click **Settings** again to close the panel.
 
 ## Start with Windows
 
