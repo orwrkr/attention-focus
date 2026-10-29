@@ -97,20 +97,13 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
             })
             .response
             .rect;
-        if animate
-            && ui.is_rect_visible(bounds[index])
-            && !ui.input(|input| input.viewport().minimized.unwrap_or(false))
-        {
-            crate::motion::paint_border(
-                ui.painter(),
-                bounds[index],
-                f32::from(frame.corner_radius.nw),
-                accent,
-                ui.input(|input| input.time),
-            );
-            ui.ctx()
-                .request_repaint_after(std::time::Duration::from_millis(50));
-        }
+        crate::motion::animate_border(
+            ui,
+            bounds[index],
+            f32::from(frame.corner_radius.nw),
+            accent,
+            animate,
+        );
     };
     if wide {
         ui.horizontal(|ui| {

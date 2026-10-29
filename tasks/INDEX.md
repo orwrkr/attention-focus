@@ -30,6 +30,7 @@
 | [T-0026](T-0026-stable-tracking-controls.md) | done | Stable Tracking Controls and Settings Cleanup | T-0025 |
 | [T-0027](T-0027-motion-and-write-cadence.md) | done | Visible Activity Motion and Write Cadence | T-0026 |
 | [T-0028](T-0028-gradient-border.md) | done | Gradient Tracking Border | T-0027 |
+| [T-0029](T-0029-hidden-animation.md) | done | Suspend Invisible Animation | T-0028 |
 
 Task template: `templates/TASK.md` from the repository root.
 

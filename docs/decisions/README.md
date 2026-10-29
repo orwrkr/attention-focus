@@ -31,5 +31,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0023](0023-autostart-and-tray-launch.md) | accepted | Explicit per-user sign-in startup and hidden tray launch |
 | [0024](0024-motion-and-write-cadence.md) | accepted | Visible activity marker and bounded UI persistence |
 | [0025](0025-gradient-tracking-border.md) | accepted | Rounded gradient tracking trail without layout changes |
+| [0026](0026-invisible-animation.md) | accepted | Suspend hidden and clipped animation rendering |
 
-Next number: `0026`. Template: `templates/ADR.md` from the repository root.
+Next number: `0027`. Template: `templates/ADR.md` from the repository root.

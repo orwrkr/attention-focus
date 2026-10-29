@@ -77,6 +77,30 @@ pub fn paint_border(
     }
 }
 
+/// Do not generate trail geometry or schedule animation when it cannot be shown.
+pub fn animate_border(
+    ui: &eframe::egui::Ui,
+    bounds: eframe::egui::Rect,
+    radius: f32,
+    color: eframe::egui::Color32,
+    enabled: bool,
+) {
+    if enabled
+        && ui.is_rect_visible(bounds)
+        && ui.input(|input| input.viewport().visible().unwrap_or(true))
+    {
+        paint_border(
+            ui.painter(),
+            bounds,
+            radius,
+            color,
+            ui.input(|input| input.time),
+        );
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(50));
+    }
+}
+
 pub fn allowed() -> bool {
     #[cfg(windows)]
     {
@@ -102,6 +126,49 @@ pub fn allowed() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn invisible_animation_emits_no_geometry_or_repaint_loop() {
+        use eframe::egui::{self, Color32, Pos2, Rect, vec2};
+        for (enabled, clipped, minimized, occluded) in [
+            (true, false, false, false),
+            (false, false, false, false),
+            (true, true, false, false),
+            (true, false, true, false),
+            (true, false, false, true),
+        ] {
+            let context = egui::Context::default();
+            for pass in 0..4 {
+                let mut input = egui::RawInput {
+                    time: Some(pass as f64),
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(400.0, 300.0))),
+                    ..Default::default()
+                };
+                let viewport = input.viewports.entry(egui::ViewportId::ROOT).or_default();
+                viewport.minimized = Some(minimized);
+                viewport.occluded = Some(occluded);
+                let mut output = context.run_ui(input, |ui| {
+                    let rect = Rect::from_min_size(
+                        Pos2::new(10.0, if clipped { 500.0 } else { 10.0 }),
+                        vec2(220.0, 140.0),
+                    );
+                    animate_border(ui, rect, 6.0, Color32::GREEN, enabled);
+                });
+                if pass == 3 {
+                    let active = enabled && !clipped && !minimized && !occluded;
+                    let lines = output
+                        .shapes
+                        .iter()
+                        .filter(|s| matches!(s.shape, egui::Shape::LineSegment { .. }))
+                        .count();
+                    assert_eq!(lines, if active { 96 } else { 0 });
+                    let delay = output.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+                    assert_eq!(delay <= std::time::Duration::from_millis(50), active);
+                }
+                output.textures_delta.clear();
+            }
+        }
+    }
+
     #[test]
     fn border_trail_is_periodic_graded_and_inside_the_card() {
         use eframe::egui::{self, Color32, Pos2, Rect, vec2};

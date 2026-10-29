@@ -187,6 +187,9 @@ tail fades smoothly into the static frame. The tray light changes brightness by 
 most twelve percent.
 When Windows animation effects are disabled or unavailable, the running accent stays
 static. Stopped tracking never animates. The app does not change Windows motion settings.
+The border stops requesting animation frames when the timer card is outside the visible
+scroll area or the window is minimized. Hiding to tray also suspends window rendering;
+tracking continues. Animation returns when the window and card become visible again.
 
 ## Disk activity and saving
 

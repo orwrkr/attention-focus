@@ -511,6 +511,8 @@ impl Desktop {
     }
 
     fn hide(ctx: &egui::Context) {
+        // Hidden alone is not a rendering-visibility signal in the pinned backend.
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         // Ensure a final geometry autosave after the window becomes idle/hidden.
         ctx.request_repaint_after(Duration::from_secs(3));
@@ -547,7 +549,7 @@ impl eframe::App for Desktop {
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.drag_regions.take_startup_hide() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            Self::hide(ctx);
         }
         while let Ok(action) = self.actions.try_recv() {
             match action {

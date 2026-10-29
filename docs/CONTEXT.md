@@ -4,7 +4,7 @@ Updated: 2026-10-29.
 
 ## Current state
 
-Current release: 0.16.0, T-0028 gradient tracking border. Next implementation card is
+Current release: 0.16.1, T-0029 invisible animation suppression. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -38,7 +38,10 @@ maximization is centered horizontally. See ADR-0022.
 
 Running Current interval has a static green frame/tint and Tracking dot/text. A fading
 quarter-perimeter trail follows its rounded border clockwise over eight seconds, with
-up to twenty frames per second while visible. The old status-row marker is removed.
+up to twenty frames per second while visible. Border geometry and repaint requests
+are gated by clip visibility and minimized/OS-reported occluded state. Tray hiding
+minimizes before hiding so the pinned backend skips window GPU rendering, including
+autostart. Show restores the window. See ADR-0026. The old status-row marker is removed.
 The trail is inset inside fixed card bounds and has no layout or storage effects.
 The tray keeps five cached brightness levels within twelve percent, driven by worker
 wakeups. See ADR-0025 and T-0028.
@@ -170,6 +173,15 @@ timed out three times including one reset/reinitialize attempt. Development was
 launched, but no UI input or tracking start was sent; it may remain open. The JS session
 was reset and the user was informed. Native visual acceptance is still unverified.
 Next immediate step: user review, or a fresh authorized check after helper recovery.
+
+T-0029 gates animation geometry and repaint scheduling on actual clip/viewport
+visibility, and makes tray hiding minimize before hiding. 77 tests, formatting and
+Clippy passed; headless tests assert zero trail geometry and no animation loop when
+invisible. Both 0.16.1 builds and the guide/archive passed release verification;
+the shipped PDF matches the reviewed preview. Native
+hide/restore behavior and hardware GPU counters remain unmeasured; desktop permission
+was requested but no new computer-use session was activated without a reply.
+Next immediate check: native hide/restore and scroll visibility with permission.
 
 Select T-0019 next, read its card and relevant storage/recovery/report ADRs, define
 validation/audit/compatibility decisions before changing the history model. Keep one
