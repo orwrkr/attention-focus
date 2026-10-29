@@ -15,7 +15,7 @@ The prominent blue Start/Stop action belongs to the interval card. Counter frame
 narrow/wide windows; native maximize respects monitor work area, DPI and readable width.
 Overflow-only scrollbars retain stable content width during section reflow. Maximized
 windows have an explicit visible boundary. Start/Stop has hover/pressed feedback.
-Running intervals have a gently breathing green accent and a subtle tray brightness
+Running intervals have a slowly moving marker beside Tracking, a green accent and a subtle tray brightness
 cycle. Windows animation preferences are respected; stopped and identity icons stay static.
 Project search lives inside its dropdown; Unassigned focus is visually distinguished.
 Browse selects an existing source folder; Save and refresh validates and applies it.

@@ -28,6 +28,7 @@
 | [T-0024](T-0024-autostart-and-tray-launch.md) | done | Windows Sign-In Startup and Tray Launch | T-0023 |
 | [T-0025](T-0025-settings-entry.md) | done | Visible Settings Entry | T-0024 |
 | [T-0026](T-0026-stable-tracking-controls.md) | done | Stable Tracking Controls and Settings Cleanup | T-0025 |
+| [T-0027](T-0027-motion-and-write-cadence.md) | done | Visible Activity Motion and Write Cadence | T-0026 |
 
 Task template: `templates/TASK.md` from the repository root.
 

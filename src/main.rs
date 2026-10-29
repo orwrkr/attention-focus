@@ -538,7 +538,8 @@ impl eframe::App for Desktop {
         self.reports.save(storage);
     }
     fn auto_save_interval(&self) -> Duration {
-        Duration::from_secs(2)
+        // UI preferences can be coalesced; durable tracking has its own checkpoints.
+        Duration::from_secs(30)
     }
     fn persist_egui_memory(&self) -> bool {
         true

@@ -1043,6 +1043,38 @@ mod tests {
     }
 
     #[test]
+    fn timer_ticks_write_only_ten_second_checkpoints_and_idle_ticks_do_not_write() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let initial = engine.store.connection.total_changes();
+        for second in 1..=60 {
+            engine.apply(None, at(second * 1000)).unwrap();
+            engine.snapshot(at(second * 1000)).unwrap();
+        }
+        assert_eq!(engine.store.connection.total_changes(), initial);
+        engine
+            .apply(Some(Command::Start(activity("Example"))), at(60_000))
+            .unwrap();
+        let started = engine.store.connection.total_changes();
+        for second in 1..=60 {
+            let now = at(60_000 + second * 1000);
+            engine.apply(None, now).unwrap();
+            engine.snapshot(now).unwrap();
+            assert_eq!(
+                engine.store.connection.total_changes() - started,
+                second / 10
+            );
+        }
+        engine.apply(Some(Command::Stop), at(120_500)).unwrap();
+        let stopped = engine.store.connection.total_changes();
+        for second in 1..=60 {
+            engine.apply(None, at(120_500 + second * 1000)).unwrap();
+        }
+        assert_eq!(engine.store.connection.total_changes(), stopped);
+        assert_eq!(engine.snapshot(at(180_500)).unwrap().total_ms, 60_500);
+    }
+
+    #[test]
     fn picker_changes_split_by_default_at_one_boundary_and_never_start_while_stopped() {
         let dir = tempfile::tempdir().unwrap();
         let mut engine = engine(dir.path());

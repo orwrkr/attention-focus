@@ -78,6 +78,11 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
                                     "Stopped"
                                 });
                             }
+                            let (track, _) = ui
+                                .allocate_exact_size(egui::vec2(56.0, 16.0), egui::Sense::hover());
+                            if active {
+                                crate::motion::paint_activity(ui.painter(), track, accent, pulse);
+                            }
                         });
                         toggle |= crate::ui_support::primary_action(
                             ui,

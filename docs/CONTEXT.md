@@ -4,7 +4,7 @@ Updated: 2026-10-29.
 
 ## Current state
 
-Current release: 0.14.3, T-0026 stable tracking controls and settings cleanup. Next implementation card is
+Current release: 0.15.1, T-0027 visible activity motion and bounded UI persistence. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -37,8 +37,8 @@ placement is centered in the work area; ordinary saved placement remains. Constr
 maximization is centered horizontally. See ADR-0022.
 
 Running Current interval has a green frame/tint and explicit Tracking dot/text. An
-eight-second cosine gently varies its accent at up to twenty frames per second while
-visible. The tray uses five cached green brightness levels within twelve percent,
+eight-second cosine moves a marker across a fixed short line beside Tracking and
+gently varies its accent at up to twenty frames per second while visible. The tray uses five cached green brightness levels within twelve percent,
 updated by existing worker wakeups; shape, alpha and Development badge stay fixed.
 Stopped and permanent icons are static. Windows client-area animation preference
 disables motion; lookup failure also gives static status. No animation thread, new
@@ -79,6 +79,10 @@ Received lock/suspend notifications stop without automatic resume. Confirmed Win
 session end saves with bounded acknowledgement; canceled queries do not stop tracking.
 Forced exits, missed heartbeats and clock discontinuities use checkpoint review.
 Checkpoints are approximately ten seconds apart, not a loss guarantee under IO failure.
+UI persistence checks run every thirty seconds instead of two, plus normal Exit.
+Unchanged serialized values do not rewrite window.ron; explicit Stay on top still
+flushes immediately. Forced exit can lose recent UI changes without widening the
+history checkpoint window. See ADR-0024.
 
 Settings/history live in the Windows LocalAppData known folder under AttentionFocus/
 Production or Development, outside MetaPlan. Debug builds reject Production. Profile
@@ -148,6 +152,14 @@ narrow and wide layouts. All 74 tests, formatting and Clippy passed. Native Deve
 confirmed toolbar order, simplified settings and stationary start/stop with a short
 synthetic interval; normal Exit completed and the computer-use session was reset.
 Both 0.14.3 EXEs and ZIP were rebuilt and verified; all nine guide pages were reviewed.
+
+T-0027 adds a visible moving marker with fixed layout and reduces UI save checks to
+thirty seconds. 76 tests, formatting and Clippy passed; temporary DB tests measured
+zero idle row mutations and six running checkpoint updates per minute. These are not
+physical disk write counts. Native Development verified marker movement and stationary
+controls, then stopped the synthetic interval and exited normally. The computer-use
+session was reset. Both 0.15.1 EXEs and ZIP were verified; nine PDF pages were reviewed.
+Native reduced-motion switching and live Production IO profiling remain unexecuted.
 
 Select T-0019 next, read its card and relevant storage/recovery/report ADRs, define
 validation/audit/compatibility decisions before changing the history model. Keep one

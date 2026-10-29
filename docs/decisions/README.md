@@ -29,5 +29,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0021](0021-startup-window-recovery.md) | accepted | Safe startup maximization and collapsed-size recovery |
 | [0022](0022-header-drag-and-centering.md) | accepted | Native header dragging and centered default placement |
 | [0023](0023-autostart-and-tray-launch.md) | accepted | Explicit per-user sign-in startup and hidden tray launch |
+| [0024](0024-motion-and-write-cadence.md) | accepted | Visible activity marker and bounded UI persistence |
 
-Next number: `0024`. Template: `templates/ADR.md` from the repository root.
+Next number: `0025`. Template: `templates/ADR.md` from the repository root.

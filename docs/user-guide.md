@@ -181,10 +181,20 @@ move it to a shorter path and retry. Other applications' startup entries are unc
 
 ## Understand the tracking animation
 
-When Windows allows client-area animations, the running interval gently changes its green frame/fill over eight seconds, and the tray
+When Windows allows client-area animations, a small marker beside **Tracking** moves
+smoothly back and forth along a short line over eight seconds. The running interval
+also gently changes its green frame/fill, and the tray
 light changes brightness by at most twelve percent. This is deliberately subtle.
 When Windows animation effects are disabled or unavailable, the running accent stays
 static. Stopped tracking never animates. The app does not change Windows motion settings.
+
+## Disk activity and saving
+
+History checkpoints are written about every ten seconds while tracking (about six
+updates per minute); timer repainting does not write history. UI preferences are checked
+for saving every thirty seconds and on normal Exit; unchanged settings skip the file
+write. A forced exit may lose the most recent UI changes. Start/stop and activity changes
+are saved immediately.
 
 <!-- pagebreak -->
 

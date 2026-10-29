@@ -11,6 +11,20 @@ pub fn tray_level(seconds: f64, animate: bool) -> u8 {
     [0, 1, 2, 3, 4, 3, 2, 1][seconds.rem_euclid(8.0) as usize]
 }
 
+/// Decorative activity marker; fixed bounds keep timer controls stationary.
+pub fn paint_activity(
+    painter: &eframe::egui::Painter,
+    rect: eframe::egui::Rect,
+    color: eframe::egui::Color32,
+    phase: f32,
+) {
+    use eframe::egui::{Stroke, pos2};
+    let left = pos2(rect.left() + 4.0, rect.center().y);
+    let right = pos2(rect.right() - 4.0, rect.center().y);
+    painter.line_segment([left, right], Stroke::new(1.0, color.gamma_multiply(0.35)));
+    painter.circle_filled(left.lerp(right, phase.clamp(0.0, 1.0)), 2.5, color);
+}
+
 pub fn allowed() -> bool {
     #[cfg(windows)]
     {
@@ -36,6 +50,36 @@ pub fn allowed() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn activity_marker_moves_visibly_inside_fixed_bounds() {
+        use eframe::egui::{self, Color32, Pos2, Rect, vec2};
+        let context = egui::Context::default();
+        let rect = Rect::from_min_size(Pos2::new(10.0, 10.0), vec2(56.0, 16.0));
+        let mut centers = Vec::new();
+        for phase in [0.0, 0.5, 1.0] {
+            let mut output = context.run_ui(Default::default(), |ui| {
+                paint_activity(ui.painter(), rect, Color32::GREEN, phase);
+            });
+            let center = output
+                .shapes
+                .iter()
+                .find_map(|shape| {
+                    if let egui::Shape::Circle(circle) = &shape.shape {
+                        Some(circle.center)
+                    } else {
+                        None
+                    }
+                })
+                .expect("activity marker must be painted");
+            assert!(rect.shrink(2.5).contains(center));
+            centers.push(center);
+            output.textures_delta.clear();
+        }
+        assert_eq!(centers[0].y, centers[2].y);
+        assert_eq!(centers[2].x - centers[0].x, 48.0);
+        assert_eq!(centers[1], rect.center());
+    }
+
     #[test]
     fn motion_is_bounded_periodic_and_reduced_motion_is_static() {
         for step in 0..800 {
