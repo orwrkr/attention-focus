@@ -60,6 +60,7 @@ struct Desktop {
     motion_epoch: Instant,
     tray_level: Option<(bool, u8)>,
     running_icons: Vec<Icon>,
+    drag_regions: platform::HeaderDragRegions,
 }
 
 fn tray_icon(running: bool, profile: Profile) -> Icon {
@@ -103,11 +104,17 @@ impl Desktop {
     ) -> Self {
         let directory = paths.directory;
         let profile = paths.profile;
+        let drag_regions = platform::HeaderDragRegions::default();
         let width_error = platform::constrain_window_bounds(
             context,
             context
                 .winit_window()
                 .map_or(1.0, |window| window.scale_factor()),
+            context
+                .storage
+                .and_then(|storage| storage.get_string("window"))
+                .is_none(),
+            &drag_regions,
         )
         .err()
         .map(|error| format!("Cannot apply window width limit: {error}"));
@@ -223,6 +230,7 @@ impl Desktop {
             }
         };
         let mut desktop = Self {
+            drag_regions,
             motion_epoch: Instant::now(),
             tray_level: Some((false, 4)),
             running_icons: (0..=4)
@@ -705,10 +713,12 @@ impl eframe::App for Desktop {
         }
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
+        let mut drag_regions = Vec::new();
         egui::Frame::central_panel(ui.style()).show(ui, |ui| {
             ui.set_max_width(ui.available_width().min(744.0));
             // These actions stay outside the scrolling body at every content height.
-            ui.horizontal(|ui| {
+            let heading = ui.horizontal(|ui| {
+                ui.set_min_width(ui.available_width());
                 ui.heading("Attention Focus");
                 ui.weak(format!(
                     "{}v{}",
@@ -720,6 +730,7 @@ impl eframe::App for Desktop {
                     env!("CARGO_PKG_VERSION")
                 ));
             });
+            drag_regions.push(heading.response.rect);
             ui.horizontal(|ui| {
                 if ui.checkbox(&mut self.stay_on_top, "Stay on top").changed() {
                     if let Some(storage) = frame.storage_mut() {
@@ -746,6 +757,12 @@ impl eframe::App for Desktop {
                 {
                     self.command(tracking::Command::Exit);
                 }
+                let free = ui.available_rect_before_wrap();
+                let rect = egui::Rect::from_min_size(
+                    free.min,
+                    egui::vec2(free.width().max(0.0), ui.spacing().interact_size.y),
+                );
+                drag_regions.push(rect);
             });
             ui.separator();
             attention_focus::ui_support::body(ui, |ui| {
@@ -922,6 +939,7 @@ impl eframe::App for Desktop {
                 }
             });
         });
+        self.drag_regions.set(&drag_regions, ctx.pixels_per_point());
         attention_focus::ui_support::maximized_edge(&ctx);
     }
 }

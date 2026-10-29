@@ -41,6 +41,7 @@
   Unassigned focus and provide an existing-folder browser beside the source path.
 - Make running tracking clear with calm window/tray motion that does not distract.
   Preserve unambiguous stopped status and neutral permanent application icons.
+- Allow dragging from the app header above scrolling content and center default placement.
 
 Windows is the initial target based on the current environment and tray scenario.
 Other operating systems are not currently required.

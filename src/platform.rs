@@ -83,6 +83,8 @@ impl Drop for Instance {
 pub fn constrain_window_bounds(
     window: &impl raw_window_handle::HasWindowHandle,
     scale_factor: f64,
+    center_default: bool,
+    drag_regions: &HeaderDragRegions,
 ) -> io::Result<()> {
     use windows_sys::Win32::{
         Foundation::RECT,
@@ -100,8 +102,12 @@ pub fn constrain_window_bounds(
         return Err(io::Error::other("Expected a Windows root window."));
     };
     let hwnd = handle.hwnd.get() as _;
-    // The static callback owns no Rust data and removes itself on native destruction.
-    if unsafe { SetWindowSubclass(hwnd, Some(width_limit), 0xAF18, 0) } == 0 {
+    // UI-thread-owned rectangles are released when the native window is destroyed.
+    let regions = Box::into_raw(Box::new(drag_regions.clone()));
+    if unsafe { SetWindowSubclass(hwnd, Some(width_limit), 0xAF18, regions as usize) } == 0 {
+        unsafe {
+            drop(Box::from_raw(regions));
+        }
         return Err(io::Error::last_os_error());
     }
     let max_client_width = (760.0 * scale_factor).round() as i32;
@@ -135,19 +141,37 @@ pub fn constrain_window_bounds(
     }
     let current = [client.right - client.left, client.bottom - client.top];
     let repaired = restored_client_size(current, scale_factor);
-    if repaired != current {
+    let monitor = unsafe { monitor_frame(hwnd) };
+    let recenter = center_default
+        || repaired != current
+        || monitor.as_ref().is_some_and(|(m, x, y)| {
+            let work = m.rcWork;
+            outer.top + y < work.top
+                || outer.top + y >= work.bottom
+                || outer.right - x <= work.left
+                || outer.left + x >= work.right
+                || (outer.left <= work.left && outer.top <= work.top)
+        });
+    if repaired != current || recenter {
         // Repair legacy collapsed geometry once, without clearing any saved preferences.
         let width = outer.right - outer.left - current[0] + repaired[0];
         let height = outer.bottom - outer.top - current[1] + repaired[1];
+        let position = if recenter {
+            monitor
+                .as_ref()
+                .map(|(monitor, _, _)| centered_position(&monitor.rcWork, width, height))
+        } else {
+            None
+        };
         if unsafe {
             SetWindowPos(
                 hwnd,
                 std::ptr::null_mut(),
-                0,
-                0,
+                position.map_or(0, |p| p[0]),
+                position.map_or(0, |p| p[1]),
                 width,
                 height,
-                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+                if position.is_some() { 0 } else { SWP_NOMOVE } | SWP_NOZORDER | SWP_NOACTIVATE,
             )
         } == 0
         {
@@ -155,6 +179,26 @@ pub fn constrain_window_bounds(
         }
     }
     Ok(())
+}
+
+/// Shared only by the root window and its subclass on the UI thread.
+#[derive(Clone, Default)]
+pub struct HeaderDragRegions(
+    std::rc::Rc<std::cell::RefCell<Vec<windows_sys::Win32::Foundation::RECT>>>,
+);
+
+impl HeaderDragRegions {
+    pub fn set(&self, regions: &[eframe::egui::Rect], scale: f32) {
+        use windows_sys::Win32::Foundation::RECT;
+        let mut stored = self.0.borrow_mut();
+        stored.clear();
+        stored.extend(regions.iter().filter(|r| r.is_positive()).map(|r| RECT {
+            left: (r.left() * scale).ceil() as i32,
+            top: (r.top() * scale).ceil() as i32,
+            right: (r.right() * scale).floor() as i32,
+            bottom: (r.bottom() * scale).floor() as i32,
+        }));
+    }
 }
 
 fn restored_client_size(current: [i32; 2], scale: f64) -> [i32; 2] {
@@ -181,15 +225,27 @@ fn maximized_bounds(
     y: i32,
     max_outer_width: i32,
 ) -> windows_sys::Win32::Foundation::RECT {
-    let left = monitor.rcWork.left - x;
+    let width = (monitor.rcWork.right - monitor.rcWork.left + 2 * x).min(max_outer_width.max(1));
+    let left =
+        monitor.rcWork.left + (monitor.rcWork.right - monitor.rcWork.left + 2 * x - width) / 2 - x;
     let top = monitor.rcWork.top - y;
     windows_sys::Win32::Foundation::RECT {
         left,
         top,
-        right: left
-            + (monitor.rcWork.right - monitor.rcWork.left + 2 * x).min(max_outer_width.max(1)),
+        right: left + width,
         bottom: monitor.rcWork.bottom + y,
     }
+}
+
+fn centered_position(
+    work: &windows_sys::Win32::Foundation::RECT,
+    width: i32,
+    height: i32,
+) -> [i32; 2] {
+    [
+        work.left + ((work.right - work.left - width) / 2).max(0),
+        work.top + ((work.bottom - work.top - height) / 2).max(0),
+    ]
 }
 
 unsafe extern "system" fn width_limit(
@@ -198,7 +254,7 @@ unsafe extern "system" fn width_limit(
     wparam: usize,
     lparam: isize,
     id: usize,
-    _data: usize,
+    data: usize,
 ) -> isize {
     use windows_sys::Win32::UI::{
         Shell::{DefSubclassProc, RemoveWindowSubclass},
@@ -206,9 +262,31 @@ unsafe extern "system" fn width_limit(
     };
     if message == WM_NCDESTROY {
         unsafe { RemoveWindowSubclass(hwnd, Some(width_limit), id) };
+        if data != 0 {
+            unsafe {
+                drop(Box::from_raw(data as *mut HeaderDragRegions));
+            }
+        }
     }
     // Let winit calculate its DPI-aware frame/drag limits before adjusting maximize.
     let result = unsafe { DefSubclassProc(hwnd, message, wparam, lparam) };
+    if message == windows_sys::Win32::UI::WindowsAndMessaging::WM_NCHITTEST
+        && result == windows_sys::Win32::UI::WindowsAndMessaging::HTCLIENT as isize
+        && data != 0
+    {
+        let mut point = windows_sys::Win32::Foundation::POINT {
+            x: lparam as i16 as i32,
+            y: (lparam >> 16) as i16 as i32,
+        };
+        if unsafe { windows_sys::Win32::Graphics::Gdi::ScreenToClient(hwnd, &mut point) } != 0 {
+            let regions = unsafe { &*(data as *const HeaderDragRegions) }.0.borrow();
+            if regions.iter().any(|r| {
+                point.x >= r.left && point.x < r.right && point.y >= r.top && point.y < r.bottom
+            }) {
+                return windows_sys::Win32::UI::WindowsAndMessaging::HTCAPTION as isize;
+            }
+        }
+    }
     if message == WM_GETMINMAXINFO && lparam != 0 {
         let limits = unsafe { &mut *(lparam as *mut MINMAXINFO) };
         if let Some((monitor, x, y)) = unsafe { monitor_frame(hwnd) } {
@@ -307,6 +385,25 @@ unsafe fn monitor_frame(
 mod tests {
     use super::*;
     #[test]
+    fn centering_uses_work_area_including_negative_monitor_coordinates() {
+        use windows_sys::Win32::Foundation::RECT;
+        let work = RECT {
+            left: -1920,
+            top: 48,
+            right: 0,
+            bottom: 1080,
+        };
+        assert_eq!(centered_position(&work, 620, 640), [-1270, 244]);
+        assert_eq!(centered_position(&work, 2200, 1200), [-1920, 48]);
+        let monitor = windows_sys::Win32::Graphics::Gdi::MONITORINFO {
+            rcWork: work,
+            ..Default::default()
+        };
+        let bounds = maximized_bounds(&monitor, 8, 8, 776);
+        assert_eq!(bounds.left + bounds.right, work.left + work.right);
+        assert_eq!(bounds.top + 8, work.top);
+    }
+    #[test]
     fn collapsed_restore_recovers_without_changing_valid_dimensions() {
         for scale in [1.0, 1.25, 1.5, 2.0] {
             let physical = |value: f64| (value * scale).round() as i32;
@@ -341,6 +438,9 @@ mod tests {
             wparam: WPARAM,
             lparam: LPARAM,
         ) -> LRESULT {
+            if message == WM_NCHITTEST {
+                return HTCLIENT as isize;
+            }
             if message == WM_GETMINMAXINFO {
                 // Match winit startup before min/max constraints are installed:
                 // it consumes the message without filling Windows default fields.
@@ -401,6 +501,7 @@ mod tests {
             assert_eq!(
                 limits.ptMaxPosition.x,
                 monitor.rcWork.left - monitor.rcMonitor.left - x
+                    + (monitor.rcWork.right - monitor.rcWork.left + 2 * x - 800) / 2
             );
             assert_eq!(
                 limits.ptMaxPosition.y,
@@ -421,6 +522,33 @@ mod tests {
                 expected_width.min(monitor.rcWork.right - monitor.rcWork.left + 2 * x)
             );
             assert!(startup.ptMaxSize.y > 0);
+            let header = HeaderDragRegions::default();
+            header
+                .0
+                .borrow_mut()
+                .push(windows_sys::Win32::Foundation::RECT {
+                    left: 100,
+                    top: 5,
+                    right: 190,
+                    bottom: 31,
+                });
+            let regions = Box::into_raw(Box::new(header));
+            assert_ne!(
+                SetWindowSubclass(window, Some(width_limit), 0xAF18, regions as usize),
+                0
+            );
+            for (x, expected) in [(150, HTCAPTION), (30, HTCLIENT)] {
+                let mut point = windows_sys::Win32::Foundation::POINT { x, y: 18 };
+                assert_ne!(
+                    windows_sys::Win32::Graphics::Gdi::ClientToScreen(window, &mut point),
+                    0
+                );
+                let coordinates = ((point.y as u32 & 0xffff) << 16) | (point.x as u32 & 0xffff);
+                assert_eq!(
+                    SendMessageW(window, WM_NCHITTEST, 0, coordinates as isize),
+                    expected as isize
+                );
+            }
             assert_ne!(DestroyWindow(window), 0);
             assert_ne!(UnregisterClassW(name.as_ptr(), instance), 0);
         }

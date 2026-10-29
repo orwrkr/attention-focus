@@ -1,10 +1,10 @@
 # Current Context
 
-Updated: 2026-10-28.
+Updated: 2026-10-29.
 
 ## Current state
 
-Current release: 0.12.2. T-0022 fixes collapsed startup geometry; next implementation card is
+Current release: 0.13.0, T-0023 header dragging/centering. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, autostart, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
@@ -30,6 +30,11 @@ Startup now computes maximized bounds directly instead of sending a synthetic ze
 MINMAXINFO query before winit constraints exist. Missing native tracking limits fall
 back to an explicit width cap. Each undersized normal axis recovers to its initial
 default once, preserving valid axes, position and all other preferences. See ADR-0021.
+T-0023 adds native HTCAPTION regions for the app heading and free header space, excluding
+the pinned controls and resize borders. Rectangles are updated on the UI thread and
+released on window destruction. First-run, collapsed, inaccessible and legacy top-left
+placement is centered in the work area; ordinary saved placement remains. Constrained
+maximization is centered horizontally. See ADR-0022.
 
 Running Current interval has a green frame/tint and explicit Tracking dot/text. An
 eight-second cosine gently varies its accent at up to twenty frames per second while
@@ -76,7 +81,7 @@ schema two. T-0019 must research compatibility before introducing further migrat
 
 ## Checks and exact next step
 
-70 Rust tests, formatting and Clippy passed for T-0022. Windows
+71 Rust tests, formatting and Clippy passed for T-0023. Windows
 junction checks ran with the required link permissions.
 Tests cover responsive margins at 100-200 percent scale, mirrored scrollbar gutters,
 a single name hint, native monitor/frame bounds and project/global daily accounting.
@@ -94,7 +99,12 @@ T-0022 Development 0.12.2 recovered a seeded 64-by-64 saved size to 620-by-640 a
 150-percent scale. Maximize/Exit/relaunch retained the full constrained maximized size;
 Restore returned to the recovered normal size. Other preferences remained intact and
 no session was started. Development exited normally. Production remained untouched.
-Release 0.12.2 package checks are recorded in the T-0022 card.
+T-0023 tests cover native header/control hit testing, shared-state cleanup, work-area
+centering and negative monitor origins. First-run centering was observed in Development.
+Final agent capture was stopped with physical Escape; the user subsequently reported
+checking the rebuilt Development app and approved the release/commit. Native acceptance
+is user-reported; do not claim an agent replay of every drag/restore/restart scenario.
+Release 0.13.0 package checks are recorded in the T-0023 card.
 
 All agent-created sessions are synthetic and Development-only under the ignored
 manual fixture. No input was sent to Production, which remained untouched.

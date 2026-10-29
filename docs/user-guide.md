@@ -125,6 +125,9 @@ together with window placement, and does not prevent hiding to the tray. The nor
 header shows the app/version; the test version also shows Development. Secondary
 explanations use a blue accent to distinguish them from primary text.
 
+Drag the app heading or empty header space above scrolling content to move the window.
+New windows open centered; ordinary saved positions are restored. Inaccessible or legacy
+top-left positions are recentered. A constrained maximized window is centered horizontally.
 Resize or maximize the window normally. Width stops at a readable limit; vertical
 resizing remains independent. A visible edge marks the constrained maximized window.
 The scrollbar appears only on overflow; reserved margins keep content width stable
