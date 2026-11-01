@@ -24,14 +24,16 @@ and optional task. Changing a project/task while running starts a new interval b
 default; disable the checkbox to reassign the entire current interval instead. While
 stopped, a picker change saves the next tray-start activity. The upper caption identifies
 the confirmed activity. Project/task lists put the most recently tracked choice first.
+Each project recalls its last applied note and eight filtered recent note suggestions.
 Notes alone remain draft until explicitly applied. Text fields support the clipboard.
 Search projects in the picker. Focus history and reports shows minute-precise ranges
 in a chosen time zone, saved totals by project/task/day, and up to 200 recent sessions.
+Reports include a saved-plus-running total and saved grouping footers, excluding review.
 Running time and unreviewed checkpoints are shown separately from saved totals.
 Export CSV/Markdown snapshots include all matching sessions, without the preview's
 200-row limit. Native Save selects a new file outside MetaPlan and application storage.
 Expanded visible reports update periodically only while tracking time grows inside
-the filter; affected stop/edit/recovery events refresh once. Dates support Calendar popups and
+the filter; affected stop/edit/recovery events refresh once. Dates support Calendar popups, minute fields have Time pickers, and
 timezones have a searchable list. Stay on top is remembered per profile. Tray tooltips
 include the current project; secondary text uses a readable blue accent. Normal
 headers show the app/version; Development remains identified.

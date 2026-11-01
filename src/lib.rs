@@ -8,6 +8,7 @@ pub mod icons;
 #[cfg(windows)]
 pub mod lifecycle;
 pub mod motion;
+pub mod note_memory;
 #[cfg(windows)]
 pub mod platform;
 pub mod profiles;
@@ -18,6 +19,7 @@ pub mod source;
 pub mod startup;
 #[cfg(windows)]
 pub mod startup_ui;
+pub mod time_picker;
 pub mod tracking;
 pub mod tray_interaction;
 pub mod ui_support;

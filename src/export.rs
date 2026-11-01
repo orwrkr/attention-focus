@@ -89,6 +89,10 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
         report.running_ms.to_string(),
         report.review_ms.to_string(),
         report.diagnostics.join("; "),
+        report
+            .saved_ms
+            .saturating_add(report.running_ms)
+            .to_string(),
     ];
     if matches!(format, Format::Markdown) {
         writeln!(
@@ -123,13 +127,32 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
                     format,
                 )?;
             }
+            row(
+                out,
+                &[
+                    "Total saved".into(),
+                    String::new(),
+                    String::new(),
+                    report.saved_ms.to_string(),
+                ],
+                format,
+            )?;
             writeln!(out)?;
         }
         writeln!(out, "## By day\n\n| Day | Saved ms |\n| --- | --- |")?;
         for day in &report.range.days {
             row(out, &[day.date.clone(), day.saved_ms.to_string()], format)?;
         }
-        writeln!(out, "\n## Sessions\n")?;
+        row(
+            out,
+            &["Total saved".into(), report.saved_ms.to_string()],
+            format,
+        )?;
+        writeln!(
+            out,
+            "\nTotal (saved + running checkpoint): {} ms. Needs review is excluded.\n\n## Sessions\n",
+            report.saved_ms.saturating_add(report.running_ms)
+        )?;
     }
     let session_columns = [
         "Session ID",
@@ -158,6 +181,7 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
             "Running checkpoint total ms",
             "Needs review total ms",
             "Diagnostics",
+            "Total saved plus running checkpoint ms",
         ]
         .map(String::from)
         .to_vec()
@@ -375,6 +399,14 @@ mod tests {
         render(&mut bytes, &report, Format::Markdown).unwrap();
         let md = String::from_utf8(bytes).unwrap();
         assert!(md.contains("## By day") && md.contains("## By project and task"));
+        assert_eq!(md.matches("Total saved").count(), 3);
+        assert!(md.contains("Total (saved + running checkpoint): 215000 ms"));
+        assert!(csv.contains("Total saved plus running checkpoint ms"));
+        let summary = csv
+            .lines()
+            .find(|line| line.starts_with("\"Summary\""))
+            .unwrap();
+        assert!(summary.contains("\"215000\""));
     }
     #[test]
     fn escaping_keeps_unicode_and_makes_imported_syntax_literal() {

@@ -101,3 +101,10 @@ Only one session is active at a time; switching must not double-count time.
 Time represents user-declared attention, not automatically measured concentration.
 Project dependency relationships must not inflate the total by counting time twice.
 The source must remain independently usable without the application.
+
+## Accepted report and note improvements (T-0030)
+
+- Combined saved/running report total, saved table footers and matching export totals.
+- Per-project last confirmed note and eight distinct recent nonblank suggestions.
+- Minute picker dialogs alongside manual time entry, preserving range validation.
+- No border geometry/repaint loop for clipped, hidden or OS-reported invisible areas.

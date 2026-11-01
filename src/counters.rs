@@ -19,7 +19,6 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
     let mut bounds = [Rect::NOTHING; 3];
     let mut card = |ui: &mut egui::Ui, index: usize, width: f32| {
         let active = index == 0 && state.running && ready;
-        let animate = active && crate::motion::allowed();
         let accent = if ui.visuals().dark_mode {
             egui::Color32::from_rgb(67, 188, 143)
         } else {
@@ -102,7 +101,7 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
             bounds[index],
             f32::from(frame.corner_radius.nw),
             accent,
-            animate,
+            active && crate::motion::visible(ui, bounds[index]) && crate::motion::allowed(),
         );
     };
     if wide {

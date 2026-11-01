@@ -52,7 +52,11 @@ working graphics driver are required. Clean-machine compatibility is still being
 - Select a project and optionally an unfinished task from its current cycle.
 - Choose the colored, bold italic **Unassigned focus (no project)** entry when no
   project is appropriate. Its position still follows recent-use ordering.
-- Add an optional note to describe the session.
+- Add an optional note to describe the session. Each project remembers its last applied
+  note and eight distinct recent nonblank notes. Typing filters its suggestions; choosing
+  one fills the draft. Project changes restore that project's note; task changes keep it.
+  Unassigned focus has its own notes. A blank applied note clears the default but keeps
+  suggestions. Notes are profile-local preferences, remembered from this version onward.
 
 The selected project must be available in the loaded source. Completed or archived
 projects and unavailable tasks cannot start a new session. Refresh MetaPlan or choose
@@ -218,6 +222,8 @@ fields to retry. An earlier valid result keeps its own period and snapshot label
 
 ## Understand the totals
 
+- **Total (saved + running)** adds finalized and active time in the selected period,
+  excluding Needs review. Project, task and day tables end with **Total saved**.
 - **Saved focus** includes finalized sessions in the selected period.
 - **Running (not finalized)** is the active interval's elapsed time inside this filter.
   It remains separate from Saved focus until the interval stops or switches.
@@ -263,7 +269,9 @@ the application's data folders. Source files do not need to be currently availab
 The export is a snapshot of every matching session, including entries beyond the
 window's 200-row preview. It includes version, snapshot time, timezone, exact filter
 boundaries, integer millisecond durations, source identities, activity names and notes.
-Saved, Running checkpoint and Needs review totals remain separate.
+Saved, Running checkpoint and Needs review totals remain separate. The combined total
+adds Saved and Running checkpoint, excluding Needs review. Markdown grouping tables
+end with Total saved; CSV adds Total saved plus running checkpoint ms.
 
 Running time uses the last durable checkpoint, so it can lag the live window timer.
 Stop tracking before export when you need a finalized current interval. Preparing
@@ -288,7 +296,8 @@ and does not replace an existing file.
 ## Choose precise intervals
 
 For example, From `2026-10-27 09:15` to Until `2026-10-27 10:30` includes exactly that
-75-minute window in the chosen timezone. Time at or after 10:30 is excluded. Adjacent
+75-minute window in the chosen timezone. The **Time** button beside each time field
+opens an hour/minute picker with Apply and Cancel. Until also offers End of day (24:00). Time at or after 10:30 is excluded. Adjacent
 windows therefore do not count the same time twice. To include the entire last date,
 use Until `24:00`; Until `00:00` means the start of that date.
 

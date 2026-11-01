@@ -18,6 +18,8 @@ pub struct Panel {
     debounce: Option<Instant>,
     dirty: bool,
     preset: Option<usize>,
+    from_time_picker: crate::time_picker::TimePicker,
+    through_time_picker: crate::time_picker::TimePicker,
     from_calendar: Calendar,
     through_calendar: Calendar,
     zones: Vec<String>,
@@ -52,6 +54,8 @@ impl Default for Panel {
             debounce: None,
             dirty: true,
             preset: Some(1),
+            from_time_picker: Default::default(),
+            through_time_picker: Default::default(),
             from_calendar: Calendar::default(),
             through_calendar: Calendar::default(),
             zones,
@@ -249,7 +253,12 @@ impl Panel {
                             self.from_calendar.show(ui, &mut self.request.from, "from");
                         ui.end_row();
                         ui.label("From time (HH:MM)");
-                        dates_changed |= ui.add(egui::TextEdit::singleline(&mut self.request.from_time).desired_width(70.0)).changed();
+                        dates_changed |= self.from_time_picker.show(
+                            ui,
+                            &mut self.request.from_time,
+                            "from-time",
+                            false,
+                        );
                         ui.end_row();
                         ui.label("Until (excluded)");
                         dates_changed |=
@@ -257,7 +266,12 @@ impl Panel {
                                 .show(ui, &mut self.request.through, "through");
                         ui.end_row();
                         ui.label("Until time (HH:MM)");
-                        dates_changed |= ui.add(egui::TextEdit::singleline(&mut self.request.through_time).desired_width(70.0)).on_hover_text("24:00 means the end of the selected date. The Until boundary is excluded.").changed();
+                        dates_changed |= self.through_time_picker.show(
+                            ui,
+                            &mut self.request.through_time,
+                            "until-time",
+                            true,
+                        );
                         ui.end_row();
                         ui.label("Time zone");
                         egui::ComboBox::from_id_salt("report-timezone")
@@ -321,15 +335,36 @@ impl Panel {
                 ui.label("History is not available yet.");
             }
             ui.horizontal(|ui| {
-                for (label,format) in [("Export CSV",crate::export::Format::Csv),("Export Markdown",crate::export::Format::Markdown)] {
-                    if ui.add_enabled(ready && !self.export_pending && self.request.bounds().is_ok(),egui::Button::new(label)).clicked() {
-                        self.export_request=Some(format);self.export_pending=true;self.export_message=None;
+                for (label, format) in [
+                    ("Export CSV", crate::export::Format::Csv),
+                    ("Export Markdown", crate::export::Format::Markdown),
+                ] {
+                    if ui
+                        .add_enabled(
+                            ready && !self.export_pending && self.request.bounds().is_ok(),
+                            egui::Button::new(label),
+                        )
+                        .clicked()
+                    {
+                        self.export_request = Some(format);
+                        self.export_pending = true;
+                        self.export_message = None;
                     }
                 }
             });
-            if self.export_pending {ui.weak("Preparing export...");}
-            if let Some(message)=&self.export_message {ui.label(message);}
-            ui.weak(if self.pending {"Updating report..."} else if self.growing {"Auto-refresh: tracking is inside this range"} else {"Auto-refresh paused: no tracking time is growing in this range"});
+            if self.export_pending {
+                ui.weak("Preparing export...");
+            }
+            if let Some(message) = &self.export_message {
+                ui.label(message);
+            }
+            ui.weak(if self.pending {
+                "Updating report..."
+            } else if self.growing {
+                "Auto-refresh: tracking is inside this range"
+            } else {
+                "Auto-refresh paused: no tracking time is growing in this range"
+            });
             if let Some(error) = &self.error {
                 ui.colored_label(egui::Color32::LIGHT_RED, error);
             }
@@ -367,7 +402,11 @@ impl Panel {
             "Snapshot: {}",
             report.range.format_time(report.generated_ms)
         ));
-        ui.strong(format!("Saved focus: {}", duration(report.saved_ms)));
+        ui.strong(format!(
+            "Total (saved + running): {}",
+            duration(report.saved_ms.saturating_add(report.running_ms))
+        ));
+        ui.label(format!("Saved focus: {}", duration(report.saved_ms)));
         ui.label(format!("Running (not finalized): {}",duration(report.running_ms))).on_hover_text("Elapsed time from the active interval clipped to this filter. It is not included in Saved focus until the interval ends.");
         ui.label(format!("Needs review (excluded): {}",duration(report.review_ms))).on_hover_text("Saved checkpoint time from interrupted intervals within this filter. It is excluded from Saved focus until you accept recovery.");
         for diagnostic in &report.diagnostics {
@@ -386,6 +425,9 @@ impl Panel {
                         ui.label(duration(group.saved_ms));
                         ui.end_row();
                     }
+                    ui.strong("Total saved");
+                    ui.strong(duration(report.saved_ms));
+                    ui.end_row();
                 });
         });
         ui.collapsing("By project and task", |ui| {
@@ -401,6 +443,10 @@ impl Panel {
                     ui.label(duration(group.saved_ms));
                     ui.end_row();
                 }
+                ui.strong("Total saved");
+                ui.label("");
+                ui.strong(duration(report.saved_ms));
+                ui.end_row();
             });
         });
         ui.collapsing("By day", |ui| {
@@ -419,6 +465,9 @@ impl Panel {
                                 ui.label(duration(day.saved_ms));
                                 ui.end_row();
                             }
+                            ui.strong("Total saved");
+                            ui.strong(duration(report.saved_ms));
+                            ui.end_row();
                         });
                 });
         });

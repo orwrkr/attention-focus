@@ -54,6 +54,7 @@ struct Desktop {
     reports: report_ui::Panel,
     project_search: String,
     restored_note: Option<String>,
+    note_memory: attention_focus::note_memory::NoteMemory,
     profile: Profile,
     storage_root: std::path::PathBuf,
     stay_on_top: bool,
@@ -279,6 +280,10 @@ impl Desktop {
                 .storage
                 .and_then(|s| eframe::get_value(s, "project_search"))
                 .unwrap_or_default(),
+            note_memory: context
+                .storage
+                .and_then(|s| eframe::get_value(s, "project_notes"))
+                .unwrap_or_default(),
             restored_note: context
                 .storage
                 .and_then(|s| eframe::get_value::<Option<String>>(s, "note_draft"))
@@ -408,6 +413,7 @@ impl Desktop {
                     if ui.selectable_label(selected, label).clicked() {
                         if !selected {
                             self.activity.project = choice.project;
+                            self.activity.note = self.note_memory.last(&self.activity.project);
                         }
                         ui.close();
                     }
@@ -449,9 +455,7 @@ impl Desktop {
                     }
                 });
         }
-        ui.add(
-            egui::TextEdit::singleline(&mut self.activity.note).hint_text("Optional session note"),
-        );
+        self.note_memory.show(ui, &mut self.activity);
         if self.activity.project != before && self.available(&self.activity) {
             self.command(tracking::Command::ChangeActivity(self.activity.clone()));
         }
@@ -531,6 +535,7 @@ impl eframe::App for Desktop {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, "project_notes", &self.note_memory);
         eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
         eframe::set_value(storage, "startup_tray", &self.startup.tray);
         eframe::set_value(storage, "project_search", &self.project_search);
@@ -547,7 +552,7 @@ impl eframe::App for Desktop {
         true
     }
 
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if self.drag_regions.take_startup_hide() {
             Self::hide(ctx);
         }
@@ -644,6 +649,13 @@ impl eframe::App for Desktop {
                     self.toggle_item.set_enabled(
                         !state.needs_review && (state.running || self.lifecycle.is_some()),
                     );
+                    if (!self.ready || completed)
+                        && self.note_memory.remember(&state.activity)
+                        && let Some(storage) = frame.storage_mut()
+                    {
+                        eframe::set_value(storage, "project_notes", &self.note_memory);
+                        storage.flush();
+                    }
                     if !self.ready {
                         self.activity = state.activity.clone();
                         if let Some(note) = self.restored_note.take() {

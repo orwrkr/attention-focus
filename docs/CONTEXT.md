@@ -1,10 +1,21 @@
 # Current Context
 
-Updated: 2026-10-29.
+Updated: 2026-11-02.
+
+T-0030 adds report totals, project note recall and time pickers in 0.17.0.
+81 Rust tests, formatting and Clippy passed. Headless pointer tests cover note selection
+and Time popup actions. Note memory is profile-local preferences; history schema is
+unchanged. Hidden motion checks now also cover invisible UI and precede accessibility
+queries. Both canonical EXEs and ZIP were built; all nine PDF pages were reviewed.
+verify-release passed ZIP/hash/manifest, neutral icons and both EXE version checks.
+The shipped guide hash matches the reviewed preview.
+Native UI checks await fresh permission; no desktop session or real GPU measurement
+was performed. Next: native note/restart, time picker and hide/scroll acceptance,
+then T-0019.
 
 ## Current state
 
-Current release: 0.16.1, T-0029 invisible animation suppression. Next implementation card is
+Current release: 0.17.0, T-0030 report totals and project note recall. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.

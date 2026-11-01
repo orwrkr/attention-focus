@@ -77,6 +77,10 @@ pub fn paint_border(
     }
 }
 
+pub fn visible(ui: &eframe::egui::Ui, bounds: eframe::egui::Rect) -> bool {
+    ui.is_rect_visible(bounds) && ui.input(|input| input.viewport().visible().unwrap_or(true))
+}
+
 /// Do not generate trail geometry or schedule animation when it cannot be shown.
 pub fn animate_border(
     ui: &eframe::egui::Ui,
@@ -85,10 +89,7 @@ pub fn animate_border(
     color: eframe::egui::Color32,
     enabled: bool,
 ) {
-    if enabled
-        && ui.is_rect_visible(bounds)
-        && ui.input(|input| input.viewport().visible().unwrap_or(true))
-    {
+    if enabled && visible(ui, bounds) {
         paint_border(
             ui.painter(),
             bounds,
@@ -129,12 +130,13 @@ mod tests {
     #[test]
     fn invisible_animation_emits_no_geometry_or_repaint_loop() {
         use eframe::egui::{self, Color32, Pos2, Rect, vec2};
-        for (enabled, clipped, minimized, occluded) in [
-            (true, false, false, false),
-            (false, false, false, false),
-            (true, true, false, false),
-            (true, false, true, false),
-            (true, false, false, true),
+        for (enabled, clipped, minimized, occluded, hidden) in [
+            (true, false, false, false, false),
+            (false, false, false, false, false),
+            (true, true, false, false, false),
+            (true, false, true, false, false),
+            (true, false, false, true, false),
+            (true, false, false, false, true),
         ] {
             let context = egui::Context::default();
             for pass in 0..4 {
@@ -151,10 +153,13 @@ mod tests {
                         Pos2::new(10.0, if clipped { 500.0 } else { 10.0 }),
                         vec2(220.0, 140.0),
                     );
+                    if hidden {
+                        ui.set_invisible();
+                    }
                     animate_border(ui, rect, 6.0, Color32::GREEN, enabled);
                 });
                 if pass == 3 {
-                    let active = enabled && !clipped && !minimized && !occluded;
+                    let active = enabled && !clipped && !minimized && !occluded && !hidden;
                     let lines = output
                         .shapes
                         .iter()
