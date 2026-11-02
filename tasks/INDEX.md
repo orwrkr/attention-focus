@@ -35,6 +35,6 @@
 
 Task template: `templates/TASK.md` from the repository root.
 
-Next check: T-0030 native UI acceptance with fresh desktop permission.
+Next check: remaining tray restore/scroll visibility acceptance with fresh desktop permission.
 Next implementation task: [T-0019](T-0019-history-correction.md). T-0002 remains a separate
 desktop acceptance gate and does not authorize disruptive real system tests.

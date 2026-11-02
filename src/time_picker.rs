@@ -19,36 +19,41 @@ impl TimePicker {
                 changed |= ui
                     .add(egui::TextEdit::singleline(text).desired_width(70.0))
                     .changed();
-                ui.menu_button("Time", |ui| {
-                    open = true;
-                    let (hour, minute) = self
-                        .draft
-                        .get_or_insert_with(|| parse(text, end).unwrap_or((0, 0)));
-                    ui.horizontal(|ui| {
-                        ui.label("Hour");
-                        ui.add(egui::DragValue::new(hour).range(0..=if end { 24 } else { 23 }));
-                        ui.label("Minute");
-                        if *hour == 24 {
-                            *minute = 0;
-                        }
-                        ui.add_enabled(*hour < 24, egui::DragValue::new(minute).range(0..=59));
-                    });
-                    if end && ui.button("End of day (24:00)").clicked() {
-                        *text = "24:00".into();
-                        changed = true;
-                        ui.close();
-                    }
-                    ui.horizontal(|ui| {
-                        if ui.button("Apply").clicked() {
-                            *text = format!("{hour:02}:{minute:02}");
+                egui::containers::menu::MenuButton::new("Time")
+                    .config(
+                        egui::containers::menu::MenuConfig::default()
+                            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
+                    )
+                    .ui(ui, |ui| {
+                        open = true;
+                        let (hour, minute) = self
+                            .draft
+                            .get_or_insert_with(|| parse(text, end).unwrap_or((0, 0)));
+                        ui.horizontal(|ui| {
+                            ui.label("Hour");
+                            ui.add(egui::DragValue::new(hour).range(0..=if end { 24 } else { 23 }));
+                            ui.label("Minute");
+                            if *hour == 24 {
+                                *minute = 0;
+                            }
+                            ui.add_enabled(*hour < 24, egui::DragValue::new(minute).range(0..=59));
+                        });
+                        if end && ui.button("End of day (24:00)").clicked() {
+                            *text = "24:00".into();
                             changed = true;
                             ui.close();
                         }
-                        if ui.button("Cancel").clicked() {
-                            ui.close();
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.button("Apply").clicked() {
+                                *text = format!("{hour:02}:{minute:02}");
+                                changed = true;
+                                ui.close();
+                            }
+                            if ui.button("Cancel").clicked() {
+                                ui.close();
+                            }
+                        });
                     });
-                });
             });
         });
         if !open || changed {
@@ -105,7 +110,7 @@ mod tests {
                 },
             ]
         }
-        for label in ["Time", "Cancel", "Time", "End of day (24:00)"] {
+        for label in ["Time", "10", "Cancel", "Time", "End of day (24:00)"] {
             frame(vec![]);
             let output = frame(vec![]);
             let pos = position(&output, label);

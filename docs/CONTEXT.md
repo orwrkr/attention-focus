@@ -9,13 +9,22 @@ unchanged. Hidden motion checks now also cover invisible UI and precede accessib
 queries. Both canonical EXEs and ZIP were built; all nine PDF pages were reviewed.
 verify-release passed ZIP/hash/manifest, neutral icons and both EXE version checks.
 The shipped guide hash matches the reviewed preview.
-Native UI checks await fresh permission; no desktop session or real GPU measurement
-was performed. Next: native note/restart, time picker and hide/scroll acceptance,
-then T-0019.
+Native Development checks verified note filtering/selection, retained confirmed note,
+live report totals and visible trail movement. Tray hide removed the main window;
+tray restoration was inaccessible to the helper. The control session was reset and
+the user exited Development. Production was not operated; GPU activity was not measured.
+The native time editor exposed close-on-click behavior; 0.17.1 keeps the popup open
+while editing numeric fields. The regression failed before the fix and passed after it;
+all 81 tests, formatting and Clippy passed. Both 0.17.1 EXEs and ZIP passed release
+verification; the shipped guide matches the version-only preview. Freshly authorized
+native testing confirmed hour/minute entry, Apply (09:15) and Cancel (retains 09:15).
+Development exited normally, its window disappeared, and the control session was reset.
+Next: remaining tray restore/full scroll visibility acceptance with permission, or
+T-0019 planning. Real GPU usage remains unmeasured.
 
 ## Current state
 
-Current release: 0.17.0, T-0030 report totals and project note recall. Next implementation card is
+Current release: 0.17.1, T-0030 time-picker interaction fix. Next implementation card is
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
 That card is defined but not implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
