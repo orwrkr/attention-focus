@@ -79,6 +79,85 @@ impl Drop for Instance {
     }
 }
 
+/// Raise the shown root window above ordinary windows and request activation.
+/// Returns true only once Windows reports it as the foreground window, so callers can
+/// retry: tray clicks reach here after the double-click delay, when foreground rights
+/// may have lapsed, and the viewport commands that restore the window may still be queued.
+pub fn bring_to_front(window: &impl raw_window_handle::HasWindowHandle, stay_on_top: bool) -> bool {
+    let Ok(handle) = window.window_handle() else {
+        return false;
+    };
+    let raw_window_handle::RawWindowHandle::Win32(handle) = handle.as_raw() else {
+        return false;
+    };
+    unsafe { bring_hwnd_to_front(handle.hwnd.get() as _, stay_on_top) }
+}
+
+unsafe fn bring_hwnd_to_front(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    stay_on_top: bool,
+) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, IsIconic, IsWindowVisible,
+    };
+    unsafe {
+        if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+            return false;
+        }
+        if GetForegroundWindow() == hwnd {
+            return true;
+        }
+        raise_z_order(hwnd, stay_on_top);
+        activate(hwnd)
+    }
+}
+
+/// Changing Z-order needs no foreground rights, so the window ends up above ordinary
+/// windows even when Windows refuses activation. Stay on top keeps its topmost state.
+unsafe fn raise_z_order(hwnd: windows_sys::Win32::Foundation::HWND, stay_on_top: bool) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+        SetWindowPos,
+    };
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+    unsafe {
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags);
+        if !stay_on_top {
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+        }
+    }
+}
+
+/// Without foreground rights, share the foreground thread's input state just long enough
+/// for one request. This fails for elevated foreground windows, which keep their focus.
+unsafe fn activate(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::{
+        System::Threading::{AttachThreadInput, GetCurrentThreadId},
+        UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+        },
+    };
+    unsafe {
+        if SetForegroundWindow(hwnd) != 0 && GetForegroundWindow() == hwnd {
+            return true;
+        }
+        let foreground = GetForegroundWindow();
+        let thread = if foreground.is_null() {
+            0
+        } else {
+            GetWindowThreadProcessId(foreground, std::ptr::null_mut())
+        };
+        let current = GetCurrentThreadId();
+        let attached =
+            thread != 0 && thread != current && AttachThreadInput(current, thread, 1) != 0;
+        SetForegroundWindow(hwnd);
+        if attached {
+            AttachThreadInput(current, thread, 0);
+        }
+        GetForegroundWindow() == hwnd
+    }
+}
+
 /// Repair collapsed restored geometry and constrain restored maximization once.
 /// Install on the root window's owning UI thread before its first rendered frame.
 pub fn constrain_window_bounds(
@@ -408,6 +487,86 @@ unsafe fn monitor_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn raising_orders_above_ordinary_windows_and_preserves_stay_on_top() {
+        use windows_sys::Win32::{
+            Foundation::HWND, System::LibraryLoader::GetModuleHandleW, UI::WindowsAndMessaging::*,
+        };
+        unsafe extern "system" fn procedure(
+            hwnd: HWND,
+            message: u32,
+            wparam: usize,
+            lparam: isize,
+        ) -> isize {
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        fn above(upper: HWND, lower: HWND) -> bool {
+            let mut current = lower;
+            while !current.is_null() {
+                current = unsafe { GetWindow(current, GW_HWNDPREV) };
+                if current == upper {
+                    return true;
+                }
+            }
+            false
+        }
+        let topmost =
+            |window| unsafe { GetWindowLongPtrW(window, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST != 0 };
+        let name: Vec<u16> = "AttentionFocusRaiseTest"
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        unsafe {
+            let instance = GetModuleHandleW(std::ptr::null());
+            let class = WNDCLASSW {
+                lpfnWndProc: Some(procedure),
+                hInstance: instance,
+                lpszClassName: name.as_ptr(),
+                ..Default::default()
+            };
+            assert_ne!(RegisterClassW(&class), 0);
+            // Off-screen and never activated: this test must not disturb the desktop.
+            let create = || {
+                let window = CreateWindowExW(
+                    WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                    name.as_ptr(),
+                    name.as_ptr(),
+                    WS_POPUP,
+                    -32_000,
+                    -32_000,
+                    16,
+                    16,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    instance,
+                    std::ptr::null(),
+                );
+                assert!(!window.is_null());
+                window
+            };
+            let (first, second) = (create(), create());
+            // A hidden window is not shown or activated before its commands are applied.
+            assert!(!bring_hwnd_to_front(first, false));
+            assert_eq!(IsWindowVisible(first), 0);
+            ShowWindow(first, SW_SHOWNOACTIVATE);
+            ShowWindow(second, SW_SHOWNOACTIVATE);
+            raise_z_order(second, false);
+            assert!(above(second, first));
+            raise_z_order(first, false);
+            assert!(above(first, second));
+            assert!(!topmost(first));
+            raise_z_order(second, true);
+            assert!(above(second, first));
+            assert!(topmost(second));
+            raise_z_order(second, true);
+            assert!(topmost(second), "Stay on top must survive repeated raises");
+            raise_z_order(second, false);
+            assert!(!topmost(second));
+            assert_ne!(DestroyWindow(first), 0);
+            assert_ne!(DestroyWindow(second), 0);
+            assert_ne!(UnregisterClassW(name.as_ptr(), instance), 0);
+        }
+    }
     #[test]
     fn centering_uses_work_area_including_negative_monitor_coordinates() {
         use windows_sys::Win32::Foundation::RECT;

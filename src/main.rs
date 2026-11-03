@@ -4,7 +4,7 @@ use attention_focus::{
     export, icons, lifecycle, platform, presentation,
     profiles::{Paths, Profile},
     report_ui, source, tracking,
-    tray_interaction::Clicks,
+    tray_interaction::{Clicks, WindowRaise},
 };
 use eframe::egui;
 use std::{
@@ -21,7 +21,7 @@ enum Action {
     Export(Result<String, String>),
     Show,
     LeftRelease(Instant),
-    DoubleClick,
+    DoubleClick(Instant),
     Toggle,
     Exit,
     Tracking(tracking::Event),
@@ -41,6 +41,7 @@ struct Desktop {
     exiting: bool,
     last_geometry: Option<egui::Rect>,
     clicks: Clicks,
+    raise: WindowRaise,
     directory: std::path::PathBuf,
     sender: mpsc::Sender<Action>,
     source_path: String,
@@ -96,6 +97,11 @@ fn duration(ms: u64) -> String {
         seconds / 60 % 60,
         seconds % 60
     )
+}
+
+fn double_click_time() -> Duration {
+    let interval = unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime() };
+    Duration::from_millis(u64::from(interval))
 }
 
 impl Desktop {
@@ -194,7 +200,7 @@ impl Desktop {
                 TrayIconEvent::DoubleClick {
                     button: MouseButton::Left,
                     ..
-                } => Some(Action::DoubleClick),
+                } => Some(Action::DoubleClick(Instant::now())),
                 _ => None,
             };
             if let Some(action) = action {
@@ -262,6 +268,7 @@ impl Desktop {
             exiting: false,
             last_geometry: None,
             clicks: Clicks::default(),
+            raise: WindowRaise::default(),
             directory,
             sender,
             source_path: selection
@@ -508,10 +515,21 @@ impl Desktop {
         })
     }
 
-    fn show(ctx: &egui::Context) {
+    fn show(&mut self, ctx: &egui::Context) {
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        // Foreground requests are verified and retried natively, not fire-and-forget.
+        self.raise.request();
+        ctx.request_repaint();
+    }
+
+    /// Surface a new error once; a persistent failure must not keep stealing focus.
+    fn show_error(&mut self, ctx: &egui::Context, error: String) {
+        let repeated = self.error.as_ref() == Some(&error);
+        self.error = Some(error);
+        if !repeated {
+            self.show(ctx);
+        }
     }
 
     fn hide(ctx: &egui::Context) {
@@ -570,10 +588,7 @@ impl eframe::App for Desktop {
                     }
                 }
                 Action::Export(result) => self.reports.export_finished(result),
-                Action::PlatformError(error) => {
-                    self.error = Some(error);
-                    Self::show(ctx);
-                }
+                Action::PlatformError(error) => self.show_error(ctx, error),
                 Action::Source(result) => {
                     self.source_pending = false;
                     match result {
@@ -588,16 +603,12 @@ impl eframe::App for Desktop {
                         }
                     }
                 }
-                Action::Show => Self::show(ctx),
+                Action::Show => self.show(ctx),
                 Action::LeftRelease(now) => {
-                    let interval = unsafe {
-                        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime()
-                    };
-                    self.clicks
-                        .release(now, Duration::from_millis(u64::from(interval)));
+                    self.clicks.release(now, double_click_time());
                 }
-                Action::DoubleClick => {
-                    self.clicks.double_click();
+                Action::DoubleClick(now) => {
+                    self.clicks.double_click(now, double_click_time());
                     if self.ready
                         && !self.state.needs_review
                         && (self.state.running
@@ -605,7 +616,7 @@ impl eframe::App for Desktop {
                     {
                         self.command(tracking::Command::Toggle);
                     } else {
-                        Self::show(ctx);
+                        self.show(ctx);
                     }
                 }
                 Action::Toggle => {
@@ -616,7 +627,7 @@ impl eframe::App for Desktop {
                     {
                         self.command(tracking::Command::Toggle);
                     } else {
-                        Self::show(ctx);
+                        self.show(ctx);
                     }
                 }
                 Action::Exit => self.command(tracking::Command::Exit),
@@ -675,8 +686,7 @@ impl eframe::App for Desktop {
                 }
                 Action::Tracking(tracking::Event::Error(error)) => {
                     self.pending = false;
-                    self.error = Some(error);
-                    Self::show(ctx);
+                    self.show_error(ctx, error);
                 }
                 Action::Tracking(tracking::Event::ExitReady) => {
                     self.exiting = true;
@@ -707,9 +717,16 @@ impl eframe::App for Desktop {
         }
         let (show, delay) = self.clicks.poll(Instant::now());
         if show {
-            Self::show(ctx);
+            self.show(ctx);
         }
         if let Some(delay) = delay {
+            ctx.request_repaint_after(delay);
+        }
+        let stay_on_top = self.stay_on_top;
+        if let Some(delay) = self
+            .raise
+            .poll(|| platform::bring_to_front(&*frame, stay_on_top))
+        {
             ctx.request_repaint_after(delay);
         }
         self.toggle_item.set_enabled(
