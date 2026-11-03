@@ -79,6 +79,13 @@ fn duration(ms: u64) -> String {
         seconds % 60
     )
 }
+fn period_hint(preset: Option<usize>, timezone: &str) -> String {
+    match preset {
+        Some(1) => format!("Follows the current day: moves to the new date at midnight ({timezone})."),
+        Some(days) => format!("Follows the current day: always the last {days} days ({timezone})."),
+        None => "Fixed dates: this range stays as entered when the day changes. Choose Today to follow the current day.".into(),
+    }
+}
 impl Panel {
     pub fn take_export(&mut self) -> Option<(crate::export::Format, reports::Request)> {
         self.export_request
@@ -174,6 +181,18 @@ impl Panel {
         self.dirty = true;
         self.debounce = Some(now + Duration::from_millis(350));
     }
+    /// Runs before debounce and in-flight gating, so visible filters and exports always
+    /// describe the current date. A reply for the previous date is rejected in `receive`.
+    fn roll_period(&mut self, wall_ms: i64) {
+        if let Some(days) = self.preset
+            && let Ok(now) = jiff::Timestamp::from_millisecond(wall_ms)
+            && let Ok(request) = reports::Request::recent_at(days, &self.request.timezone, now)
+            && request != self.request
+        {
+            self.request = request;
+            self.dirty = true;
+        }
+    }
     fn tick_at(
         &mut self,
         commands: &SyncSender<tracking::Command>,
@@ -189,19 +208,13 @@ impl Panel {
             self.dirty = true;
             self.was_open = true;
         }
+        self.roll_period(wall_ms);
         if self.debounce.is_some_and(|deadline| now < deadline) {
             return;
         }
         self.debounce = None;
         if self.pending {
             return;
-        }
-        if let Some(days) = self.preset
-            && let Ok(request) = reports::Request::recent(days, &self.request.timezone)
-            && request != self.request
-        {
-            self.request = request;
-            self.dirty = true;
         }
         let growing = self.active_start.is_some_and(|start| {
             self.request
@@ -309,9 +322,12 @@ impl Panel {
                 if old_zone != self.request.timezone {
                     self.edited(now);
                 }
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     for (label, days) in [("Today", 1), ("Last 7 days", 7), ("Last 30 days", 30)] {
-                        if ui.button(label).clicked() {
+                        if ui
+                            .add(egui::Button::new(label).selected(self.preset == Some(days)))
+                            .clicked()
+                        {
                             match reports::Request::recent(days, &self.request.timezone) {
                                 Ok(request) => {
                                     self.request = request;
@@ -325,11 +341,19 @@ impl Panel {
                             }
                         }
                     }
+                    if ui
+                        .add(egui::Button::new("Custom").selected(self.preset.is_none()))
+                        .on_hover_text("Keep the current dates when the day changes.")
+                        .clicked()
+                    {
+                        self.preset = None;
+                    }
                     if ui.button("Refresh report").clicked() {
                         self.debounce = None;
                         self.dirty = true;
                     }
                 });
+                ui.weak(period_hint(self.preset, &self.request.timezone));
             });
             if !ready {
                 ui.label("History is not available yet.");
@@ -586,6 +610,153 @@ mod tests {
         );
         storage.set_string("report_filter_v1", "broken preferences".into());
         assert_eq!(Panel::restore(Some(&storage)).preset, Some(1));
+    }
+
+    fn moment(text: &str) -> jiff::Timestamp {
+        text.parse().unwrap()
+    }
+    fn following(days: usize, timezone: &str, now: jiff::Timestamp) -> Panel {
+        Panel {
+            request: reports::Request::recent_at(days, timezone, now).unwrap(),
+            preset: Some(days),
+            ..Panel::default()
+        }
+    }
+    #[test]
+    fn today_moves_to_the_new_date_at_midnight_even_with_a_reply_in_flight() {
+        let (before, after) = (
+            moment("2026-03-10T23:59:59Z"),
+            moment("2026-03-11T00:00:01Z"),
+        );
+        let mut panel = following(1, "UTC", before);
+        let (sender, receiver) = mpsc::sync_channel(8);
+        let now = Instant::now();
+        panel.tick_at(&sender, true, now, before.as_millisecond());
+        receiver.try_recv().unwrap();
+        let stale = response(&panel.request);
+        let id = panel.request_id;
+        panel.tick_at(&sender, true, now, after.as_millisecond());
+        assert_eq!(panel.request.from, "2026-03-11");
+        assert_eq!(panel.request.through, "2026-03-11");
+        assert!(receiver.try_recv().is_err(), "one query stays in flight");
+        panel.receive(id, Ok(stale));
+        assert!(
+            panel.report.is_none(),
+            "the previous date must not be shown"
+        );
+        panel.tick_at(&sender, true, now, after.as_millisecond());
+        receiver.try_recv().unwrap();
+        panel.receive(panel.request_id, Ok(response(&panel.request)));
+        assert_eq!(
+            panel.report.as_ref().unwrap().range.request.from,
+            "2026-03-11"
+        );
+        // The rollover triggers exactly one query while nothing grows in the range.
+        panel.tick_at(
+            &sender,
+            true,
+            now + REFRESH_INTERVAL,
+            after.as_millisecond(),
+        );
+        assert!(receiver.try_recv().is_err());
+    }
+    #[test]
+    fn rolling_periods_keep_their_length_and_use_the_selected_time_zone() {
+        let early = moment("2026-03-10T14:59:00Z");
+        let late = moment("2026-03-10T15:01:00Z");
+        let mut panel = following(7, "Asia/Tokyo", early);
+        assert_eq!(panel.request.through, "2026-03-10");
+        panel.roll_period(late.as_millisecond());
+        assert_eq!(panel.request.from, "2026-03-05");
+        assert_eq!(panel.request.through, "2026-03-11");
+        assert_eq!(panel.request.timezone, "Asia/Tokyo");
+        assert_eq!(panel.preset, Some(7));
+    }
+    #[test]
+    fn custom_dates_stay_fixed_across_midnight_and_restart() {
+        let mut panel = fixed();
+        let original = panel.request.clone();
+        let (sender, receiver) = mpsc::sync_channel(8);
+        let (begin, end) = panel.request.bounds().unwrap();
+        let now = Instant::now();
+        panel.tick_at(&sender, true, now, begin + 1000);
+        receiver.try_recv().unwrap();
+        panel.receive(panel.request_id, Ok(response(&panel.request)));
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL, end + 86_400_000);
+        assert_eq!(panel.request, original);
+        assert!(receiver.try_recv().is_err());
+        let mut storage = MemoryStorage::default();
+        panel.save(&mut storage);
+        let restored = Panel::restore(Some(&storage));
+        assert_eq!((restored.request, restored.preset), (original, None));
+    }
+    #[test]
+    fn period_buttons_switch_between_following_and_fixed_dates() {
+        let context = egui::Context::default();
+        let mut panel = Panel {
+            request: reports::Request::recent(1, "UTC").unwrap(),
+            ..Panel::default()
+        };
+        let today = panel.request.clone();
+        let (sender, _receiver) = mpsc::sync_channel(64);
+        let frame = |panel: &mut Panel, events| {
+            let mut output = context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(420.0, 900.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| panel.show(ui, &sender, true),
+            );
+            output.textures_delta.clear();
+            output
+        };
+        fn pointer(pos: egui::Pos2, pressed: bool) -> Vec<egui::Event> {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ]
+        }
+        let click = |panel: &mut Panel, label: &str| {
+            frame(panel, vec![]);
+            let output = frame(panel, vec![]);
+            let pos = output
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Text(text) if text.galley.job.text == label => {
+                        Some(text.pos + egui::vec2(3.0, 3.0))
+                    }
+                    _ => None,
+                })
+                .expect("Report control must be visible");
+            frame(panel, pointer(pos, true));
+            frame(panel, pointer(pos, false));
+        };
+        click(&mut panel, "Focus history and reports");
+        assert_eq!(panel.preset, Some(1));
+        click(&mut panel, "Custom");
+        assert_eq!(panel.preset, None);
+        assert_eq!(panel.request, today, "Custom keeps the visible dates");
+        click(&mut panel, "Last 7 days");
+        assert_eq!(panel.preset, Some(7));
+        click(&mut panel, "Today");
+        assert_eq!(panel.preset, Some(1));
+        assert_eq!(panel.request.through, panel.request.from);
+    }
+    #[test]
+    fn period_hint_states_whether_dates_follow_the_current_day() {
+        assert!(period_hint(Some(1), "UTC").contains("new date at midnight (UTC)"));
+        assert!(period_hint(Some(7), "UTC").contains("last 7 days"));
+        assert!(period_hint(None, "UTC").contains("Fixed dates"));
     }
 
     fn fixed() -> Panel {

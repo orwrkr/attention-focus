@@ -27,8 +27,12 @@ impl Default for Request {
 }
 impl Request {
     pub fn recent(days: usize, timezone: &str) -> Result<Self> {
+        Self::recent_at(days, timezone, Timestamp::now())
+    }
+    /// Whole local days ending with the date of `now` in the selected time zone.
+    pub fn recent_at(days: usize, timezone: &str, now: Timestamp) -> Result<Self> {
         let zone = TimeZone::get(timezone)?;
-        let today = Timestamp::now().to_zoned(zone).date();
+        let today = now.to_zoned(zone).date();
         let mut first = today;
         for _ in 1..days {
             first = first.yesterday()?;
@@ -569,6 +573,159 @@ mod tests {
         assert_eq!(report.history.len(), 200);
         assert_eq!(report.matching_sessions, 250);
         assert_eq!(report.diagnostics.len(), 1);
+    }
+    /// Deterministic generator: failures reproduce without adding a test dependency.
+    struct Sequence(u64);
+    impl Sequence {
+        fn next(&mut self, bound: u64) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (self.0 >> 33) % bound
+        }
+    }
+    fn project(slug: &str, task: Option<&str>) -> crate::tracking::Project {
+        crate::tracking::Project {
+            source_id: 1,
+            source_path: "synthetic-source".into(),
+            slug: slug.into(),
+            title: slug.into(),
+            task: task.map(Into::into),
+        }
+    }
+    /// Non-overlapping sessions, with elapsed time deviating slightly from the wall span.
+    fn timeline(rng: &mut Sequence, mut at: i64, end: i64) -> Vec<Record> {
+        let mut records = Vec::new();
+        let mut id = 0;
+        while at < end {
+            at += rng.next(7_200_000) as i64;
+            let span = 1 + rng.next(14_400_000);
+            let elapsed = span + rng.next(2_001) - rng.next(2_001).min(span);
+            id += 1;
+            let mut record = record(at, at + span as i64, elapsed, State::Saved);
+            record.id = id;
+            record.activity.project = match rng.next(4) {
+                0 => None,
+                1 => Some(project("alpha", None)),
+                2 => Some(project("alpha", Some("Task \u{1f331}"))),
+                _ => Some(project("beta", None)),
+            };
+            at = record.end_ms;
+            records.push(record);
+        }
+        records
+    }
+    #[test]
+    fn totals_agree_for_every_grouping_and_partition_across_calendar_boundaries() {
+        // 23-, 25-hour, gap-at-midnight and skipped-date days are all inside these ranges.
+        for (zone, from, through) in [
+            ("UTC", "2026-01-01", "2026-01-10"),
+            ("Europe/Istanbul", "2026-10-25", "2026-11-04"),
+            ("America/New_York", "2026-03-06", "2026-03-10"),
+            ("America/New_York", "2026-10-30", "2026-11-03"),
+            ("America/Sao_Paulo", "2015-10-16", "2015-10-20"),
+            ("Pacific/Apia", "2011-12-28", "2012-01-02"),
+            ("Asia/Kathmandu", "2026-05-01", "2026-05-05"),
+            ("Australia/Lord_Howe", "2026-04-03", "2026-04-07"),
+        ] {
+            let mut rng = Sequence(zone.len() as u64 ^ 0x5eed);
+            let whole = range(from, through, zone);
+            let (begin, end) = (whole.start_ms, whole.end_ms);
+            let dates: Vec<String> = whole.days.iter().map(|d| d.date.clone()).collect();
+            // Sessions begin before the range and end after it, so clipping is exercised.
+            let records = timeline(&mut rng, begin - 18_000_000, end + 18_000_000);
+            let report = compute_all(whole, records.clone(), 0);
+            let context = format!("{zone} {from}..{through}");
+            assert!(report.diagnostics.is_empty(), "{context}");
+            assert_eq!(
+                report.range.days.iter().map(|d| d.saved_ms).sum::<u64>(),
+                report.saved_ms,
+                "days must add up: {context}"
+            );
+            assert_eq!(
+                report.groups.iter().map(|g| g.saved_ms).sum::<u64>(),
+                report.saved_ms,
+                "tasks must add up: {context}"
+            );
+            assert_eq!(
+                report.projects.iter().map(|g| g.saved_ms).sum::<u64>(),
+                report.saved_ms,
+                "projects must add up: {context}"
+            );
+            assert_eq!(
+                report.history.iter().map(|h| h.clipped_ms).sum::<u64>(),
+                report.saved_ms,
+                "sessions must add up: {context}"
+            );
+            // Every calendar day queried on its own equals that day's row in the long report.
+            for (index, date) in dates.iter().enumerate() {
+                let single = compute_all(range(date, date, zone), records.clone(), 0);
+                assert_eq!(
+                    single.saved_ms, report.range.days[index].saved_ms,
+                    "single-day report for {date}: {context}"
+                );
+            }
+            // Arbitrary adjacent minute windows partition the range without loss or overlap.
+            let mut cuts = vec![begin];
+            while *cuts.last().unwrap() < end {
+                let step = (60_000 + rng.next(20_000_000) as i64).min(end - cuts.last().unwrap());
+                cuts.push(cuts.last().unwrap() + step);
+            }
+            let mut sum = 0;
+            for pair in cuts.windows(2) {
+                sum += records
+                    .iter()
+                    .map(|r| allocated(r, pair[0], pair[1]))
+                    .sum::<u64>();
+            }
+            assert_eq!(sum, report.saved_ms, "adjacent windows: {context}");
+            // A session wholly inside the range contributes exactly its recorded duration.
+            let inside: Vec<_> = records
+                .iter()
+                .filter(|r| r.start_ms >= begin && r.end_ms <= end)
+                .cloned()
+                .collect();
+            assert!(!inside.is_empty(), "{context}");
+            let expected = inside.iter().map(|r| r.elapsed_ms).sum::<u64>();
+            let contained = compute_all(range(from, through, zone), inside, 0);
+            assert_eq!(contained.saved_ms, expected, "full durations: {context}");
+        }
+    }
+    #[test]
+    fn half_open_boundaries_count_a_session_touching_midnight_on_one_side_only() {
+        let first = range("2026-01-01", "2026-01-01", "UTC");
+        let midnight = first.end_ms;
+        let ends_at = || record(midnight - 1000, midnight, 1000, State::Saved);
+        let starts_at = || record(midnight, midnight + 1000, 1000, State::Saved);
+        let next = || range("2026-01-02", "2026-01-02", "UTC");
+        assert_eq!(compute(first.clone(), vec![ends_at()], 0).saved_ms, 1000);
+        assert_eq!(compute(next(), vec![ends_at()], 0).matching_sessions, 0);
+        assert_eq!(compute(first, vec![starts_at()], 0).matching_sessions, 0);
+        assert_eq!(compute(next(), vec![starts_at()], 0).saved_ms, 1000);
+        let both = range("2026-01-01", "2026-01-02", "UTC");
+        let report = compute(both, vec![ends_at(), starts_at()], 0);
+        let days: Vec<_> = report.range.days.iter().map(|d| d.saved_ms).collect();
+        assert_eq!((report.saved_ms, days), (2000, vec![1000, 1000]));
+    }
+    #[test]
+    fn day_rows_cover_only_the_selected_minutes_on_partial_first_and_last_days() {
+        let all = minute_range("2026-01-01", "22:00", "2026-01-03", "02:00", "UTC");
+        let (begin, end) = (all.start_ms, all.end_ms);
+        let span = (end - begin) as u64;
+        let report = compute(
+            all,
+            vec![record(
+                begin - 3_600_000,
+                end + 3_600_000,
+                span + 7_200_000,
+                State::Saved,
+            )],
+            0,
+        );
+        let days: Vec<_> = report.range.days.iter().map(|d| d.saved_ms).collect();
+        assert_eq!(days, vec![7_200_000, 86_400_000, 7_200_000]);
+        assert_eq!(report.saved_ms, span);
     }
     #[test]
     fn invalid_request_is_rejected() {
