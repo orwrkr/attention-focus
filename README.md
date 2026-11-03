@@ -33,7 +33,10 @@ Running time and unreviewed checkpoints are shown separately from saved totals.
 Export CSV/Markdown snapshots include all matching sessions, without the preview's
 200-row limit. Native Save selects a new file outside MetaPlan and application storage.
 Expanded visible reports update periodically only while tracking time grows inside
-the filter; affected stop/edit/recovery events refresh once. Dates support Calendar popups, minute fields have Time pickers, and
+the filter; affected stop/edit/recovery events refresh once. Today and the rolling periods
+follow the current day; Custom keeps fixed dates. Tracking that crosses local midnight is
+split at the day start by default, which an application setting can disable.
+Dates support Calendar popups, minute fields have Time pickers, and
 timezones have a searchable list. Stay on top is remembered per profile. Tray tooltips
 include the current project; secondary text uses a readable blue accent. Normal
 headers show the app/version; Development remains identified.

@@ -32,9 +32,15 @@
 | [T-0028](T-0028-gradient-border.md) | done | Gradient Tracking Border | T-0027 |
 | [T-0029](T-0029-hidden-animation.md) | done | Suspend Invisible Animation | T-0028 |
 | [T-0030](T-0030-report-totals-and-note-recall.md) | done | Report Totals, Project Notes and Time Pickers | T-0029 |
+| [T-0031](T-0031-tray-window-activation.md) | done | Bring the Window to the Front on Tray Click | T-0029 |
+| [T-0032](T-0032-report-period-mode.md) | done | Report Period That Follows the Current Day | T-0030 |
+| [T-0033](T-0033-day-boundary-accounting.md) | done | Day-Boundary Intervals and Verified Totals | T-0018 |
+| [T-0034](T-0034-public-release-readiness.md) | backlog | Public GitHub Release Readiness | Owner decisions |
 
 Task template: `templates/TASK.md` from the repository root.
 
-Next check: remaining tray restore/scroll visibility acceptance with fresh desktop permission.
-Next implementation task: [T-0019](T-0019-history-correction.md). T-0002 remains a separate
+Next check: native tray activation (T-0031) and a real midnight crossing (T-0032, T-0033)
+in Development, with remaining tray restore/scroll acceptance, using fresh desktop permission.
+Next implementation task: [T-0034](T-0034-public-release-readiness.md) if the owner proceeds
+with publishing, otherwise [T-0019](T-0019-history-correction.md). T-0002 remains a separate
 desktop acceptance gate and does not authorize disruptive real system tests.

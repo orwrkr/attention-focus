@@ -1,32 +1,32 @@
 # Current Context
 
-Updated: 2026-11-02.
+Updated: 2026-11-04.
 
-T-0030 adds report totals, project note recall and time pickers in 0.17.0.
-81 Rust tests, formatting and Clippy passed. Headless pointer tests cover note selection
-and Time popup actions. Note memory is profile-local preferences; history schema is
-unchanged. Hidden motion checks now also cover invisible UI and precede accessibility
-queries. Both canonical EXEs and ZIP were built; all nine PDF pages were reviewed.
-verify-release passed ZIP/hash/manifest, neutral icons and both EXE version checks.
-The shipped guide hash matches the reviewed preview.
-Native Development checks verified note filtering/selection, retained confirmed note,
-live report totals and visible trail movement. Tray hide removed the main window;
-tray restoration was inaccessible to the helper. The control session was reset and
-the user exited Development. Production was not operated; GPU activity was not measured.
-The native time editor exposed close-on-click behavior; 0.17.1 keeps the popup open
-while editing numeric fields. The regression failed before the fix and passed after it;
-all 81 tests, formatting and Clippy passed. Both 0.17.1 EXEs and ZIP passed release
-verification; the shipped guide matches the version-only preview. Freshly authorized
-native testing confirmed hour/minute entry, Apply (09:15) and Cancel (retains 09:15).
-Development exited normally, its window disappeared, and the control session was reset.
-Next: remaining tray restore/full scroll visibility acceptance with permission, or
-T-0019 planning. Real GPU usage remains unmeasured.
+0.18.1 delivers T-0031 (verified tray activation, ADR-0028), T-0032 (report periods that
+follow the current day) and T-0033 (intervals split at the local day start by default,
+schema three, audited totals, ADR-0029). The first full project review is in T-0034.
+106 Rust tests, formatting, Clippy and the package tests passed. Both canonical EXEs and
+the ZIP passed verify-release; all nine PDF pages were reviewed, and the shipped guide hash
+matches the reviewed preview. An independent read of the diff found no lost time, overlap
+or migration defect; its other findings were fixed or recorded as known limits.
+The 0.18.0 archive was built first but has two nearly empty PDF pages. It was superseded
+before handoff, so distribute 0.18.1 only.
+
+No application was launched and no desktop control was used for this work. Unverified:
+real tray foreground behavior, a real midnight crossing, and upgrading a real Production
+database. Production 0.17.1 kept running untouched from its own location, and its schema-two
+database stays usable by that version until 0.18.1 is run against it.
+
+Exact next step: the user checks tray activation and a midnight crossing in Development
+(see T-0031 and T-0033), or grants fresh desktop permission for an agent check. Then decide
+the T-0034 owner questions. Real GPU usage remains unmeasured.
 
 ## Current state
 
-Current release: 0.17.1, T-0030 time-picker interaction fix. Next implementation card is
+Current release: 0.18.1. Next implementation card is
+[T-0034](../tasks/T-0034-public-release-readiness.md) if publishing proceeds, otherwise
 [T-0019](../tasks/T-0019-history-correction.md), history correction/manual intervals.
-That card is defined but not implemented. Global shortcuts, installer and
+Neither is implemented. Global shortcuts, installer and
 updater remain deferred. T-0002 is a separate real desktop/OS acceptance gate.
 
 The local Rust app uses egui/eframe, tray-icon and bundled SQLite. Cargo.lock pins
@@ -37,7 +37,7 @@ Current interval has the prominent blue Start/Stop action. Today for project and
 Today - all projects share cached local-calendar-day accounting with the tray. Include
 saved plus active time once, all tasks and (for the global sum) all sources/unassigned
 focus; exclude review time. Report filters/timezones do not change Today. Errors show
-unavailable without blocking successful tracking state. Schema remains two.
+unavailable without blocking successful tracking state. Schema three is current.
 
 Counter frames use measured margins and symmetric reserved scroll margins. Narrow
 windows place the interval above two daily cards; wide windows use three columns.
@@ -112,8 +112,8 @@ history checkpoint window. See ADR-0024.
 Settings/history live in the Windows LocalAppData known folder under AttentionFocus/
 Production or Development, outside MetaPlan. Debug builds reject Production. Profile
 locks, histories and geometry are independent. Legacy root history remains untouched.
-Schema two dates from 0.3.0; schema-one upgrade backs up first. Older EXEs cannot read
-schema two. T-0019 must research compatibility before introducing further migrations.
+Schema two dates from 0.3.0 and schema three from 0.18.0; each upgrade backs up first. Older
+EXEs cannot read a newer schema. T-0019 must research compatibility before further migrations.
 
 ## Checks and exact next step
 
@@ -203,7 +203,7 @@ hide/restore behavior and hardware GPU counters remain unmeasured; desktop permi
 was requested but no new computer-use session was activated without a reply.
 Next immediate check: native hide/restore and scroll visibility with permission.
 
-Select T-0019 next, read its card and relevant storage/recovery/report ADRs, define
+Before T-0019, read its card and relevant storage/recovery/report ADRs, and define
 validation/audit/compatibility decisions before changing the history model. Keep one
 primary implementation task active. Publish only through scripts/build.ps1, preserving
 canonical EXE paths; locked output must fail without alternate copies. Every shipped

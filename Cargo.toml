@@ -1,6 +1,6 @@
 [package]
 name = "attention-focus"
-version = "0.17.1"
+version = "0.18.1"
 edition = "2024"
 publish = false
 

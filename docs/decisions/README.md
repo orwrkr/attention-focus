@@ -32,5 +32,8 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0024](0024-motion-and-write-cadence.md) | accepted | Visible activity marker and bounded UI persistence |
 | [0025](0025-gradient-tracking-border.md) | accepted | Rounded gradient tracking trail without layout changes |
 | [0026](0026-invisible-animation.md) | accepted | Suspend hidden and clipped animation rendering |
+| [0027](0027-project-note-recall-and-report-totals.md) | accepted | Project note recall and report totals |
+| [0028](0028-verified-window-activation.md) | accepted | Verified window activation on tray click |
+| [0029](0029-day-boundary-intervals.md) | accepted | Split intervals at the local day start |
 
-Next number: `0027`. Template: `templates/ADR.md` from the repository root.
+Next number: `0030`. Template: `templates/ADR.md` from the repository root.

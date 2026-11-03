@@ -833,6 +833,20 @@ impl eframe::App for Desktop {
                     let settings = ui.group(|ui| {
                         ui.heading("Application settings");
                         self.startup.show(ui);
+                        ui.separator();
+                        let mut split = self.state.split_on_day;
+                        if ui
+                            .add_enabled(
+                                self.ready && !self.pending,
+                                egui::Checkbox::new(&mut split, "Start a new interval at midnight"),
+                            )
+                            .changed()
+                        {
+                            self.command(tracking::Command::SetSplitOnDay(split));
+                        }
+                        ui.weak(
+                            "Ends a running interval when the local day changes and continues it as a new one. Time totals stay the same.",
+                        );
                     });
                     if reveal_settings {
                         settings.response.scroll_to_me(Some(egui::Align::Min));

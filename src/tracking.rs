@@ -7,8 +7,27 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+const SCHEMA_VERSION: i64 = 3;
 fn invalid(message: &str) -> std::io::Error {
     std::io::Error::other(message)
+}
+/// Copy the database beside itself through SQLite's backup API before an upgrade.
+fn backup_before_upgrade(connection: &Connection, path: &Path, prefix: &str) -> Result<()> {
+    let file = tempfile::Builder::new()
+        .prefix(prefix)
+        .suffix(".sqlite3")
+        .tempfile_in(
+            path.parent()
+                .ok_or_else(|| invalid("Missing storage directory."))?,
+        )?;
+    let mut destination = Connection::open(file.path())?;
+    {
+        let backup = rusqlite::backup::Backup::new(connection, &mut destination)?;
+        backup.run_to_completion(64, Duration::from_millis(10), None)?;
+    }
+    destination.close().map_err(|(_, e)| e)?;
+    file.keep().map_err(|e| e.error)?;
+    Ok(())
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +100,7 @@ pub struct Snapshot {
     pub needs_review: bool,
     pub activity: Activity,
     pub change_mode: ChangeMode,
+    pub split_on_day: bool,
     pub recent: Vec<RecentUse>,
 }
 impl Snapshot {
@@ -133,6 +153,7 @@ pub enum Command {
     Select(Activity),
     ChangeActivity(Activity),
     SetChangeMode(ChangeMode),
+    SetSplitOnDay(bool),
     AcceptRecovery,
     Report {
         id: u64,
@@ -177,26 +198,13 @@ impl Store {
         connection.busy_timeout(Duration::from_secs(2))?;
         connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")?;
         let version: i64 = connection.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version > 2 {
+        if version > SCHEMA_VERSION {
             return Err(invalid("History was created by a newer application version.").into());
         }
         if version == 0 {
             let legacy: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='focus_sessions')", [], |r| r.get(0))?;
             if legacy {
-                let backup_file = tempfile::Builder::new()
-                    .prefix("focus-before-v1-")
-                    .suffix(".sqlite3")
-                    .tempfile_in(
-                        path.parent()
-                            .ok_or_else(|| invalid("Missing storage directory."))?,
-                    )?;
-                let mut destination = Connection::open(backup_file.path())?;
-                {
-                    let backup = rusqlite::backup::Backup::new(&connection, &mut destination)?;
-                    backup.run_to_completion(64, Duration::from_millis(10), None)?;
-                }
-                destination.close().map_err(|(_, e)| e)?;
-                backup_file.keep().map_err(|e| e.error)?;
+                backup_before_upgrade(&connection, path, "focus-before-v1-")?;
             }
             let tx = connection.transaction()?;
             if legacy {
@@ -211,20 +219,7 @@ impl Store {
         }
         if version < 2 {
             if version == 1 {
-                let file = tempfile::Builder::new()
-                    .prefix("focus-before-v2-")
-                    .suffix(".sqlite3")
-                    .tempfile_in(
-                        path.parent()
-                            .ok_or_else(|| invalid("Missing storage directory."))?,
-                    )?;
-                let mut destination = Connection::open(file.path())?;
-                {
-                    let backup = rusqlite::backup::Backup::new(&connection, &mut destination)?;
-                    backup.run_to_completion(64, Duration::from_millis(10), None)?;
-                }
-                destination.close().map_err(|(_, e)| e)?;
-                file.keep().map_err(|e| e.error)?;
+                backup_before_upgrade(&connection, path, "focus-before-v2-")?;
             }
             let tx = connection.transaction()?;
             tx.execute_batch("CREATE TABLE focus_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1), split_on_change INTEGER NOT NULL CHECK(split_on_change IN (0,1)));
@@ -241,6 +236,15 @@ impl Store {
                 }
             }
             tx.execute_batch("PRAGMA user_version=2;")?;
+            tx.commit()?;
+        }
+        if version < 3 {
+            if version == 2 {
+                backup_before_upgrade(&connection, path, "focus-before-v3-")?;
+            }
+            let tx = connection.transaction()?;
+            tx.execute_batch("ALTER TABLE focus_preferences ADD COLUMN split_on_day INTEGER NOT NULL DEFAULT 1 CHECK(split_on_day IN (0,1));
+                PRAGMA user_version=3;")?;
             tx.commit()?;
         }
         connection.execute("UPDATE focus_sessions SET state='interrupted', ended_ms=checkpoint_ms, end_reason='crash' WHERE state='running'", [])?;
@@ -277,6 +281,30 @@ impl Store {
         } else {
             ChangeMode::EditCurrent
         })
+    }
+    fn split_on_day(&self) -> Result<bool> {
+        Ok(self.connection.query_row(
+            "SELECT split_on_day FROM focus_preferences WHERE singleton=1",
+            [],
+            |r| r.get(0),
+        )?)
+    }
+    /// Close the running interval at a day start and continue its activity from there.
+    /// The continuation stays durable up to `now`, like any other checkpoint.
+    fn split_day(&mut self, boundary: i64, closed: u64, now: i64, running: u64) -> Result<()> {
+        let tx = self.connection.transaction()?;
+        let activity: String = tx
+            .query_row(
+                "SELECT activity FROM focus_sessions WHERE state='running' AND started_ms<?1",
+                [boundary],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| invalid("No active interval crosses this day start."))?;
+        tx.execute("UPDATE focus_sessions SET state='stopped', ended_ms=?1, checkpoint_ms=?1, elapsed_ms=?2, end_reason='day_boundary' WHERE state='running'", params![boundary, bounded(closed)])?;
+        tx.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,elapsed_ms,state,activity) VALUES(?1,?2,?3,'running',?4)", params![boundary, now, bounded(running), activity])?;
+        tx.commit()?;
+        Ok(())
     }
     fn remember(connection: &Connection, activity: &Activity) -> Result<()> {
         activity.validate()?;
@@ -397,6 +425,7 @@ impl Store {
             needs_review: review,
             activity: self.selected()?,
             change_mode: self.change_mode()?,
+            split_on_day: self.split_on_day()?,
             recent,
         })
     }
@@ -476,7 +505,7 @@ pub struct ExportSnapshot {
 pub fn export_snapshot(path: &Path, request: &reports::Request) -> Result<ExportSnapshot> {
     let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     connection.busy_timeout(Duration::from_millis(250))?;
-    if connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != 2 {
+    if connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != SCHEMA_VERSION {
         return Err(invalid("Unsupported history version for export.").into());
     }
     connection.execute_batch("BEGIN")?;
@@ -518,6 +547,8 @@ pub struct Engine {
     observed: Moment,
     checkpoint_mono: u64,
     daily_cache: std::cell::RefCell<Option<DailyTotals>>,
+    /// Calendar override for tests; otherwise the current system zone is read when needed.
+    zone: Option<jiff::tz::TimeZone>,
 }
 struct DailyTotals {
     begin: i64,
@@ -534,10 +565,14 @@ impl Engine {
             observed: now,
             checkpoint_mono: now.mono_ms,
             daily_cache: std::cell::RefCell::new(None),
+            zone: None,
         }
     }
+    fn zone(&self) -> jiff::tz::TimeZone {
+        self.zone.clone().unwrap_or_else(jiff::tz::TimeZone::system)
+    }
     pub fn snapshot(&self, now: Moment) -> Result<Snapshot> {
-        self.snapshot_in_zone(now, jiff::tz::TimeZone::system())
+        self.snapshot_in_zone(now, self.zone())
     }
     fn snapshot_in_zone(&self, now: Moment, zone: jiff::tz::TimeZone) -> Result<Snapshot> {
         let mut snapshot = self.store.snapshot()?;
@@ -643,19 +678,26 @@ impl Engine {
         {
             self.daily_cache.borrow_mut().take();
         }
-        let gap = now.mono_ms.saturating_sub(self.observed.mono_ms);
-        let drift =
-            ((i128::from(now.wall_ms) - i128::from(self.observed.wall_ms)) - i128::from(gap)).abs();
+        // A queued lifecycle boundary can predate the last observation, moving both clocks
+        // back together. Only a wall clock falling behind monotonic time is a clock change.
+        let mono_delta = i128::from(now.mono_ms) - i128::from(self.observed.mono_ms);
+        let wall_delta = i128::from(now.wall_ms) - i128::from(self.observed.wall_ms);
         if self.started.is_some()
-            && (gap > 30_000 || drift > 5_000 || now.wall_ms < self.observed.wall_ms)
+            && (mono_delta > 30_000
+                || (wall_delta - mono_delta).abs() > 5_000
+                || (mono_delta >= 0 && wall_delta < 0))
         {
             self.store.interrupt("clock_or_heartbeat")?;
             self.started = None;
         }
-        self.observed = now;
+        if mono_delta >= 0 {
+            self.observed = now;
+        }
+        let split = self.split_at_day_starts(now);
         let elapsed = self
             .started
             .map(|start| now.mono_ms.saturating_sub(start.mono_ms));
+        let tick = command.is_none();
         match command {
             Some(Command::Start(activity)) => {
                 if self.started.is_some() {
@@ -702,6 +744,12 @@ impl Engine {
                     [mode == ChangeMode::NewInterval],
                 )?;
             }
+            Some(Command::SetSplitOnDay(enabled)) => {
+                self.store.connection.execute(
+                    "UPDATE focus_preferences SET split_on_day=?1 WHERE singleton=1",
+                    [enabled],
+                )?;
+            }
             Some(Command::Stop) => {
                 if let Some(elapsed) = elapsed {
                     self.stop(now, elapsed, "stop")?;
@@ -715,8 +763,13 @@ impl Engine {
                 }
             }
             Some(Command::Interrupt { reason, .. }) => {
-                if let Some(elapsed) = elapsed {
-                    self.stop(now, elapsed, reason)?;
+                if let (Some(elapsed), Some(start)) = (elapsed, self.started) {
+                    // A boundary captured just before a queued start still ends that interval.
+                    let at = Moment {
+                        wall_ms: now.wall_ms.max(start.wall_ms),
+                        ..now
+                    };
+                    self.stop(at, elapsed, reason)?;
                 }
             }
             Some(Command::AcceptRecovery) => self.store.accept_recovery()?,
@@ -735,7 +788,46 @@ impl Engine {
                 }
             }
         }
+        // A failed split retries on each tick, where it is reported after checkpointing.
+        // Commands and reports proceed regardless: reports clip unsplit intervals correctly.
+        if tick {
+            split?;
+        }
         Ok(false)
+    }
+    /// While enabled, intervals never span a local day start. Each passed start closes the
+    /// running interval and continues it from that boundary. Monotonic elapsed time is
+    /// divided rather than recalculated, so the parts always add up to the same duration.
+    /// Recovery cases such as long gaps were already interrupted before reaching this point.
+    fn split_at_day_starts(&mut self, now: Moment) -> Result<()> {
+        let Some(mut start) = self.started else {
+            return Ok(());
+        };
+        let zone = self.zone();
+        let passed = |start: Moment| {
+            reports::next_day_start(start.wall_ms, &zone).filter(|&day| day < now.wall_ms)
+        };
+        if passed(start).is_none() || !self.store.split_on_day()? {
+            return Ok(());
+        }
+        while let Some(boundary) = passed(start) {
+            let behind = (now.wall_ms - boundary) as u64;
+            let mono_ms = now.mono_ms.saturating_sub(behind).max(start.mono_ms);
+            self.store.split_day(
+                boundary,
+                mono_ms - start.mono_ms,
+                now.wall_ms,
+                now.mono_ms.saturating_sub(mono_ms),
+            )?;
+            start = Moment {
+                wall_ms: boundary,
+                mono_ms,
+            };
+            self.started = Some(start);
+            self.checkpoint_mono = now.mono_ms;
+            self.daily_cache.borrow_mut().take();
+        }
+        Ok(())
     }
     fn start(&mut self, now: Moment, activity: &Activity, switching: Option<u64>) -> Result<()> {
         self.store.begin(now.wall_ms, activity, switching)?;
@@ -933,6 +1025,7 @@ mod tests {
             Store::open(&dir.path().join("focus.sqlite3")).unwrap(),
             moment(0),
         );
+        engine.zone = Some(jiff::tz::TimeZone::UTC);
         let first = activity("Example");
         engine
             .apply(Some(Command::Start(first.clone())), moment(0))
@@ -1039,7 +1132,818 @@ mod tests {
         }
     }
     fn engine(dir: &Path) -> Engine {
-        Engine::new(Store::open(&dir.join("focus.sqlite3")).unwrap(), at(0))
+        let mut engine = Engine::new(Store::open(&dir.join("focus.sqlite3")).unwrap(), at(0));
+        engine.zone = Some(jiff::tz::TimeZone::UTC);
+        engine
+    }
+
+    /// Wall clock anchored to one instant, with monotonic time advancing identically.
+    #[derive(Clone, Copy)]
+    struct Clock {
+        anchor_ms: i64,
+    }
+    impl Clock {
+        fn moment(self, wall_ms: i64) -> Moment {
+            Moment {
+                wall_ms,
+                mono_ms: (wall_ms - self.anchor_ms) as u64,
+            }
+        }
+    }
+    fn instant(text: &str) -> i64 {
+        text.parse::<jiff::Timestamp>().unwrap().as_millisecond()
+    }
+    fn clocked_engine(dir: &Path, clock: Clock, zone: &str) -> Engine {
+        let mut engine = Engine::new(
+            Store::open(&dir.join("focus.sqlite3")).unwrap(),
+            clock.moment(clock.anchor_ms),
+        );
+        engine.zone = Some(jiff::tz::TimeZone::get(zone).unwrap());
+        engine
+    }
+    /// Skip the heartbeat check to jump a long simulated session forward in one call.
+    fn jump(engine: &mut Engine, now: Moment) -> Result<bool> {
+        engine.observed = now;
+        engine.apply(None, now)
+    }
+    #[derive(Debug, PartialEq)]
+    struct Row {
+        start: i64,
+        end: Option<i64>,
+        checkpoint: i64,
+        elapsed: i64,
+        state: String,
+        reason: Option<String>,
+    }
+    fn rows(engine: &Engine) -> Vec<Row> {
+        engine
+            .store
+            .connection
+            .prepare("SELECT started_ms,ended_ms,checkpoint_ms,elapsed_ms,state,end_reason FROM focus_sessions ORDER BY id")
+            .unwrap()
+            .query_map([], |r| {
+                Ok(Row {
+                    start: r.get(0)?,
+                    end: r.get(1)?,
+                    checkpoint: r.get(2)?,
+                    elapsed: r.get(3)?,
+                    state: r.get(4)?,
+                    reason: r.get(5)?,
+                })
+            })
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    }
+    fn whole_day(date: &str, timezone: &str) -> reports::Request {
+        reports::Request {
+            from: date.into(),
+            through: date.into(),
+            timezone: timezone.into(),
+            from_time: "00:00".into(),
+            through_time: "24:00".into(),
+        }
+    }
+
+    #[test]
+    fn midnight_closes_the_interval_and_continues_the_same_activity_at_one_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let start = midnight - 90_000;
+        let clock = Clock { anchor_ms: start };
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        let chosen = activity("Example");
+        engine
+            .apply(Some(Command::Start(chosen.clone())), clock.moment(start))
+            .unwrap();
+        let recent = engine.snapshot(clock.moment(start)).unwrap().recent;
+        let rank = engine
+            .snapshot(clock.moment(start))
+            .unwrap()
+            .project_rank(&chosen);
+        for second in 1..=90 {
+            let now = clock.moment(start + second * 1000);
+            engine.apply(None, now).unwrap();
+            assert_eq!(rows(&engine).len(), 1, "no split until the day has started");
+        }
+        // The tick that lands exactly on midnight is still inside the half-open interval.
+        assert_eq!(
+            engine.snapshot(clock.moment(midnight)).unwrap().completed,
+            0
+        );
+        let first_tick = midnight + 700;
+        engine.apply(None, clock.moment(first_tick)).unwrap();
+        let split = rows(&engine);
+        assert_eq!(
+            split,
+            vec![
+                Row {
+                    start,
+                    end: Some(midnight),
+                    checkpoint: midnight,
+                    elapsed: 90_000,
+                    state: "stopped".into(),
+                    reason: Some("day_boundary".into()),
+                },
+                Row {
+                    start: midnight,
+                    end: None,
+                    checkpoint: first_tick,
+                    elapsed: 700,
+                    state: "running".into(),
+                    reason: None,
+                },
+            ]
+        );
+        let state = engine.snapshot(clock.moment(first_tick)).unwrap();
+        assert!(state.running);
+        assert_eq!(state.elapsed_ms, 700, "the current interval restarts");
+        assert_eq!(state.active_start_ms, Some(midnight));
+        assert_eq!((state.total_ms, state.completed), (90_000, 1));
+        assert_eq!(state.daily_all_ms, Some(700));
+        assert_eq!(state.daily_project_ms, Some(700));
+        assert_eq!(state.activity, chosen, "the selection is not a new choice");
+        assert_eq!(state.recent.len(), recent.len());
+        assert_eq!(
+            state.project_rank(&chosen),
+            rank,
+            "a split is not a new use"
+        );
+        let activities: Vec<String> = engine
+            .store
+            .connection
+            .prepare("SELECT activity FROM focus_sessions")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(activities[0], activities[1]);
+        assert_eq!(
+            serde_json::from_str::<Activity>(&activities[1]).unwrap(),
+            chosen
+        );
+        engine
+            .apply(Some(Command::Stop), clock.moment(midnight + 5_000))
+            .unwrap();
+        let state = engine.snapshot(clock.moment(midnight + 5_000)).unwrap();
+        assert_eq!(state.total_ms, 95_000, "parts add up to the whole duration");
+        assert_eq!(state.completed, 2);
+        let overlaps: i64 = engine.store.connection.query_row("SELECT COUNT(*) FROM focus_sessions a JOIN focus_sessions b ON a.id<b.id AND a.started_ms<b.ended_ms AND b.started_ms<a.ended_ms", [], |r| r.get(0)).unwrap();
+        assert_eq!(overlaps, 0);
+    }
+
+    #[test]
+    fn explicit_commands_after_midnight_split_first_and_stopping_at_midnight_does_not() {
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let start = midnight - 10_000;
+        let clock = Clock { anchor_ms: start };
+        // Stopping exactly at midnight leaves one interval and no empty continuation.
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        engine
+            .apply(Some(Command::Stop), clock.moment(midnight))
+            .unwrap();
+        let stored = rows(&engine);
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].end, Some(midnight));
+        assert_eq!(stored[0].reason.as_deref(), Some("stop"));
+        // A switch just after midnight attributes the old activity to both days.
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        engine
+            .apply(
+                Some(Command::Switch(activity("B"))),
+                clock.moment(midnight + 2_000),
+            )
+            .unwrap();
+        let stored = rows(&engine);
+        assert_eq!(stored.len(), 3);
+        assert_eq!(
+            (stored[0].start, stored[0].end, stored[0].elapsed),
+            (start, Some(midnight), 10_000)
+        );
+        assert_eq!(
+            (stored[1].start, stored[1].end, stored[1].elapsed),
+            (midnight, Some(midnight + 2_000), 2_000)
+        );
+        assert_eq!(stored[1].reason.as_deref(), Some("switch"));
+        assert_eq!(stored[2].start, midnight + 2_000);
+        // Editing the current interval after a split leaves the finished day untouched.
+        engine
+            .apply(
+                Some(Command::SetChangeMode(ChangeMode::EditCurrent)),
+                clock.moment(midnight + 3_000),
+            )
+            .unwrap();
+        engine
+            .apply(
+                Some(Command::ChangeActivity(activity("Corrected"))),
+                clock.moment(midnight + 4_000),
+            )
+            .unwrap();
+        let labels: Vec<String> = engine
+            .store
+            .connection
+            .prepare("SELECT activity FROM focus_sessions ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(|r| {
+                serde_json::from_str::<Activity>(&r.unwrap())
+                    .unwrap()
+                    .label()
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(labels, ["A", "A", "Corrected"]);
+    }
+
+    #[test]
+    fn late_ticks_divide_monotonic_time_and_interrupted_sessions_never_split() {
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let start = midnight - 10_000;
+        let clock = Clock { anchor_ms: start };
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        // Delayed inside the heartbeat allowance, with the wall clock two seconds ahead.
+        let late = Moment {
+            wall_ms: midnight + 12_000,
+            mono_ms: 20_000,
+        };
+        engine.apply(None, late).unwrap();
+        let stored = rows(&engine);
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[0].elapsed + stored[1].elapsed, 20_000);
+        assert_eq!(stored[1].elapsed, 12_000);
+        assert_eq!(stored[1].checkpoint, midnight + 12_000);
+        // A gap beyond the allowance is reviewed from its checkpoint, before the next day.
+        let start = midnight - 15_000;
+        let clock = Clock { anchor_ms: start };
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        engine.apply(None, clock.moment(midnight - 1_000)).unwrap();
+        engine.apply(None, clock.moment(midnight + 60_000)).unwrap();
+        let stored = rows(&engine);
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].state, "interrupted");
+        assert_eq!(stored[0].end, Some(midnight - 1_000));
+        assert!(
+            !engine
+                .snapshot(clock.moment(midnight + 60_000))
+                .unwrap()
+                .running
+        );
+    }
+
+    #[test]
+    fn crash_after_split_keeps_the_finished_day_and_reviews_only_the_continuation() {
+        let dir = tempfile::tempdir().unwrap();
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let start = midnight - 20_000;
+        let clock = Clock { anchor_ms: start };
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        engine.apply(None, clock.moment(midnight + 500)).unwrap();
+        drop(engine);
+        let store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        let state = store.snapshot().unwrap();
+        assert!(state.needs_review && !state.running);
+        assert_eq!((state.total_ms, state.completed), (20_000, 1));
+        let review: (i64, i64) = store
+            .connection
+            .query_row(
+                "SELECT started_ms,elapsed_ms FROM focus_sessions WHERE state='interrupted'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(review, (midnight, 500));
+    }
+
+    #[test]
+    fn disabling_the_split_keeps_one_interval_and_the_same_daily_totals() {
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let start = midnight - 7_000;
+        let stop = midnight + 3_000;
+        let clock = Clock { anchor_ms: start };
+        let mut totals = Vec::new();
+        for split in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut engine = clocked_engine(dir.path(), clock, "UTC");
+            engine
+                .apply(Some(Command::SetSplitOnDay(split)), clock.moment(start))
+                .unwrap();
+            assert_eq!(
+                engine.snapshot(clock.moment(start)).unwrap().split_on_day,
+                split
+            );
+            engine
+                .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+                .unwrap();
+            for ms in (start + 1_000..=stop).step_by(1_000) {
+                engine.apply(None, clock.moment(ms)).unwrap();
+            }
+            assert_eq!(rows(&engine).len(), if split { 2 } else { 1 });
+            // Today includes only the new day's part while still running, in both modes.
+            assert_eq!(
+                engine.snapshot(clock.moment(stop)).unwrap().daily_all_ms,
+                Some(3_000)
+            );
+            let running = engine
+                .store
+                .report(&whole_day("2026-10-27", "UTC"), clock.moment(stop), {
+                    engine.snapshot(clock.moment(stop)).unwrap().elapsed_ms
+                })
+                .unwrap();
+            assert_eq!(running.running_ms, 3_000);
+            engine
+                .apply(Some(Command::Stop), clock.moment(stop))
+                .unwrap();
+            let state = engine.snapshot(clock.moment(stop)).unwrap();
+            assert_eq!(state.daily_all_ms, Some(3_000));
+            let report = |date: &str| {
+                engine
+                    .store
+                    .report(&whole_day(date, "UTC"), clock.moment(stop), 0)
+                    .unwrap()
+                    .saved_ms
+            };
+            totals.push((state.total_ms, report("2026-10-26"), report("2026-10-27")));
+            drop(engine);
+            let reopened = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+            assert_eq!(reopened.snapshot().unwrap().split_on_day, split);
+        }
+        assert_eq!(totals[0], (10_000, 7_000, 3_000));
+        assert_eq!(totals[0], totals[1], "the option must not change any total");
+    }
+
+    #[test]
+    fn enabling_the_split_during_a_long_interval_divides_every_passed_day() {
+        let dir = tempfile::tempdir().unwrap();
+        let start = instant("2026-10-25T23:00:00Z");
+        let clock = Clock { anchor_ms: start };
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::SetSplitOnDay(false)), clock.moment(start))
+            .unwrap();
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        let now = instant("2026-10-27T01:00:00Z");
+        jump(&mut engine, clock.moment(now)).unwrap();
+        assert_eq!(rows(&engine).len(), 1);
+        engine
+            .apply(Some(Command::SetSplitOnDay(true)), clock.moment(now))
+            .unwrap();
+        let later = now + 1_000;
+        engine.apply(None, clock.moment(later)).unwrap();
+        let stored = rows(&engine);
+        assert_eq!(stored.len(), 3);
+        let first_day = instant("2026-10-26T00:00:00Z");
+        let second_day = instant("2026-10-27T00:00:00Z");
+        assert_eq!(
+            (stored[0].start, stored[0].end, stored[0].elapsed),
+            (start, Some(first_day), 3_600_000)
+        );
+        assert_eq!(
+            (stored[1].start, stored[1].end, stored[1].elapsed),
+            (first_day, Some(second_day), 86_400_000)
+        );
+        assert_eq!((stored[2].start, stored[2].end), (second_day, None));
+        assert_eq!(stored[2].elapsed, 3_601_000);
+        assert_eq!(stored[2].checkpoint, later);
+        assert_eq!(
+            engine.snapshot(clock.moment(later)).unwrap().elapsed_ms,
+            3_601_000
+        );
+    }
+
+    #[test]
+    fn day_starts_follow_local_calendar_through_dst_gaps_and_skipped_dates() {
+        // (zone, start, later, expected finished interval lengths in hours)
+        for (zone, start, later, hours) in [
+            // Spring forward and fall back make 23- and 25-hour local days.
+            (
+                "America/New_York",
+                "2026-03-08T04:00:00Z",
+                "2026-03-09T05:00:00Z",
+                vec![1, 23],
+            ),
+            (
+                "America/New_York",
+                "2026-11-01T03:00:00Z",
+                "2026-11-02T06:00:00Z",
+                vec![1, 25],
+            ),
+            // Midnight itself does not exist, so the day starts at 01:00 local time.
+            (
+                "America/Sao_Paulo",
+                "2015-10-18T02:00:00Z",
+                "2015-10-19T03:00:00Z",
+                vec![1, 23],
+            ),
+            // The date 2011-12-30 was skipped, without an empty interval for it.
+            (
+                "Pacific/Apia",
+                "2011-12-30T09:00:00Z",
+                "2011-12-31T11:00:00Z",
+                vec![1, 24],
+            ),
+            // Non-hour offset: local midnight falls at 18:15 UTC.
+            (
+                "Asia/Kathmandu",
+                "2026-05-01T17:15:00Z",
+                "2026-05-02T19:15:00Z",
+                vec![1, 24],
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let begin = instant(start);
+            let clock = Clock { anchor_ms: begin };
+            let mut engine = clocked_engine(dir.path(), clock, zone);
+            engine
+                .apply(Some(Command::Start(activity("A"))), clock.moment(begin))
+                .unwrap();
+            let end = instant(later);
+            jump(&mut engine, clock.moment(end)).unwrap();
+            let stored = rows(&engine);
+            let finished: Vec<i64> = stored
+                .iter()
+                .filter(|r| r.state == "stopped")
+                .map(|r| r.elapsed / 3_600_000)
+                .collect();
+            let finished_hours: Vec<i64> = hours.iter().map(|h| i64::from(*h)).collect();
+            assert_eq!(finished, finished_hours, "{zone} {start}");
+            assert_eq!(
+                stored.iter().map(|r| r.elapsed).sum::<i64>(),
+                end - begin,
+                "{zone} {start}"
+            );
+            for pair in stored.windows(2) {
+                assert_eq!(pair[0].end, Some(pair[1].start), "{zone} {start}");
+            }
+            let tz = jiff::tz::TimeZone::get(zone).unwrap();
+            for row in &stored {
+                let first = jiff::Timestamp::from_millisecond(row.start)
+                    .unwrap()
+                    .to_zoned(tz.clone())
+                    .date();
+                if let Some(end) = row.end {
+                    let last = jiff::Timestamp::from_millisecond(end - 1)
+                        .unwrap()
+                        .to_zoned(tz.clone())
+                        .date();
+                    assert_eq!(first, last, "an interval spans a local date: {zone}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn failed_split_keeps_the_interval_and_retries_while_commands_still_work() {
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let start = midnight - 5_000;
+        let clock = Clock { anchor_ms: start };
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        engine.store.connection.execute_batch("CREATE TRIGGER fail_split BEFORE INSERT ON focus_sessions BEGIN SELECT RAISE(ABORT,'Synthetic failure'); END;").unwrap();
+        assert!(engine.apply(None, clock.moment(midnight + 1_000)).is_err());
+        let stored = rows(&engine);
+        assert_eq!(
+            stored.len(),
+            1,
+            "the failed split must roll back completely"
+        );
+        assert_eq!(stored[0].state, "running");
+        assert_eq!(engine.started.unwrap().wall_ms, start);
+        // Checkpoints continue while the split keeps failing.
+        assert!(engine.apply(None, clock.moment(midnight + 5_000)).is_err());
+        assert_eq!(rows(&engine)[0].elapsed, 10_000);
+        assert_eq!(
+            engine
+                .snapshot(clock.moment(midnight + 5_000))
+                .unwrap()
+                .elapsed_ms,
+            10_000
+        );
+        // Report requests are not blocked, and clip the unsplit interval correctly.
+        let now = clock.moment(midnight + 5_500);
+        let request = whole_day("2026-10-27", "UTC");
+        assert!(
+            !engine
+                .apply(
+                    Some(Command::Report {
+                        id: 1,
+                        request: request.clone(),
+                    }),
+                    now,
+                )
+                .unwrap()
+        );
+        let elapsed = engine.snapshot(now).unwrap().elapsed_ms;
+        assert_eq!(
+            engine
+                .store
+                .report(&request, now, elapsed)
+                .unwrap()
+                .running_ms,
+            5_500
+        );
+        // Stop is not blocked either.
+        let stopped_dir = tempfile::tempdir().unwrap();
+        let mut stopped = clocked_engine(stopped_dir.path(), clock, "UTC");
+        stopped
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        stopped.store.connection.execute_batch("CREATE TRIGGER fail_split BEFORE INSERT ON focus_sessions BEGIN SELECT RAISE(ABORT,'Synthetic failure'); END;").unwrap();
+        stopped
+            .apply(Some(Command::Stop), clock.moment(midnight + 1_000))
+            .unwrap();
+        assert_eq!(rows(&stopped).len(), 1);
+        assert!(
+            !stopped
+                .snapshot(clock.moment(midnight + 1_000))
+                .unwrap()
+                .running
+        );
+        // Recovery after the failure splits at the original boundary.
+        engine
+            .store
+            .connection
+            .execute_batch("DROP TRIGGER fail_split;")
+            .unwrap();
+        engine.apply(None, clock.moment(midnight + 6_000)).unwrap();
+        let stored = rows(&engine);
+        assert_eq!(stored.len(), 2);
+        assert_eq!((stored[0].end, stored[0].elapsed), (Some(midnight), 5_000));
+        assert_eq!((stored[1].start, stored[1].elapsed), (midnight, 6_000));
+    }
+
+    #[test]
+    fn queued_lifecycle_boundary_is_a_clean_stop_not_a_clock_change() {
+        // A tick processed after the boundary was captured must not look like a rewind.
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("A"))), at(0))
+            .unwrap();
+        engine.apply(None, at(4_000)).unwrap();
+        engine.apply(None, at(5_000)).unwrap();
+        engine
+            .apply(
+                Some(Command::Interrupt {
+                    reason: "lock",
+                    boundary: None,
+                    done: None,
+                }),
+                at(4_500),
+            )
+            .unwrap();
+        let state = engine.snapshot(at(5_500)).unwrap();
+        assert!(!state.running && !state.needs_review);
+        assert_eq!(state.total_ms, 4_500);
+        // A real wall-clock rewind while monotonic time advances is still detected.
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = self::engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("A"))), at(0))
+            .unwrap();
+        engine.apply(None, at(2_000)).unwrap();
+        engine
+            .apply(
+                None,
+                Moment {
+                    wall_ms: at(2_000).wall_ms - 1,
+                    mono_ms: 3_000,
+                },
+            )
+            .unwrap();
+        assert!(engine.snapshot(at(3_000)).unwrap().needs_review);
+        // A boundary captured just before a queued start still stops that interval.
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = self::engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("A"))), at(1_000))
+            .unwrap();
+        engine
+            .apply(
+                Some(Command::Interrupt {
+                    reason: "lock",
+                    boundary: None,
+                    done: None,
+                }),
+                at(900),
+            )
+            .unwrap();
+        let state = engine.snapshot(at(1_100)).unwrap();
+        assert!(!state.running && !state.needs_review);
+        assert_eq!(state.total_ms, 0);
+    }
+
+    #[test]
+    fn today_counters_match_reports_in_the_same_zone_across_midnight() {
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let start = midnight - 40_000;
+        let clock = Clock { anchor_ms: start };
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        for (ms, choice) in [
+            (start + 10_000, Some(activity("B"))),
+            (start + 20_000, None),
+            (start + 30_000, Some(Activity::default())),
+            (midnight, None),
+            (midnight + 10_000, None),
+            (midnight + 20_000, Some(activity("A"))),
+            (midnight + 25_000, None),
+        ] {
+            let now = clock.moment(ms);
+            match choice {
+                Some(next) => engine.apply(Some(Command::Switch(next)), now).unwrap(),
+                None => engine.apply(None, now).unwrap(),
+            };
+            let today = if ms < midnight {
+                "2026-10-26"
+            } else {
+                "2026-10-27"
+            };
+            let state = engine.snapshot(now).unwrap();
+            let report = engine
+                .store
+                .report(&whole_day(today, "UTC"), now, state.elapsed_ms)
+                .unwrap();
+            assert_eq!(
+                state.daily_all_ms,
+                Some(report.saved_ms + report.running_ms),
+                "Today must equal the report at {ms}"
+            );
+        }
+        let now = clock.moment(midnight + 25_000);
+        engine.apply(Some(Command::Stop), now).unwrap();
+        let state = engine.snapshot(now).unwrap();
+        let report = engine
+            .store
+            .report(&whole_day("2026-10-27", "UTC"), now, 0)
+            .unwrap();
+        assert_eq!(state.daily_all_ms, Some(report.saved_ms));
+        assert_eq!(report.saved_ms, 25_000);
+        let earlier = engine
+            .store
+            .report(&whole_day("2026-10-26", "UTC"), now, 0)
+            .unwrap();
+        assert_eq!(earlier.saved_ms, 40_000);
+        assert_eq!(state.total_ms, 65_000);
+        let alpha = report
+            .projects
+            .iter()
+            .find(|p| p.project == "A")
+            .map(|p| p.saved_ms);
+        assert_eq!(alpha, Some(5_000));
+    }
+
+    fn schema_two_database(path: &Path) {
+        let mut engine = Engine::new(
+            Store::open(path).unwrap(),
+            Moment {
+                wall_ms: 1_000_000,
+                mono_ms: 0,
+            },
+        );
+        engine.zone = Some(jiff::tz::TimeZone::UTC);
+        engine
+            .apply(Some(Command::Start(activity("Saved"))), at(0))
+            .unwrap();
+        engine.apply(Some(Command::Stop), at(1_000)).unwrap();
+        drop(engine);
+        Connection::open(path)
+            .unwrap()
+            .execute_batch(
+                "DROP TABLE focus_preferences;
+                CREATE TABLE focus_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1), split_on_change INTEGER NOT NULL CHECK(split_on_change IN (0,1)));
+                INSERT INTO focus_preferences VALUES(1,0);
+                PRAGMA user_version=2;",
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn schema_two_upgrade_backs_up_and_enables_the_split_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("focus.sqlite3");
+        schema_two_database(&path);
+        let store = Store::open(&path).unwrap();
+        let state = store.snapshot().unwrap();
+        assert!(
+            state.split_on_day,
+            "splitting is the default after upgrading"
+        );
+        assert_eq!(
+            state.change_mode,
+            ChangeMode::EditCurrent,
+            "the existing preference survives"
+        );
+        assert_eq!((state.total_ms, state.completed), (1_000, 1));
+        assert_eq!(
+            store
+                .connection
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            SCHEMA_VERSION
+        );
+        drop(store);
+        let backups = || {
+            std::fs::read_dir(dir.path())
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .filter(|p| {
+                    p.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with("focus-before-v3-")
+                })
+                .collect::<Vec<_>>()
+        };
+        Store::open(&path).unwrap();
+        let found = backups();
+        assert_eq!(found.len(), 1, "reopening must not back up again");
+        let backup = Connection::open(&found[0]).unwrap();
+        assert_eq!(
+            backup
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            backup
+                .query_row("SELECT SUM(elapsed_ms) FROM focus_sessions", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1_000
+        );
+        assert!(
+            backup
+                .prepare("SELECT split_on_day FROM focus_preferences")
+                .is_err(),
+            "the backup keeps the old schema"
+        );
+    }
+
+    #[test]
+    fn failed_schema_three_upgrade_keeps_schema_two_and_newer_history_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("focus.sqlite3");
+        schema_two_database(&path);
+        // A conflicting column forces the upgrade statement itself to fail.
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch("ALTER TABLE focus_preferences ADD COLUMN split_on_day TEXT;")
+            .unwrap();
+        assert!(Store::open(&path).is_err());
+        let original = Connection::open(&path).unwrap();
+        assert_eq!(
+            original
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            original
+                .query_row("SELECT SUM(elapsed_ms) FROM focus_sessions", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1_000
+        );
+        drop(original);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("focus.sqlite3");
+        drop(Store::open(&path).unwrap());
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(&format!("PRAGMA user_version={};", SCHEMA_VERSION + 1))
+            .unwrap();
+        assert!(Store::open(&path).is_err());
+        assert!(export_snapshot(&path, &whole_day("2026-01-01", "UTC")).is_err());
     }
 
     #[test]

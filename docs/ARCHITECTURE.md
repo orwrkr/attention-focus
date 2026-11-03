@@ -99,6 +99,8 @@ Do not claim a successful stop or switch until the transaction commits.
 | Running / picker change, default mode | Atomically switch at one boundary |
 | Running / picker change, EditCurrent mode | Reassign the entire active interval; preserve ID/start/timer and finalized history |
 | Running / Start | Reject duplicate start; never create a second active row |
+| Running / local day start, default | Close old and open new at one boundary in one transaction; same activity; elapsed time divided |
+| Running / local day start, split disabled | Continue the same interval; reports clip it by day |
 | Running / lock or suspend | Close with an interruption reason; retain selection |
 | Running / confirmed Windows session end | Save at the event boundary with a bounded confirmation wait |
 | Any / canceled shutdown query | Keep tracking state unchanged |
@@ -117,6 +119,8 @@ maximization, a bounded content column and persisted section/filter/search/draft
 The upper UI caption shows the committed activity, distinct from pending note drafts.
 Persist the picker mode independently per profile. Schema two backs up schema one and
 seeds recent use from existing history once; failed backfill rolls back. See ADR-0012.
+Schema three backs up schema two and adds the day-split preference. See ADR-0029.
+Showing the window raises it natively and confirms the foreground. See ADR-0028.
 
 Use a monotonic clock for elapsed time and UTC for placement on the timeline.
 Persist checkpoints at most 15 seconds apart while running. On a missed heartbeat,
@@ -135,6 +139,7 @@ filter, with one query in flight. Refresh affected historical classifications
 once on stop/edit/recovery, not on unrelated commits. Minute filters are half-open;
 24:00 denotes end of day. Debounce edits, reject superseded parameters, retain the last
 good snapshot on error, and pause queries while collapsed/hidden. See ADR-0014.
+Rolling periods move to the new date before debounce and in-flight gating; Custom stays fixed.
 Calendar pickers share Jiff civil-date arithmetic with accounting; timezone choices
 come from the bundled database. Stay on top is a window.ron option, not a history schema
 change. See ADR-0013.

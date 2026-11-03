@@ -108,3 +108,11 @@ The source must remain independently usable without the application.
 - Per-project last confirmed note and eight distinct recent nonblank suggestions.
 - Minute picker dialogs alongside manual time entry, preserving range validation.
 - No border geometry/repaint loop for clipped, hidden or OS-reported invisible areas.
+
+## Accepted activation and day-boundary behavior (T-0031 to T-0033)
+
+- A tray click brings the main window to the front.
+- Report periods can follow the current day; the active mode is visible.
+- Totals stay correct across interval, day and calendar boundaries.
+- A tracked interval crossing local midnight ends with the old day and continues as a new
+  interval at the same boundary. This is the default and can be disabled per profile.

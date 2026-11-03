@@ -106,8 +106,8 @@ history only. The window and tray share both daily values.
 
 ## Use the tray and window controls
 
-- A single left click on the tray icon shows the window. Opening waits briefly for
-  Windows to distinguish a single click from a double click.
+- A single left click on the tray icon shows the window and brings it to the front.
+  Opening waits briefly for Windows to distinguish a single click from a double click.
 - A double left click starts or stops tracking using the last applied selection.
 - Hover shows status, project, **Session**, **Today/project** and **Today/all**.
   Today combines all its tasks and saved plus current time inside the Windows local
@@ -213,10 +213,17 @@ Open **Focus history and reports** and choose a period:
    Enter times as `HH:MM`: From is included, Until is excluded. `24:00` for Until means
    the end of that date; defaults `00:00` to `24:00` select whole days.
 2. Choose **Time zone** from the dropdown; search for a city/region or choose UTC.
-3. Results load automatically. Today, Last 7 days, and Last 30 days set quick ranges;
-   **Refresh report** is also available for an immediate refresh.
+3. Results load automatically. **Refresh report** is available for an immediate refresh.
 
-Presets use the time zone you selected. A report can cover at most 3,660 calendar days.
+## Follow the current day
+
+**Today**, **Last 7 days** and **Last 30 days** follow the current day. The highlighted period
+moves to the new date at midnight in the selected time zone, even while the app stays open.
+**Custom** keeps the dates as entered. Editing a date or time switches to Custom, including
+when you pick today's date by hand, so choose **Today** again to follow the current day. The
+line under the buttons states which mode is active.
+
+A report can cover at most 3,660 calendar days.
 Invalid dates, reversed ranges, and unknown time zones produce an error; correct the
 fields to retry. An earlier valid result keeps its own period and snapshot label.
 
@@ -319,6 +326,20 @@ Displayed times use whole seconds; underlying totals retain milliseconds. Indepe
 displayed rows can therefore differ from the displayed total by rounding. Invalid saved
 intervals are excluded with a diagnostic rather than silently counted.
 
+## Intervals at midnight
+
+Tracking that continues past midnight ends the running interval at the start of the new
+local day and continues as a new interval with the same activity. No time is lost and
+totals do not change. The finished part appears in history with the end reason **New day
+started** (`day_boundary` in exports). **Current interval** and the tray **Session** value
+restart from zero, and the finished part moves into **All projects, all time (saved)**.
+
+Disable **Start a new interval at midnight** in **Settings** to keep one interval across
+days; reports and Today still divide its time by day. This option is remembered per profile.
+If you enable it during a long interval, that interval is divided at every midnight it has
+already passed. The Windows time zone decides when midnight occurs. Editing the current
+interval changes only the part after the last split.
+
 <!-- pagebreak -->
 
 # Data, profiles, and updates
@@ -360,7 +381,10 @@ while it may have a journal. Schema upgrades make a local backup before migratin
 history. These backups complement, rather than replace, your own backups.
 
 Version 0.3 upgrades history to schema two and creates a `focus-before-v2-*.sqlite3`
-backup for schema-one databases. Earlier EXEs cannot open the upgraded history.
+backup for schema-one databases. Version 0.18 upgrades history to schema three and creates
+a `focus-before-v3-*.sqlite3` backup for schema-two databases. Earlier EXEs cannot open the
+upgraded history. To return to one, restore that backup while the app is closed; sessions
+recorded after the upgrade are not in it.
 
 ## Install an update
 
@@ -381,7 +405,8 @@ No asset files or third-party runtime DLLs need to be copied beside the EXE.
 
 Use that profile's tray icon to show its window, or choose Exit there before launching
 another copy of the same profile. Production and Development are independent, so one
-of each is allowed. An app hidden in the tray is still running.
+of each is allowed. An app hidden in the tray is still running. Its tray icon raises the
+window above ordinary windows; Windows can keep keyboard focus in an administrator program.
 
 ## The source does not load
 

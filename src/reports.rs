@@ -67,6 +67,24 @@ impl Request {
         Ok((start_ms, end_ms))
     }
 }
+/// First local day start strictly after `after_ms`, resolved like report day boundaries.
+/// `None` means no later start can be determined, so nothing should be split.
+pub(crate) fn next_day_start(after_ms: i64, zone: &TimeZone) -> Option<i64> {
+    let today = Timestamp::from_millisecond(after_ms)
+        .ok()?
+        .to_zoned(zone.clone())
+        .date();
+    let next = today
+        .tomorrow()
+        .ok()?
+        .to_zoned(zone.clone())
+        .ok()?
+        .start_of_day()
+        .ok()?
+        .timestamp()
+        .as_millisecond();
+    (next > after_ms).then_some(next)
+}
 fn parse_minute(text: &str, allow_end: bool) -> Result<u16> {
     let bytes = text.as_bytes();
     if bytes.len() != 5

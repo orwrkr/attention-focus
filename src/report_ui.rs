@@ -546,6 +546,7 @@ impl Panel {
                                     let reason = match record.reason.as_str() {
                                         "stop" => "Stopped",
                                         "switch" => "Focus changed",
+                                        "day_boundary" => "New day started",
                                         "exit" => "Application exit",
                                         "lock" => "Windows locked",
                                         "suspend" => "Sleep",

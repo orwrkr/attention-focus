@@ -79,8 +79,8 @@ The Windows LocalAppData known folder supplies fixed, independent profile direct
 - `%LOCALAPPDATA%/AttentionFocus/Development/`: debug/development data.
 - Each contains `window.ron` (geometry), `focus.sqlite3` (history/checkpoints/activity),
   and `source.sqlite3` (source identities and selected path).
-- Schema upgrades create `focus-before-v1-*.sqlite3` or `focus-before-v2-*.sqlite3`
-  backups using SQLite, according to the prior schema.
+- Schema upgrades create `focus-before-v1-*.sqlite3`, `focus-before-v2-*.sqlite3` or
+  `focus-before-v3-*.sqlite3` backups using SQLite, according to the prior schema.
 - SQLite creates any journals/backups in the same profile directory.
 
 Legacy files directly under AttentionFocus are retained unchanged. New Production does
@@ -124,8 +124,11 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
 - Start/Stop in the window and tray use the same controller; the tray state changes
   only after the session update commits.
 - Closing the window or using Hide to tray keeps the process running.
-- A single left click shows the window after the Windows double-click interval.
+- A single left click shows the window after the Windows double-click interval and raises
+  it above ordinary windows, confirming the foreground with bounded retries (ADR-0028).
 - A native double left click toggles tracking once and cancels single-click opening.
+- By default, tracking across a local day start closes the old interval and continues a
+  new one at the same boundary. An application setting disables this per profile (ADR-0029).
 - Hover shows session time and Today for the selected project across all its tasks,
   using the Windows local day and including active time once. Report filters do not
   change this value; saved-day totals are cached and idle rollover checks run every
@@ -169,9 +172,10 @@ the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threa
   query is in flight. Debounced editable filters reject superseded replies and retain
   the last good snapshot on error. All matches contribute; details show the newest 200.
 - Dates support editable text and calendar popups; timezones use a searchable bundled
-  list. Presets roll at midnight in the selected zone. Stay on top uses native viewport
-  level and is saved in existing window.ron storage, not SQLite. No new schema upgrade
-  beyond version two. Tooltip names the current project within Windows' UTF-16 limit.
+  list. Period buttons show the active mode: Today and the rolling periods move at midnight
+  in the selected zone, and Custom stays fixed. Stay on top uses native viewport level and
+  is saved in existing window.ron storage, not SQLite. Tooltip names the current project
+  within Windows' UTF-16 limit.
   Normal headers omit Production; secondary explanations use theme-aware blue text.
 - Calendar boundaries use bundled historical timezone rules and respect DST. Recorded
   monotonic time is allocated proportionally across the wall interval when clipped,
