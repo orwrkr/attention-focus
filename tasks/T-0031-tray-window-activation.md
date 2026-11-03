@@ -26,7 +26,10 @@ to the delayed single-click rule from ADR-0006. See ADR-0028.
 
 `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings` and
 `cargo test --locked` passed. Off-screen, non-activating test windows cover Z-order,
-topmost preservation and refusal while hidden. `WindowRaise` tests cover retry bounds.
+topmost preservation and refusal while hidden. `WindowRaise` tests cover retry bounds and
+timing, and `Clicks` tests cover a lost final release and a long-held second press. An
+independent read of the first version found untimed retries and a regression with a
+long-held second press; both were fixed.
 
 Unverified: SetForegroundWindow and AttachThreadInput behavior against a real tray
 click. Automated tests deliberately never activate a window, and the original refusal

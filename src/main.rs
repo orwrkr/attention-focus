@@ -20,8 +20,9 @@ enum Action {
     Folder(Result<Option<std::path::PathBuf>, String>),
     Export(Result<String, String>),
     Show,
+    LeftPress,
     LeftRelease(Instant),
-    DoubleClick(Instant),
+    DoubleClick,
     Toggle,
     Exit,
     Tracking(tracking::Event),
@@ -97,11 +98,6 @@ fn duration(ms: u64) -> String {
         seconds / 60 % 60,
         seconds % 60
     )
-}
-
-fn double_click_time() -> Duration {
-    let interval = unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime() };
-    Duration::from_millis(u64::from(interval))
 }
 
 impl Desktop {
@@ -194,13 +190,18 @@ impl Desktop {
             let action = match event {
                 TrayIconEvent::Click {
                     button: MouseButton::Left,
+                    button_state: MouseButtonState::Down,
+                    ..
+                } => Some(Action::LeftPress),
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
                     ..
                 } => Some(Action::LeftRelease(Instant::now())),
                 TrayIconEvent::DoubleClick {
                     button: MouseButton::Left,
                     ..
-                } => Some(Action::DoubleClick(Instant::now())),
+                } => Some(Action::DoubleClick),
                 _ => None,
             };
             if let Some(action) = action {
@@ -519,7 +520,7 @@ impl Desktop {
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
         // Foreground requests are verified and retried natively, not fire-and-forget.
-        self.raise.request();
+        self.raise.request(Instant::now());
         ctx.request_repaint();
     }
 
@@ -604,11 +605,16 @@ impl eframe::App for Desktop {
                     }
                 }
                 Action::Show => self.show(ctx),
+                Action::LeftPress => self.clicks.press(),
                 Action::LeftRelease(now) => {
-                    self.clicks.release(now, double_click_time());
+                    let interval = unsafe {
+                        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime()
+                    };
+                    self.clicks
+                        .release(now, Duration::from_millis(u64::from(interval)));
                 }
-                Action::DoubleClick(now) => {
-                    self.clicks.double_click(now, double_click_time());
+                Action::DoubleClick => {
+                    self.clicks.double_click();
                     if self.ready
                         && !self.state.needs_review
                         && (self.state.running
@@ -723,10 +729,9 @@ impl eframe::App for Desktop {
             ctx.request_repaint_after(delay);
         }
         let stay_on_top = self.stay_on_top;
-        if let Some(delay) = self
-            .raise
-            .poll(|| platform::bring_to_front(&*frame, stay_on_top))
-        {
+        if let Some(delay) = self.raise.poll(Instant::now(), || {
+            platform::bring_to_front(&*frame, stay_on_top)
+        }) {
             ctx.request_repaint_after(delay);
         }
         self.toggle_item.set_enabled(

@@ -130,11 +130,12 @@ unsafe fn raise_z_order(hwnd: windows_sys::Win32::Foundation::HWND, stay_on_top:
 
 /// Without foreground rights, share the foreground thread's input state just long enough
 /// for one request. This fails for elevated foreground windows, which keep their focus.
+/// A hung foreground window is left alone, as sharing its input could stall this thread.
 unsafe fn activate(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
     use windows_sys::Win32::{
         System::Threading::{AttachThreadInput, GetCurrentThreadId},
         UI::WindowsAndMessaging::{
-            GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+            GetForegroundWindow, GetWindowThreadProcessId, IsHungAppWindow, SetForegroundWindow,
         },
     };
     unsafe {
@@ -142,7 +143,7 @@ unsafe fn activate(hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
             return true;
         }
         let foreground = GetForegroundWindow();
-        let thread = if foreground.is_null() {
+        let thread = if foreground.is_null() || IsHungAppWindow(foreground) != 0 {
             0
         } else {
             GetWindowThreadProcessId(foreground, std::ptr::null_mut())

@@ -26,10 +26,12 @@ Replace the Focus command with a native, verified sequence in platform.rs:
    input queue and repeat the request. Detach immediately.
 4. Confirm with GetForegroundWindow. Retry at most eight times, 80 ms apart.
 
-Show errors once per distinct message, since stronger activation would otherwise let a
-persistent per-second failure keep stealing focus. Expire the ignored final release of
-a double click after the double-click interval, so a release lost outside the icon can
-no longer swallow the next single click.
+Retries are timed, so unrelated repaints such as the border animation cannot use them up.
+Skip the input attachment when the foreground window is hung, since sharing its input could
+stall this thread. Show errors once per distinct message, since stronger activation would
+otherwise let a persistent per-second failure keep stealing focus. Forget the ignored final
+release of a double click when a plain press arrives, so a release lost outside the icon
+can no longer swallow the next single click, however long the second press was held.
 
 ## Alternatives
 
