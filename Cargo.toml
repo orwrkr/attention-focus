@@ -2,6 +2,9 @@
 name = "attention-focus"
 version = "0.18.1"
 edition = "2024"
+rust-version = "1.99"
+description = "Local Windows tray application for tracking time spent focusing on projects and tasks"
+license = "MIT"
 publish = false
 
 [dependencies]

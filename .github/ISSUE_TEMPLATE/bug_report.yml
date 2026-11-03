@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work as described in the user guide.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove private project names, notes and paths from anything you paste here.
+        To report a security problem, use Security > Report a vulnerability instead.
+  - type: input
+    id: version
+    attributes:
+      label: Application version
+      description: Shown in the window header.
+      placeholder: "0.19.0"
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Click ...
+        2. Wait until ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected and what happened instead
+      description: Include the exact text of any error shown in the window.
+    validations:
+      required: true
+  - type: dropdown
+    id: time
+    attributes:
+      label: Is recorded time wrong or missing?
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true

@@ -26,7 +26,7 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 def fingerprint(root: Path=ROOT) -> str:
-    paths=[root/"Cargo.toml",root/"Cargo.lock",root/"build.rs",root/".cargo/config.toml",root/"docs/user-guide.md"]
+    paths=[root/"Cargo.toml",root/"Cargo.lock",root/"build.rs",root/".cargo/config.toml",root/"docs/user-guide.md",root/"LICENSE",root/"rust-toolchain.toml"]
     paths+=list((root/"src").rglob("*.rs"))
     paths+=list((root/"scripts").glob("*.py"))+list((root/"scripts").glob("*.ps1"))+[root/"scripts/requirements-docs.txt"]
     paths += [p for p in (root/"third-party/license-overrides").rglob("*") if p.is_file()]
@@ -66,7 +66,8 @@ def notices(output: Path) -> None:
         seen.add(item)
         todo.extend(dep["pkg"] for dep in nodes[item]["deps"] if any(k["kind"] is None for k in dep["dep_kinds"]))
     overrides=json.loads((ROOT/"third-party/license-overrides/sources.json").read_text(encoding="utf-8"))
-    parts=[f"Attention Focus {version()} - Third-Party Notices", "These licenses cover the listed components only. No application runtime files are supplied by this text."]
+    license_text=(ROOT/"LICENSE").read_text(encoding="utf-8").strip()
+    parts=[f"Attention Focus {version()} - License and Third-Party Notices", "Attention Focus is distributed under the following license:", license_text, "\n"+"="*76, "The licenses below cover the listed third-party components only. No application runtime files are supplied by this text."]
     count=0
     for item in sorted(seen,key=lambda x:(packages[x]["name"],packages[x]["version"])):
         if item==root:continue
