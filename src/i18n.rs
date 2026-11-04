@@ -52,6 +52,12 @@ impl Language {
     pub fn is_rtl(self) -> bool {
         self == Self::Arabic
     }
+    /// In character table order, by the name each language has in its own script.
+    pub fn in_character_order() -> [Self; 13] {
+        let mut languages = Self::ALL;
+        languages.sort_by_key(|language| native_name(*language));
+        languages
+    }
     fn source(self) -> &'static str {
         match self {
             Self::English => include_str!("../locales/en.json"),
@@ -293,6 +299,29 @@ pub fn user(text: &str) -> Cow<'_, str> {
 /// The language's name in that language, in logical order.
 pub fn native_name(language: Language) -> &'static str {
     logical(language, "language.native")
+}
+
+/// The contents of the language list, returning whether the choice changed. Following Windows is
+/// not a language, so it stands apart from them, styled like the application's other special entry.
+pub fn language_menu(ui: &mut egui::Ui, choice: &mut Choice, accent: egui::Color32) -> bool {
+    let same_as_windows = egui::RichText::new(t("language.same_as_windows"))
+        .strong()
+        .italics()
+        .color(accent);
+    let mut changed = ui
+        .selectable_value(choice, Choice::System, same_as_windows)
+        .changed();
+    ui.separator();
+    for language in Language::in_character_order() {
+        changed |= ui
+            .selectable_value(
+                choice,
+                Choice::Fixed(language),
+                user(native_name(language)).into_owned(),
+            )
+            .changed();
+    }
+    changed
 }
 
 /// Logical text as a label that wraps. egui's own wrapping works for left-to-right languages, and
@@ -561,6 +590,59 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn the_language_list_sets_windows_apart_and_follows_the_character_table() {
+        assert_eq!(
+            Language::in_character_order(),
+            [
+                Language::German,
+                Language::English,
+                Language::Spanish,
+                Language::French,
+                Language::Italian,
+                Language::Polish,
+                Language::PortugueseBrazil,
+                Language::Turkish,
+                Language::Russian,
+                Language::Arabic,
+                Language::Japanese,
+                Language::ChineseSimplified,
+                Language::Korean,
+            ]
+        );
+        let context = egui::Context::default();
+        let accent = egui::Color32::from_rgb(1, 2, 3);
+        let mut choice = Choice::Fixed(Language::German);
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            assert!(!language_menu(ui, &mut choice, accent));
+        });
+        output.textures_delta.clear();
+        let mut rows = Vec::new();
+        let mut line = None;
+        for shape in &output.shapes {
+            match &shape.shape {
+                egui::Shape::Text(text) => rows.push((
+                    text.galley.job.text.clone(),
+                    text.galley.job.sections[0].format.color,
+                    text.visual_bounding_rect(),
+                )),
+                egui::Shape::LineSegment { points, .. } => line = Some(points[0].y),
+                _ => {}
+            }
+        }
+        assert_eq!(rows.len(), 14, "Windows and every language");
+        assert_eq!(rows[0].0, "Same as Windows");
+        assert_eq!(rows[0].1, accent, "it looks different from the languages");
+        assert!(rows[1..].iter().all(|row| row.1 != accent));
+        assert_eq!(rows[1].0, "Deutsch");
+        assert_eq!(rows[2].0, "English");
+        let line = line.expect("a line separates it from the languages");
+        assert!(rows[0].2.bottom() <= line && line <= rows[1].2.top());
+        assert!(
+            rows.windows(2)
+                .all(|pair| pair[0].2.top() < pair[1].2.top())
+        );
+    }
     #[test]
     fn windows_language_names_map_to_supported_languages() {
         for (name, expected) in [

@@ -5,7 +5,7 @@ Updated: 2026-11-05. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.22.0, built and verified but not yet run by the owner, and it keeps schema
+Current release: 0.22.1, built and verified but not yet run by the owner, and it keeps schema
 four. Production runs an earlier version until the owner replaces it. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.

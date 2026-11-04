@@ -925,23 +925,8 @@ impl eframe::App for Desktop {
                                     .selected_text(selected)
                                     .show_ui(ui, |ui| {
                                         self.fonts.require_language_names();
-                                        language_chosen |= ui
-                                            .selectable_value(
-                                                &mut self.language,
-                                                i18n::Choice::System,
-                                                i18n::t("language.same_as_windows"),
-                                            )
-                                            .changed();
-                                        for language in i18n::Language::ALL {
-                                            language_chosen |= ui
-                                                .selectable_value(
-                                                    &mut self.language,
-                                                    i18n::Choice::Fixed(language),
-                                                    i18n::user(i18n::native_name(language))
-                                                        .into_owned(),
-                                                )
-                                                .changed();
-                                        }
+                                        language_chosen =
+                                            i18n::language_menu(ui, &mut self.language, secondary);
                                     });
                             });
                             if language_chosen {
