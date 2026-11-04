@@ -46,6 +46,9 @@ applying, and then the owner's application and SignPath's approval.
 
 `actionlint`, `python scripts/test_release_tools.py` and `scripts/test-release-output.ps1` passed
 on 2026-11-04, including an unsigned file being refused and a replaced EXE requiring a new stamp.
+With an empty `CARGO_HOME`, the workflow's `cargo fetch` followed by the offline metadata call
+that notices use also passed. An independent read of the workflow and scripts, checked against
+the SignPath documentation, found no verified defect.
 
 Unverified, because they need a public repository: the workflow itself, hosted-runner assumptions
 such as Python and PDF dependencies, a real signing request, the successful path through

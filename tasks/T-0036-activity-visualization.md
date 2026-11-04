@@ -29,7 +29,8 @@ recommended, since the owner changed only the choice of views. See ADR-0032.
 ## Checks
 
 `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings` and
-`cargo test --locked` passed. The palette passed the validator for the three leading
+`cargo test --locked` (165 tests) passed, and version 0.20.0 was built and verified with all nine
+guide pages reviewed. The palette passed the validator for the three leading
 colors in both themes on 2026-11-03; the full eight-color order is the validated default.
 
 The look was checked once without running the application: a throwaway test, not committed,

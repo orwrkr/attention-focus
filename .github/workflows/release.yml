@@ -26,6 +26,9 @@ jobs:
           persist-credentials: false
       - name: Install the pinned toolchain
         run: rustup toolchain install
+      # The notices are generated offline, so every Windows package must be present first.
+      - name: Download the dependencies
+        run: cargo fetch --locked --target x86_64-pc-windows-msvc
       - name: Install the PDF dependencies
         shell: pwsh
         run: ./scripts/setup-docs.ps1
