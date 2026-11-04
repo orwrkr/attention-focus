@@ -203,7 +203,8 @@ impl Range {
                 + i64::from(local.millisecond());
             let next = (at + 3_600_000 - into_hour).min(end);
             let weekday = local.weekday().to_monday_zero_offset() as usize;
-            rhythm[weekday][local.hour() as usize] += allocated(record, at, next);
+            let cell = &mut rhythm[weekday][local.hour() as usize];
+            *cell = cell.saturating_add(allocated(record, at, next));
             at = next;
         }
     }
@@ -259,7 +260,11 @@ pub const CHART_MAX_DAYS: usize = 92;
 pub struct ChartSegment {
     pub day: usize,
     pub start_minute: f32,
+    /// The start plus the real duration, which sets the length of the drawn block.
     pub end_minute: f32,
+    /// What the local clock reads at the end. On a daylight-saving day this differs from
+    /// `end_minute`, and 1440 means the end of the day.
+    pub end_clock: f32,
     pub elapsed_ms: u64,
     pub project: Option<i64>,
     pub task: Option<String>,
@@ -282,8 +287,10 @@ pub struct ChartDay {
 impl ChartDay {
     /// Finished and running time. As in report totals, review time is left out.
     pub fn total_ms(&self) -> u64 {
-        let saved: u64 = self.saved.iter().map(|part| part.ms).sum();
-        saved + self.running.as_ref().map_or(0, |part| part.ms)
+        self.saved
+            .iter()
+            .chain(&self.running)
+            .fold(0, |total: u64, part| total.saturating_add(part.ms))
     }
 }
 #[derive(Clone, Debug)]
@@ -354,27 +361,37 @@ impl Chart {
                 drawn = true;
                 if record.state != State::Review {
                     range.add_to_rhythm(&mut chart.rhythm, record, start, end);
-                    series.entry(id).or_default().1 += elapsed_ms;
+                    let total = &mut series.entry(id).or_default().1;
+                    *total = total.saturating_add(elapsed_ms);
                 }
                 let Some((row, saved)) = days.get_mut(index) else {
                     continue;
                 };
                 match record.state {
-                    State::Saved => *saved.entry(id).or_default() += elapsed_ms,
+                    State::Saved => {
+                        let total = saved.entry(id).or_default();
+                        *total = total.saturating_add(elapsed_ms);
+                    }
                     State::Running => {
                         row.running = Some(ChartPart {
                             project: id,
                             ms: elapsed_ms,
                         });
                     }
-                    State::Review => row.review_ms += elapsed_ms,
+                    State::Review => row.review_ms = row.review_ms.saturating_add(elapsed_ms),
                 }
                 let start_minute = range.clock_minute(start);
+                let clock = range.clock_minute(end);
                 chart.segments.push(ChartSegment {
                     day: index,
                     start_minute,
                     // Real duration, since local clock times repeat when daylight saving ends.
                     end_minute: (start_minute + (end - start) as f32 / 60_000.0).min(1440.0),
+                    end_clock: if clock == 0.0 && end >= day.end_ms {
+                        1440.0
+                    } else {
+                        clock
+                    },
                     elapsed_ms,
                     project: id,
                     task: project.and_then(|p| p.task.clone()),
@@ -1043,6 +1060,57 @@ mod tests {
         assert_eq!(chart.rhythm[1][1], 1_800_000);
         assert_eq!(chart.rhythm[1][9], 3_600_000);
         assert_eq!(&chart.weekday_counts[..3], [1, 1, 0]);
+    }
+    #[test]
+    fn chart_segments_know_what_the_clock_reads_at_their_end() {
+        // Clocks jump from 02:00 to 03:00 on 8 March 2026 in New York.
+        let spring = range("2026-03-08", "2026-03-08", "America/New_York");
+        let (start, end) = (spring.start_ms, spring.end_ms);
+        let hour = 3_600_000;
+        let session = record(
+            start + hour,
+            start + 3 * hour,
+            2 * hour as u64,
+            State::Saved,
+        );
+        let whole = record(start, end, 23 * hour as u64, State::Saved);
+        let chart = compute(spring.clone(), vec![session], 0).chart.unwrap();
+        let segment = &chart.segments[0];
+        assert_eq!(
+            (segment.start_minute, segment.end_minute, segment.end_clock),
+            (60.0, 180.0, 240.0),
+            "two real hours from 01:00 end at 04:00 on the clock"
+        );
+        let chart = compute(spring, vec![whole], 0).chart.unwrap();
+        assert_eq!(
+            (chart.segments[0].end_minute, chart.segments[0].end_clock),
+            (1380.0, 1440.0),
+            "the 23-hour day is drawn by its length and ends at 24:00"
+        );
+        // A period ending inside a day shows where it was clipped, not the end of the day.
+        let partial = minute_range("2026-01-01", "00:00", "2026-01-01", "10:30", "UTC");
+        let start = partial.start_ms;
+        let long = record(start, start + 12 * hour, 12 * hour as u64, State::Saved);
+        let chart = compute(partial, vec![long], 0).chart.unwrap();
+        assert_eq!(chart.segments[0].end_clock, 630.0);
+    }
+    #[test]
+    fn damaged_durations_saturate_in_the_chart_like_the_totals() {
+        let whole = range("2026-01-01", "2026-01-01", "UTC");
+        let start = whole.start_ms;
+        let damaged = (0..3)
+            .map(|index| {
+                let at = start + index * 1000;
+                let mut row = record(at, at + 1000, i64::MAX as u64, State::Saved);
+                row.id = index + 1;
+                row
+            })
+            .collect();
+        let chart = compute(whole, damaged, 0).chart.unwrap();
+        assert_eq!(chart.days[0].total_ms(), u64::MAX);
+        assert_eq!(chart.series[0].total_ms, u64::MAX);
+        // 1 January 2026 is a Thursday.
+        assert_eq!(chart.rhythm[3][0], u64::MAX);
     }
     #[test]
     fn chart_keeps_running_and_review_time_apart_like_the_totals() {

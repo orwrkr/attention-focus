@@ -1,12 +1,12 @@
 //! Graphical report views, drawn with the egui painter from the report's own numbers.
 use crate::{
     presentation::hours_minutes,
-    reports::{Chart, ChartDay, ChartSegment, State},
+    reports::{Chart, ChartDay, ChartSegment, ChartSeries, State},
     tracking::CatalogProject,
 };
 use eframe::egui::{self, Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, vec2};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Categorical colors in a fixed order chosen so neighbors stay distinct with color vision
 /// differences. Each theme has its own validated steps of the same eight hues.
@@ -67,7 +67,8 @@ pub struct ProjectColors {
     slots: BTreeMap<i64, u8>,
 }
 impl ProjectColors {
-    /// Give new projects the color used least by active ones. Returns whether anything changed.
+    /// Give new projects the color used least by active ones, then by archived ones, so a
+    /// restored project rarely collides. Returns whether anything changed.
     pub fn update(&mut self, projects: &[CatalogProject]) -> bool {
         let before = self.slots.len();
         self.slots
@@ -79,13 +80,16 @@ impl ProjectColors {
             if self.slots.contains_key(&project.id) {
                 continue;
             }
-            let mut uses = [0_u32; 8];
-            for other in projects.iter().filter(|other| !other.archived) {
-                if let Some(&slot) = self.slots.get(&other.id) {
-                    uses[usize::from(slot)] += 1;
+            let (mut active, mut all) = ([0_u32; 8], [0_u32; 8]);
+            for other in projects {
+                if let Some(slot) = self.slot(other.id) {
+                    all[slot] += 1;
+                    active[slot] += u32::from(!other.archived);
                 }
             }
-            let slot = (0..8).min_by_key(|&slot| uses[slot]).unwrap_or(0);
+            let slot = (0..8)
+                .min_by_key(|&slot| (active[slot], all[slot]))
+                .unwrap_or(0);
             self.slots.insert(project.id, slot as u8);
             changed = true;
         }
@@ -105,7 +109,11 @@ struct Styles {
     other: usize,
 }
 impl Styles {
-    fn new(chart: &Chart, colors: &ProjectColors, dark: bool) -> Self {
+    fn new<'a>(
+        series: impl IntoIterator<Item = &'a ChartSeries>,
+        colors: &ProjectColors,
+        dark: bool,
+    ) -> Self {
         let palette = if dark { &DARK_SERIES } else { &LIGHT_SERIES };
         let mut used = [false; 8];
         let mut styles = Self {
@@ -114,7 +122,7 @@ impl Styles {
             legend: Vec::new(),
             other: 0,
         };
-        for series in &chart.series {
+        for series in series {
             styles.titles.insert(series.project, series.title.clone());
             let color = match series.project {
                 None => Some(UNASSIGNED),
@@ -177,6 +185,15 @@ fn clock(minute: f32) -> String {
 fn hour_label(hour: usize) -> String {
     format!("{hour:02}:00")
 }
+/// Narrower than this, egui paints an outline solid, and unfinished time would look finished.
+const UNFINISHED_LEAST: f32 = 5.0;
+fn least_width(state: State) -> f32 {
+    if state == State::Saved {
+        1.5
+    } else {
+        UNFINISHED_LEAST
+    }
+}
 
 /// Pure geometry of the day timeline, so it can be checked without drawing.
 struct Timeline {
@@ -226,7 +243,7 @@ impl Timeline {
     /// One point of space on each side keeps touching sessions visibly separate.
     fn mark(&self, segment: &ChartSegment) -> Rect {
         let left = self.x(segment.start_minute) + 1.0;
-        let right = (self.x(segment.end_minute) - 1.0).max(left + 1.5);
+        let right = (self.x(segment.end_minute) - 1.0).max(left + least_width(segment.state));
         let top = self.row_top(segment.day);
         Rect::from_min_max(egui::pos2(left, top), egui::pos2(right, top + self.bar))
     }
@@ -388,7 +405,7 @@ fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
                         "{}, {} to {}",
                         day.long_label,
                         clock(segment.start_minute),
-                        clock(segment.end_minute)
+                        clock(segment.end_clock)
                     ));
                     if let Some(note) = state_note(segment.state) {
                         ui.label(note);
@@ -409,6 +426,8 @@ struct Columns {
 }
 impl Columns {
     const HEIGHT: f32 = 210.0;
+    /// Room for the widest short date, such as Wed 30, with a small gap.
+    const DATE_ROOM: f32 = 44.0;
 
     fn new(rect: Rect, count: usize, most_ms: u64) -> Self {
         let hours = (most_ms as f64 / 3_600_000.0 / 2.0).ceil().max(1.0) as u64 * 2;
@@ -425,6 +444,15 @@ impl Columns {
         let plot = self.rect.height() - self.bottom - self.top;
         self.rect.top() + self.top + plot
             - ms as f32 / (self.scale_hours as f32 * 3_600_000.0) * plot
+    }
+    /// Hours between grid lines, keeping a handful of lines at any scale.
+    fn grid_step(&self) -> u64 {
+        self.scale_hours.div_ceil(4).next_multiple_of(2)
+    }
+    /// Label every this many columns, so dates never collide at any width.
+    fn date_stride(&self) -> usize {
+        let fits = (Self::DATE_ROOM / self.band()).ceil() as usize;
+        fits.max(if self.count <= 14 { 1 } else { 7 })
     }
     fn band(&self) -> f32 {
         (self.rect.width() - self.left) / self.count.max(1) as f32
@@ -455,10 +483,15 @@ impl Columns {
             .chain(day.running.iter().map(|part| (part, State::Running)));
         for (part, state) in items {
             let lower = self.y(below);
-            below += part.ms;
+            below = below.saturating_add(part.ms);
             let upper = self.y(below);
             let gap = if parts.is_empty() { 0.0 } else { 2.0 };
-            let top = upper.min(lower - gap - 0.5);
+            let least = if state == State::Saved {
+                0.5
+            } else {
+                UNFINISHED_LEAST
+            };
+            let top = upper.min(lower - gap - least);
             parts.push((
                 part.project,
                 state,
@@ -507,9 +540,8 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
     let most = chart.days.iter().map(ChartDay::total_ms).max().unwrap_or(0);
     let layout = Columns::new(rect, chart.days.len(), most);
     let painter = ui.painter_at(rect);
-    let step = if layout.scale_hours > 8 { 4 } else { 2 };
-    for hour in (0..=layout.scale_hours).step_by(step as usize) {
-        let y = layout.y(hour * 3_600_000);
+    for hour in (0..=layout.scale_hours).step_by(layout.grid_step() as usize) {
+        let y = layout.y(hour.saturating_mul(3_600_000));
         let color = if hour == 0 { ink.axis } else { ink.grid };
         painter.hline(
             (rect.left() + layout.left)..=rect.right(),
@@ -524,7 +556,9 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
             ink.muted,
         );
     }
-    let count = chart.days.len();
+    let band = layout.band();
+    let stride = layout.date_stride();
+    let first_most = chart.days.iter().position(|day| day.total_ms() == most);
     for (column, day) in chart.days.iter().enumerate() {
         let parts = layout.stack(column, day);
         let last = parts.len().saturating_sub(1);
@@ -542,23 +576,25 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
             paint_mark(&painter, *mark, styles.color(*project), *state, round);
         }
         let total = day.total_ms();
-        if total > 0 && (count <= 14 || total == most) {
-            painter.text(
-                egui::pos2(layout.center(column), layout.y(total) - 3.0),
-                Align2::CENTER_BOTTOM,
-                hours_minutes(total),
-                small(),
-                ink.text,
-            );
+        if total > 0 {
+            // A total wider than its column would collide; the largest always shows.
+            let label = painter.layout_no_wrap(hours_minutes(total), small(), ink.text);
+            let size = label.size();
+            if size.x + 2.0 <= band || Some(column) == first_most {
+                let center = layout.center(column).min(rect.right() - size.x / 2.0);
+                let stack_top = parts.last().map_or(layout.y(total), |part| part.2.top());
+                let at = egui::pos2(center - size.x / 2.0, stack_top - 3.0 - size.y);
+                painter.galley(at, label, ink.text);
+            }
         }
-        if count <= 14 || column % 7 == 0 {
-            painter.text(
-                egui::pos2(layout.center(column), rect.bottom()),
-                Align2::CENTER_BOTTOM,
-                &day.short_label,
-                small(),
-                ink.muted,
-            );
+        if column % stride == 0 {
+            let label = painter.layout_no_wrap(day.short_label.clone(), small(), ink.muted);
+            let size = label.size();
+            let center = layout.center(column);
+            if center + size.x / 2.0 <= rect.right() {
+                let at = egui::pos2(center - size.x / 2.0, rect.bottom() - size.y);
+                painter.galley(at, label, ink.muted);
+            }
         }
     }
     if let Some(pointer) = response.hover_pos()
@@ -577,15 +613,32 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
     }
 }
 
+/// One part of the split bar, with a point of space on each side. A very small share still
+/// gets a visible mark, kept inside the bar.
+fn split_mark(outer: Rect, state: State, bar: Rect) -> Rect {
+    let least = least_width(state);
+    if outer.width() - 2.0 >= least {
+        return outer.shrink2(vec2(1.0, 0.0));
+    }
+    let left = outer.left().min(bar.right() - least).max(bar.left());
+    Rect::from_min_size(egui::pos2(left, bar.top()), vec2(least, bar.height()))
+}
+
 /// A single day has no other day to compare with, so it shows how the day was split.
 fn split_bar(ui: &mut egui::Ui, day: &ChartDay, styles: &Styles, ink: Ink) {
     let total = day.total_ms();
     ui.label(format!("{}: {}", day.long_label, hours_minutes(total)));
-    let size = vec2(ui.available_width(), 28.0);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    if day.review_ms > 0 {
+        ui.small(format!(
+            "Needs review, not in totals: {}",
+            hours_minutes(day.review_ms)
+        ));
+    }
     if total == 0 {
         return;
     }
+    let size = vec2(ui.available_width(), 28.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
     let painter = ui.painter_at(rect);
     let mut left = rect.left();
     let mut hovered = None;
@@ -597,7 +650,7 @@ fn split_bar(ui: &mut egui::Ui, day: &ChartDay, styles: &Styles, ink: Ink) {
     for (part, state) in items {
         let width = part.ms as f32 / total as f32 * rect.width();
         let outer = Rect::from_min_size(egui::pos2(left, rect.top()), vec2(width, rect.height()));
-        let mark = outer.shrink2(vec2(1.0, 0.0));
+        let mark = split_mark(outer, state, rect);
         paint_mark(
             &painter,
             mark,
@@ -611,13 +664,16 @@ fn split_bar(ui: &mut egui::Ui, day: &ChartDay, styles: &Styles, ink: Ink) {
             let at = egui::pos2(mark.left() + 6.0, mark.center().y - label.size().y / 2.0);
             painter.galley(at, label, ink.text);
         }
-        if response.hover_pos().is_some_and(|p| outer.contains(p)) {
-            hovered = Some((part, outer));
+        if response
+            .hover_pos()
+            .is_some_and(|p| outer.union(mark).contains(p))
+        {
+            hovered = Some((part, mark));
         }
         left += width;
     }
-    if let Some((part, outer)) = hovered {
-        outline_hovered(&painter, outer.shrink2(vec2(1.0, 0.0)), ink);
+    if let Some((part, mark)) = hovered {
+        outline_hovered(&painter, mark, ink);
         response.on_hover_ui_at_pointer(|ui| {
             ui.strong(hours_minutes(part.ms));
             ui.label(styles.title(part.project));
@@ -765,7 +821,7 @@ fn rhythm(ui: &mut egui::Ui, chart: &Chart, ink: Ink) {
     });
 }
 
-fn legend(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
+fn legend(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink, view: View) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 5.0;
         for (color, title) in &styles.legend {
@@ -776,7 +832,9 @@ fn legend(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
         }
         let states = [(State::Running, "Running"), (State::Review, "Needs review")];
         for (state, label) in states {
-            if chart.segments.iter().any(|segment| segment.state == state) {
+            // By day leaves out review time, so it has no such mark to explain.
+            let drawn = state != State::Review || view != View::Days;
+            if drawn && chart.segments.iter().any(|segment| segment.state == state) {
                 let (swatch, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
                 paint_mark(
                     ui.painter(),
@@ -820,12 +878,24 @@ pub fn show(ui: &mut egui::Ui, chart: &Chart, view: &mut View, colors: &ProjectC
         return;
     }
     let ink = Ink::new(ui);
-    match view {
+    let current = *view;
+    match current {
         View::Timeline | View::Days => {
-            let styles = Styles::new(chart, colors, ui.visuals().dark_mode);
-            legend(ui, chart, &styles, ink);
+            // By day leaves out review time, so it does not name projects with only that.
+            let in_columns: HashSet<Option<i64>> = chart
+                .days
+                .iter()
+                .flat_map(|day| day.saved.iter().chain(&day.running))
+                .map(|part| part.project)
+                .collect();
+            let series = chart
+                .series
+                .iter()
+                .filter(|series| current == View::Timeline || in_columns.contains(&series.project));
+            let styles = Styles::new(series, colors, ui.visuals().dark_mode);
+            legend(ui, chart, &styles, ink, current);
             ui.add_space(4.0);
-            if *view == View::Timeline {
+            if current == View::Timeline {
                 timeline(ui, chart, &styles, ink);
             } else {
                 columns(ui, chart, &styles, ink);
@@ -838,7 +908,7 @@ pub fn show(ui: &mut egui::Ui, chart: &Chart, view: &mut View, colors: &ProjectC
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::reports::{ChartPart, ChartSeries};
+    use crate::reports::ChartPart;
 
     fn catalog(ids: &[(i64, bool)]) -> Vec<CatalogProject> {
         ids.iter()
@@ -856,6 +926,7 @@ mod tests {
             day,
             start_minute,
             end_minute,
+            end_clock: end_minute,
             elapsed_ms: ((end_minute - start_minute) * 60_000.0) as u64,
             project: Some(1),
             task: None,
@@ -918,10 +989,10 @@ mod tests {
             (colors.slot(3), colors.slot(9), colors.slot(12)),
             (Some(0), Some(1), Some(2))
         );
-        // Archiving frees a color for new projects while the archived one keeps its own.
+        // An archived project keeps its color, and a new project avoids it while it can.
         colors.update(&catalog(&[(3, true), (9, false), (12, false), (20, false)]));
         assert_eq!(colors.slot(3), Some(0));
-        assert_eq!(colors.slot(20), Some(0));
+        assert_eq!(colors.slot(20), Some(3));
         // A deleted project is forgotten, and the rest keep their colors.
         assert!(colors.update(&catalog(&[(9, false), (12, false), (20, false)])));
         assert_eq!(colors.slot(3), None);
@@ -931,6 +1002,43 @@ mod tests {
             serde_json::from_str::<ProjectColors>(&saved).unwrap(),
             colors
         );
+    }
+
+    #[test]
+    fn a_restored_color_out_of_range_cannot_crash_the_assignment() {
+        let mut colors: ProjectColors = serde_json::from_str(r#"{"slots":{"3":9}}"#).unwrap();
+        colors.update(&catalog(&[(3, false), (4, false)]));
+        assert_eq!((colors.slot(3), colors.slot(4)), (Some(1), Some(0)));
+    }
+
+    #[test]
+    fn archived_projects_spread_over_the_colors_and_do_not_crowd_active_ones() {
+        // A first launch with archived projects shares nothing.
+        let mut colors = ProjectColors::default();
+        colors.update(&catalog(&[
+            (1, true),
+            (2, true),
+            (3, true),
+            (4, false),
+            (5, false),
+        ]));
+        let slots: Vec<usize> = (1..=5).map(|id| colors.slot(id).unwrap()).collect();
+        assert_eq!(slots, [0, 1, 2, 3, 4]);
+        // Restoring a project cannot collide with one added while it was archived.
+        let mut colors = ProjectColors::default();
+        colors.update(&catalog(&[(1, false), (2, false)]));
+        colors.update(&catalog(&[(1, true), (2, false), (3, false)]));
+        colors.update(&catalog(&[(1, false), (2, false), (3, false)]));
+        let slots: Vec<usize> = (1..=3).map(|id| colors.slot(id).unwrap()).collect();
+        assert_eq!(slots, [0, 1, 2]);
+        // With every color held, an archived project's is reused before an active one's.
+        let mut colors = ProjectColors::default();
+        let eight: Vec<(i64, bool)> = (1..=8).map(|id| (id, false)).collect();
+        colors.update(&catalog(&eight));
+        let mut next: Vec<(i64, bool)> = (1..=8).map(|id| (id, id == 5)).collect();
+        next.push((9, false));
+        colors.update(&catalog(&next));
+        assert_eq!(colors.slot(9), colors.slot(5));
     }
 
     #[test]
@@ -959,7 +1067,7 @@ mod tests {
             ],
             ..Chart::default()
         };
-        let styles = Styles::new(&chart, &colors, false);
+        let styles = Styles::new(&chart.series, &colors, false);
         assert_eq!(styles.color(Some(9)), LIGHT_SERIES[0]);
         assert_eq!(styles.color(Some(1)), OTHER);
         assert_eq!(styles.color(None), UNASSIGNED);
@@ -982,7 +1090,7 @@ mod tests {
             ..Chart::default()
         };
         assert_eq!(
-            Styles::new(&chart, &colors, true).color(Some(1)),
+            Styles::new(&chart.series, &colors, true).color(Some(1)),
             DARK_SERIES[0]
         );
     }
@@ -1007,6 +1115,64 @@ mod tests {
         assert_eq!(Timeline::new(rect, 30).labels, 44.0);
         assert_eq!(Timeline::new(rect, 1).bar, 24.0);
         assert!(Timeline::height(92) > Timeline::height(7));
+    }
+
+    #[test]
+    fn unfinished_marks_stay_wide_enough_to_look_unfinished() {
+        let rect = Rect::from_min_size(Pos2::ZERO, vec2(344.0, 200.0));
+        let layout = Timeline::new(rect, 7);
+        for state in [State::Running, State::Review] {
+            let mut short = segment(0, 600.0, 600.5);
+            short.state = state;
+            assert!(layout.mark(&short).width() >= UNFINISHED_LEAST, "{state:?}");
+        }
+        let part = |ms| ChartPart {
+            project: Some(1),
+            ms,
+        };
+        let day = ChartDay {
+            long_label: String::new(),
+            short_label: String::new(),
+            saved: vec![part(14_400_000)],
+            running: Some(part(1000)),
+            review_ms: 0,
+        };
+        let columns = Columns::new(
+            Rect::from_min_size(Pos2::ZERO, vec2(344.0, 210.0)),
+            2,
+            28_800_000,
+        );
+        let parts = columns.stack(0, &day);
+        assert!(parts[1].2.height() >= UNFINISHED_LEAST);
+    }
+
+    #[test]
+    fn a_tiny_share_of_the_split_bar_stays_visible_and_inside_it() {
+        let bar = Rect::from_min_size(Pos2::ZERO, vec2(600.0, 28.0));
+        let sliver = Rect::from_min_size(egui::pos2(599.5, 0.0), vec2(0.5, 28.0));
+        for (state, least) in [(State::Saved, 1.5), (State::Running, UNFINISHED_LEAST)] {
+            let mark = split_mark(sliver, state, bar);
+            assert!(
+                mark.width() >= least && mark.right() <= bar.right(),
+                "{state:?}"
+            );
+        }
+        let wide = Rect::from_min_size(egui::pos2(100.0, 0.0), vec2(50.0, 28.0));
+        assert_eq!(split_mark(wide, State::Saved, bar).width(), 48.0);
+    }
+
+    #[test]
+    fn the_grid_keeps_a_handful_of_lines_at_any_scale() {
+        let rect = Rect::from_min_size(Pos2::ZERO, vec2(700.0, Columns::HEIGHT));
+        let hour: u64 = 3_600_000;
+        let step = |most| Columns::new(rect, 2, most).grid_step();
+        assert_eq!(step(0), 2);
+        assert_eq!(step(8 * hour), 2);
+        assert_eq!(step(12 * hour), 4);
+        assert_eq!(step(16 * hour), 4);
+        assert_eq!(step(24 * hour), 6);
+        let damaged = Columns::new(rect, 2, 100_000 * hour);
+        assert!(damaged.scale_hours / damaged.grid_step() <= 5);
     }
 
     #[test]
@@ -1084,6 +1250,7 @@ mod tests {
         chart: Chart,
         view: View,
         colors: ProjectColors,
+        width: f32,
     }
     impl Harness {
         fn new(chart: Chart, view: View) -> Self {
@@ -1094,6 +1261,7 @@ mod tests {
                 chart,
                 view,
                 colors,
+                width: 700.0,
             }
         }
         fn frame(&mut self, events: Vec<egui::Event>, time: f64) -> egui::FullOutput {
@@ -1101,7 +1269,7 @@ mod tests {
             let mut output = self.context.run_ui(
                 egui::RawInput {
                     time: Some(time),
-                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(700.0, 700.0))),
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(self.width, 700.0))),
                     events,
                     ..Default::default()
                 },
@@ -1190,7 +1358,10 @@ mod tests {
 
     #[test]
     fn hovering_a_mark_shows_its_details() {
-        let mut harness = Harness::new(sample_chart(), View::Timeline);
+        let mut chart = sample_chart();
+        // The block follows the real duration and the text follows the clock.
+        chart.segments[0].end_clock = 660.0;
+        let mut harness = Harness::new(chart, View::Timeline);
         harness.frame(vec![], 0.0);
         let output = harness.frame(vec![], 0.1);
         let pointer = Harness::first_series_marks(&output)[0].center();
@@ -1204,10 +1375,107 @@ mod tests {
             texts = Harness::texts(&harness.frame(events, time));
         }
         assert!(
-            texts.iter().any(|t| t == "Mon 26 Oct, 09:00 to 10:00"),
+            texts.iter().any(|t| t == "Mon 26 Oct, 09:00 to 11:00"),
             "{texts:?}"
         );
         assert!(texts.iter().any(|t| t == "1h"));
+    }
+
+    #[test]
+    fn by_day_labels_never_collide_at_any_window_width() {
+        const TOTAL: u64 = 45_000_000;
+        for width in [344.0, 420.0, 544.0, 620.0, 684.0, 1000.0] {
+            for count in [2, 7, 10, 12, 14, 15, 30, 92] {
+                let days = (0..count).map(|_| ChartDay {
+                    long_label: "Wed 30 Sep".into(),
+                    short_label: "Wed 30".into(),
+                    saved: vec![ChartPart {
+                        project: Some(1),
+                        ms: TOTAL,
+                    }],
+                    running: None,
+                    review_ms: 0,
+                });
+                let chart = Chart {
+                    days: days.collect(),
+                    series: vec![ChartSeries {
+                        project: Some(1),
+                        title: "Alpha".into(),
+                        total_ms: TOTAL * count,
+                    }],
+                    ..Chart::default()
+                };
+                let mut harness = Harness::new(chart, View::Days);
+                harness.width = width;
+                harness.frame(vec![], 0.0);
+                let output = harness.frame(vec![], 0.1);
+                let boxes = |wanted: &str| -> Vec<Rect> {
+                    output
+                        .shapes
+                        .iter()
+                        .filter_map(|shape| match &shape.shape {
+                            egui::Shape::Text(text) if text.galley.job.text == wanted => {
+                                Some(Rect::from_min_size(text.pos, text.galley.size()))
+                            }
+                            _ => None,
+                        })
+                        .collect()
+                };
+                for wanted in ["Wed 30", "12h 30m"] {
+                    let found = boxes(wanted);
+                    assert!(!found.is_empty(), "{width} wide, {count} days: {wanted}");
+                    for (index, first) in found.iter().enumerate() {
+                        for second in &found[index + 1..] {
+                            assert!(
+                                !first.intersects(*second),
+                                "{width} wide, {count} days: {wanted} collide"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn by_day_names_only_what_it_draws_and_states_review_time_in_words() {
+        let mut chart = sample_chart();
+        chart.days.truncate(1);
+        chart.days[0].saved.truncate(1);
+        chart.days[0].review_ms = 1_800_000;
+        chart.segments.truncate(1);
+        chart.segments.push(ChartSegment {
+            project: Some(2),
+            state: State::Review,
+            ..segment(0, 700.0, 730.0)
+        });
+        chart.series[1].total_ms = 0;
+        let mut timeline = Harness::new(chart.clone(), View::Timeline);
+        timeline.frame(vec![], 0.0);
+        let texts = Harness::texts(&timeline.frame(vec![], 0.1));
+        assert!(texts.iter().any(|t| t == "Beta"), "its outline has a name");
+        assert!(texts.iter().any(|t| t == "Needs review"));
+        let mut days = Harness::new(chart.clone(), View::Days);
+        days.frame(vec![], 0.0);
+        let texts = Harness::texts(&days.frame(vec![], 0.1));
+        assert!(texts.iter().any(|t| t == "Alpha"));
+        assert!(!texts.iter().any(|t| t == "Beta" || t == "Needs review"));
+        assert!(
+            texts
+                .iter()
+                .any(|t| t == "Needs review, not in totals: 30m")
+        );
+        // A day with only review time says so, and draws no empty bar.
+        chart.days[0].saved.clear();
+        let mut review = Harness::new(chart, View::Days);
+        review.frame(vec![], 0.0);
+        let texts = Harness::texts(&review.frame(vec![], 0.1));
+        assert!(texts.iter().any(|t| t == "Mon 26 Oct: 0m"));
+        assert!(
+            texts
+                .iter()
+                .any(|t| t == "Needs review, not in totals: 30m")
+        );
     }
 
     #[test]

@@ -37,6 +37,14 @@ converted the shapes egui actually paints to SVG, in both themes, and these were
 image. That showed correct layout, and led to raising the contrast of axis labels in the dark
 theme. It uses a different text renderer than the application.
 
+An independent review of the first commit found no error in the numbers: a randomized test over
+nine time zones and date ranges added up exactly. It found eight other defects, all fixed with
+regression tests: a crash from an out-of-range color in `window.ron`, archived projects piling
+onto one color, short unfinished marks looking solid, a wrong end time in hover text on
+daylight-saving days, By day labels overlapping at the default width, tiny shares vanishing from
+the split bar, a legend naming review time By day does not draw, and damaged durations overflowing
+or producing an unbounded grid.
+
 Unverified: the charts in the real window, including hover at real sizes and scrolling inside
 the long timeline. An interactive mock with invented data was published privately for the
 choice of views; it is not part of the repository.
