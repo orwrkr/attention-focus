@@ -20,6 +20,7 @@ what a program guesses.
   off. Totals stay correct across time zones and daylight-saving changes either way.
 - **Reports.** See totals by project, task and day for any period, in any time zone. Periods can
   follow the current day. Export to CSV or Markdown.
+- **Charts.** A timeline of when you worked, columns of how much per day, and your weekly rhythm.
 - **Starts with Windows** if you want it to, optionally hidden in the tray.
 
 ## Install
@@ -28,8 +29,9 @@ Windows x64 only. Download `AttentionFocus-VERSION-windows-x64.zip` from
 [Releases](../../releases), extract it, and run `attention-focus.exe`. Only the EXE is needed;
 the archive also contains a PDF guide, license notices and a `release.json` with file hashes.
 
-The EXE is not code-signed, so Windows SmartScreen may warn about it the first time. Choose
-**More info**, then **Run anyway**, if you trust the download.
+The EXE is not code-signed yet, so Windows SmartScreen may warn about it the first time. Choose
+**More info**, then **Run anyway**, if you trust the download. See the
+[code signing policy](#code-signing-policy).
 
 Read the [user guide](docs/user-guide.md) to get started.
 
@@ -65,6 +67,21 @@ Contributions and bug reports are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md
 This repository is developed with AI coding agents. [AGENTS.md](AGENTS.md) is their working
 contract, [docs/decisions](docs/decisions/README.md) records why things are the way they are,
 and [tasks](tasks/INDEX.md) keeps the work history.
+
+## Code signing policy
+
+Release executables are not code-signed yet. The project intends to apply for the free signing
+that [SignPath Foundation](https://signpath.org) offers to open source projects, which needs a
+first public release. This section will say so when signing is in effect. Until then, the
+`release.json` file in each archive lists the SHA-256 hash of every file.
+
+Releases are built from this repository's source by the
+[release workflow](.github/workflows/release.yml) on GitHub-hosted runners. Once signing is in
+effect, a person approves each signature.
+
+- Committers, reviewers and approvers: [orwrkr](https://github.com/orwrkr), the repository owner.
+- Privacy: this program will not transfer any information to other networked systems unless
+  specifically requested by the user. It contains no network features of its own.
 
 ## License
 

@@ -15,7 +15,8 @@ area, and bundled SQLite through rusqlite for history. Decisions and their reaso
 | `tracking::catalog` | The application's project and task list | Finished history is never rewritten |
 | `tracking::migrate` | Explicit schema versions, backups and conversions | Older formats appear only here |
 | `tracking::worker` | One thread that serializes every command | The UI talks to it through messages |
-| `reports` | Calendar boundaries, clipping, totals | Pure; counts each interval once |
+| `reports` | Calendar boundaries, clipping, totals, chart data | Pure; counts each interval once |
+| `charts` | Draws the chart views and assigns project colors | Paints computed data; holds no totals of its own |
 | `export` | CSV and Markdown output with protected destinations | Reads a separate snapshot |
 | `paths`, `profiles` | Storage identity, link checks, Production and Development | Fixed locations only |
 | `platform`, `lifecycle`, `startup` | Windows APIs: windows, instance lock, session events, sign-in startup | Windows code stays here |
@@ -109,6 +110,9 @@ Visible expanded reports poll only while active time grows inside the filter, wi
 in flight. Edits are debounced, superseded replies are rejected and the last good result stays
 on error. Rolling periods move to the new date before that gating; Custom stays fixed. See
 ADR-0009, ADR-0013, ADR-0014 and ADR-0017. Exports read an independent read-only snapshot.
+
+Chart data is computed next to the report from the same records and rules, so charts cannot
+disagree with the tables, and project colors are interface preferences. See ADR-0032.
 
 ## Validation
 

@@ -1,0 +1,113 @@
+name: Release
+
+# A version tag builds the release and prepares a draft for the owner to publish by hand.
+# A manual run builds the same files and keeps them only as a workflow artifact.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    # Includes up to an hour of waiting for a person to approve the signature.
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Install the PDF dependencies
+        shell: pwsh
+        run: ./scripts/setup-docs.ps1
+      - name: Check the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = & ./target/docs-venv/Scripts/python.exe ./scripts/release_tools.py version
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the release version.' }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match Cargo.toml version $version."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Run tests
+        run: cargo test --locked
+      - name: Build the release
+        shell: pwsh
+        run: ./scripts/build.ps1
+      - name: Upload the unsigned EXE
+        id: unsigned
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: attention-focus-unsigned
+          path: dist/AttentionFocus/attention-focus.exe
+          if-no-files-found: error
+      # Stays off until the repository is configured; see docs/decisions/0033.
+      - name: Submit the EXE for signing
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: target/signed
+      # A test signature is not trusted, so it never replaces the EXE in the package.
+      - name: Package the signed EXE
+        if: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && vars.SIGNPATH_SIGNING_POLICY_SLUG == 'release-signing' }}
+        shell: pwsh
+        run: ./scripts/use-signed-exe.ps1 -SignedExe target/signed/attention-focus.exe
+      - name: Verify the release
+        shell: pwsh
+        run: ./scripts/verify-release.ps1
+      - name: Upload the release archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-archive
+          path: dist/AttentionFocus-${{ steps.version.outputs.version }}-windows-x64.zip
+          if-no-files-found: error
+
+  # Holds the write permission and runs no project code.
+  draft:
+    if: ${{ github.ref_type == 'tag' }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-archive
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          cat > notes.md <<EOF
+          Attention Focus is a small Windows tray application that records the time you choose to
+          spend on projects and tasks. It stays on your computer, with no accounts, network access
+          or telemetry.
+
+          Windows x64 only. Download \`AttentionFocus-$VERSION-windows-x64.zip\`, extract it and run
+          \`attention-focus.exe\`.
+
+          [Code signing policy](https://github.com/$GITHUB_REPOSITORY#code-signing-policy)
+          EOF
+          gh release create "$GITHUB_REF_NAME" "AttentionFocus-$VERSION-windows-x64.zip" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "Attention Focus $VERSION" --notes-file notes.md

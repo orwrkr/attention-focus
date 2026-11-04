@@ -126,82 +126,20 @@ disposable synthetic projects:
 10. Check report periods, custom dates, invalid timezone/date errors, daily/project/task
     totals, details, and separation of running/review time. Leave tracking across midnight
     and check the two sessions and the current-day period.
+11. Check the three chart views in both Windows themes, with one day, a week and a period over
+    92 days. Hover over marks, narrow the window, and track across a report refresh.
 
 Always use scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 
-## Verification history
+## Releases on GitHub
 
-Records from earlier versions, which describe the application as it was at the time. Newer
-records are in the task cards.
+`.github/workflows/release.yml` runs the same `scripts/build.ps1` on a hosted Windows runner. A
+tag `vVERSION` matching `Cargo.toml` leads to a draft release for the owner to publish. A manual
+run builds the same files and keeps them as a workflow artifact.
 
-### Verification record (2026-10-27)
-
-T-0013: 45 Rust tests, five package tests, formatting, and Clippy pass. Both 0.4.0 EXEs
-and the automatic ZIP verified (versions, eight icon sizes each, source/build stamp,
-allowlist, hashes). All six PDF pages inspected and matched byte-for-byte to the package.
-Six new tests cover calendar rules, tooltip bounds/state, refresh scheduling, stale
-filters/debounce, retry backoff, and timezone validity. WindowLevel and storage API
-usage reviewed; native behavior/persistence/theme rendering remain unverified. Window
-discovery timed out twice; initialization also timed out after reset. No app was launched
-or real history/settings database changed; the external portable copy was left running.
-
-T-0012: 39 Rust tests, five packaging tests, formatting, and Clippy pass. Both 0.3.0 EXEs
-and the automatic ZIP build verified, including version/icon resources, fingerprint,
-stamp, allowlist, and hashes. All six PDF pages reviewed and matched byte-for-byte to
-the final guide. New tests cover both change modes, preserved boundaries/durations,
-finalized-history isolation, transactional rollback, durable/source-scoped ordering,
-schema-one backup/backfill, failed-backfill rollback, and no auto-resume after interruption.
-Windows discovery timed out three times including reset. No app was launched or real
-profile/source data changed; native picker/header interaction still needs manual review.
-
-T-0011: 0.2.0 Production and Development EXEs and versioned ZIP built. Verified version
-metadata and eight embedded neutral icon sizes per EXE. All five guide pages visually
-reviewed and compared byte-for-byte with the final PDF. Automatic archive refresh via
-both build and PDF export verified, including exact member allowlist and SHA-256 hashes.
-Thirty-two Rust tests, five Python tests, formatting, Clippy, locked-output checks,
-and PowerShell parsing pass. Both PE import audits are Windows-system-only. No app was
-launched; native shell rendering and the full manual UI gate remain pending. See T-0011.
-
-T-0010: 32 tests, formatting, Clippy, canonical packaging, and development build passed.
-Tests verify clean/profile-independent history and settings, unchanged legacy bytes,
-production persistence after restart, debug Production rejection, junction safeguards,
-and simultaneous native profile locks with duplicate rejection. Header controls are
-outside scrolling content. New GUI verification was unavailable: list_windows timed out
-three times including reset, so no app was launched. Production initializes cleanly on
-its next first launch; no old user database was modified by development tools.
-
-T-0005: 27 tests, formatting, Clippy, packaging safeguards, and the canonical release
-build passed. PE imports remain Windows-system-only. Visually checked source-field
-clipboard round trip without saving settings, project filtering, report refresh,
-project/task/day sections, history expansion, invalid-date errors, and valid Today refresh.
-No fake sessions were inserted into real history. The full tracking/tray/lifecycle UI
-gate remains pending. An intentional build while the verified app was open failed with
-the locked-EXE error before compilation; the published EXE was retained without copies.
-
-T-0003 adds fifteen passing automated tests, including immutable source snapshots,
-settings and identity restoration, rejected storage overlap, and real junction aliases.
-Formatting, Clippy, and release build passed. The Windows helper now captures the app
-and source-panel expansion, although launch timed out and required window recovery.
-Its text input produced no visible text in two focused attempts. Source loading through
-the UI remains unverified. Exit terminated the process. A visible background gap was
-fixed in the final build; the fix has not yet been visually rechecked.
-
-Eight automated tests passed, including icon structure, stopped-session persistence,
-interrupted recovery, one-active-session enforcement, failed-stop preservation, and
-worker start/exit confirmation. Clippy passed with only an environment-related
-incremental-cache hard-link fallback warning. Generated ICO artwork was visually
-inspected separately from Windows shell rendering.
-
-The Windows Computer Use helper again timed out on window discovery three times,
-including after a reset. No interactive geometry, tray-click, or taskbar verification
-is claimed. Release build and import inspection results are recorded in T-0006.
-
-### Verification record (2026-10-26)
-
-Formatting, the SQLite reopen test, Clippy, and a Windows x64 release build passed.
-The final test/Clippy run reported only an environment-related incremental-cache
-hard-link fallback to copying. No source lint failures occurred.
-Interactive verification is pending: the Windows Computer Use helper timed out on
-window discovery on three attempts, including one after resetting the helper session.
-The executable was not launched through that helper. No hide/show/exit behavior,
-idle CPU measurement, tray failure injection, or clean-machine compatibility is claimed.
+Signing stays off until the repository has the secret `SIGNPATH_API_TOKEN` and the variables
+`SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG` and `SIGNPATH_SIGNING_POLICY_SLUG`. Then the
+workflow submits the unsigned EXE and waits up to an hour for a person to approve it in SignPath.
+With the `release-signing` policy, `scripts/use-signed-exe.ps1` installs the signed copy and
+rebuilds the archive. With any other policy, such as `test-signing`, the package stays unsigned.
+See [ADR-0033](decisions/0033-release-workflow-and-signing.md) and T-0037.

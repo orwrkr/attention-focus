@@ -3,8 +3,8 @@
 ## Start of session
 
 Read `README.md`, `docs/CONTEXT.md`, `docs/WORKFLOW.md`, and `tasks/INDEX.md`,
-then the selected task card and relevant records in `docs/decisions/`.
-Check `git status --short`. Preserve unrelated and unfinished work.
+then the selected task card and relevant records in `docs/decisions/`. Read `local/README.md`
+if it exists. Check `git status --short`. Preserve unrelated and unfinished work.
 
 ## English-only rule
 
@@ -30,6 +30,9 @@ escapes to disguise non-English prose.
   normalization and directory link resolution, not just string comparisons.
 - This repository is public. Do not commit personal projects, user-specific absolute paths,
   session history, or exports. Use synthetic examples.
+- Git ignores `local/`. Keep useful context that does not belong in a public repository there,
+  such as machine notes, prepared applications and retired logs, instead of deleting it. Clones
+  do not have it, so nothing tracked may depend on it.
 - Accepted requirements and proposals are separated in `docs/PRODUCT.md`.
 - Research UI, database, and major dependency choices and record the rationale in
   an ADR. Make routine implementation decisions independently within task scope.
@@ -46,6 +49,8 @@ escapes to disguise non-English prose.
   productivity scoring without a specific user request.
 - Use UTF-8 without BOM and LF line endings. Use English file names and identifiers.
 - Publish releases only through scripts/build.ps1 to dist/AttentionFocus/attention-focus.exe.
+  The release workflow may then replace that EXE only with its validly signed copy, through
+  scripts/use-signed-exe.ps1.
   On a locked EXE, report the error without creating alternate files or directories.
   Never terminate a running app automatically. If you launched it, offer to exit it
   and wait for user approval before closing it. Cargo target files are build intermediates.

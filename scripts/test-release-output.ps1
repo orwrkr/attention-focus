@@ -23,9 +23,14 @@ Publish-ReleaseOutput $paths | Out-Null
 if ([IO.File]::ReadAllText($paths.Output) -ne 'New build' -or (Test-Path -LiteralPath $paths.Source) -or (Test-Path -LiteralPath $paths.LegacyDirectory)) {
     throw 'Release publication did not leave one distributed EXE.'
 }
+$unsigned = Join-Path $testRoot 'unsigned.exe'
+[IO.File]::WriteAllText($unsigned, 'Not signed')
+$refusal = ''
+try { & (Join-Path $PSScriptRoot 'use-signed-exe.ps1') -SignedExe $unsigned | Out-Null } catch { $refusal = "$_" }
+if ($refusal -notlike 'Refusing*signature status*') { throw "An unsigned EXE was not refused: $refusal" }
 # Resolve and verify the exact temporary directory before recursive test cleanup.
 $resolved = (Resolve-Path -LiteralPath $testRoot).Path
 $allowed = [IO.Path]::GetFullPath((Join-Path $project 'target')) + [IO.Path]::DirectorySeparatorChar
 if (-not $resolved.StartsWith($allowed, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe test cleanup target.' }
 Remove-Item -LiteralPath $resolved -Recurse -Force
-Write-Output 'Release output checks passed: locked current/legacy files, preservation, atomic replacement, and obsolete-copy cleanup.'
+Write-Output 'Release output checks passed: locked current/legacy files, preservation, atomic replacement, obsolete-copy cleanup, and unsigned EXE refusal.'

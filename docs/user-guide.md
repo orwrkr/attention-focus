@@ -262,6 +262,27 @@ existing history; sessions keep the names they recorded.
 
 <!-- pagebreak -->
 
+# See activity in charts
+
+**Charts** sit above the tables and follow the selected period and time zone. Choose a view:
+
+- **Timeline** shows when you worked. Each day is a row on a 24-hour axis, with one block per
+  session and the day's total. Time crossing midnight appears on both days.
+- **By day** shows how much you worked. Each day is a column divided by project. A single
+  day becomes one bar with each project's share.
+- **Weekly rhythm** shows when you usually work: time per weekday and hour, where a stronger
+  color means more time.
+
+Solid marks are finished time. A lighter mark with an outline is the running interval. An
+outline alone is time that needs review, which stays out of day totals and Weekly rhythm,
+just as it stays out of Total. Hover over a mark for its details; the tables hold the same
+numbers, so nothing depends on the pointer.
+
+Each project keeps an automatic color across periods. With more than eight active projects,
+two can share a color: the chart gives it to the larger, and the smaller joins a neutral
+**Other**, while hover still names it. Timeline and By day cover up to 92 days and say so
+for longer periods; Weekly rhythm has no such limit. A chart never changes recorded time.
+
 # Export CSV and Markdown
 
 Open **Focus history and reports**, set the period/timezone, then choose **Export CSV**

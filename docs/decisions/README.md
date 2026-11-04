@@ -37,5 +37,7 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0029](0029-day-boundary-intervals.md) | accepted | Split intervals at the local day start |
 | [0030](0030-launch-commands-and-clock-corrections.md) | accepted | Repeated launches, queued commands and small clock corrections |
 | [0031](0031-application-projects.md) | accepted | Application-owned projects and tasks |
+| [0032](0032-activity-charts.md) | accepted | Activity charts in reports |
+| [0033](0033-release-workflow-and-signing.md) | accepted | Release workflow and free code signing |
 
-Next number: `0032`. Template: `templates/ADR.md` from the repository root.
+Next number: `0034`. Template: `templates/ADR.md` from the repository root.

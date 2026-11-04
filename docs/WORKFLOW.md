@@ -2,7 +2,8 @@
 
 ## Task cycle
 
-1. **Restore context.** Read the entry documents and inspect the working tree.
+1. **Restore context.** Read the entry documents, `local/README.md` if it exists, and inspect
+   the working tree.
 2. **Select a task.** Choose a ready task, check dependencies, and set its status to
    `in_progress`. Keep one primary task active at a time.
 3. **Define the outcome.** Record scope, acceptance criteria, and a short plan.
@@ -42,4 +43,5 @@ Keep task card and index statuses consistent.
 - Another agent can resume without access to chat history.
 
 Keep `docs/CONTEXT.md` concise and current. Git and task cards hold implementation
-history; ADRs hold decision rationale.
+history; ADRs hold decision rationale. The ignored `local/` directory holds useful context
+that does not belong in a public repository; see AGENTS.md.

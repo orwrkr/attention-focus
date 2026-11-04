@@ -37,12 +37,14 @@
 | [T-0033](T-0033-day-boundary-accounting.md) | done | Day-Boundary Intervals and Verified Totals | T-0018 |
 | [T-0034](T-0034-public-release-readiness.md) | in_progress | Public GitHub Release Readiness | T-0035 |
 | [T-0035](T-0035-application-projects.md) | done | Application-Owned Projects and Tasks | T-0033 |
-| [T-0036](T-0036-activity-visualization.md) | backlog | Graphical Activity Views | Owner decision |
+| [T-0036](T-0036-activity-visualization.md) | done | Graphical Activity Views | T-0035 |
+| [T-0037](T-0037-code-signing.md) | blocked | Free Code Signing Through SignPath Foundation | T-0034; first public release |
 
 Task template: `templates/TASK.md` from the repository root.
 
-Next check: the project panel (T-0035), native tray activation (T-0031) and a real midnight
-crossing (T-0032, T-0033) in Development, using fresh desktop permission.
-Next implementation task: finish [T-0034](T-0034-public-release-readiness.md), then
-[T-0036](T-0036-activity-visualization.md) or [T-0019](T-0019-history-correction.md). T-0002
-remains a separate desktop acceptance gate and does not authorize disruptive system tests.
+Next check: the charts (T-0036), the project panel (T-0035), native tray activation (T-0031) and
+a real midnight crossing (T-0032, T-0033) in Development, using fresh desktop permission.
+Next steps: finish [T-0034](T-0034-public-release-readiness.md), which needs the owner, and then
+[T-0037](T-0037-code-signing.md). The next implementation task is
+[T-0019](T-0019-history-correction.md). T-0002 remains a separate desktop acceptance gate and
+does not authorize disruptive system tests.
