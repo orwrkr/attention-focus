@@ -12,15 +12,47 @@ fn lines(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Text sent to the worker, kept until the result in case it has to come back.
+enum Submitted {
+    Projects(String),
+    Tasks(i64, String),
+    Rename(i64, String),
+}
+
 #[derive(Default)]
 pub struct Panel {
     new_projects: String,
     new_tasks: HashMap<i64, String>,
+    /// Only names being edited; every other row shows the project's current title.
     renames: HashMap<i64, String>,
     show_archived: bool,
+    submitted: Option<Submitted>,
 }
 
 impl Panel {
+    pub fn committed(&mut self) {
+        self.submitted = None;
+    }
+
+    /// A refused change gives its text back, unless a new draft has already started.
+    pub fn rejected(&mut self) {
+        match self.submitted.take() {
+            Some(Submitted::Projects(text)) if self.new_projects.is_empty() => {
+                self.new_projects = text;
+            }
+            Some(Submitted::Tasks(project, text)) => {
+                let draft = self.new_tasks.entry(project).or_default();
+                if draft.is_empty() {
+                    *draft = text;
+                }
+            }
+            Some(Submitted::Rename(project, text)) => {
+                self.renames.entry(project).or_insert(text);
+            }
+            _ => {}
+        }
+    }
+
     /// Returns the changes the user asked for during this frame.
     pub fn show(
         &mut self,
@@ -43,7 +75,7 @@ impl Panel {
                 .clicked()
             {
                 commands.push(Command::AddProjects(names));
-                self.new_projects.clear();
+                self.submitted = Some(Submitted::Projects(std::mem::take(&mut self.new_projects)));
             }
             let archived = projects.iter().filter(|p| p.archived).count();
             if archived > 0 {
@@ -77,11 +109,17 @@ impl Panel {
             .id_salt("details")
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let draft = self
+                    let mut draft = self
                         .renames
-                        .entry(project.id)
-                        .or_insert_with(|| project.title.clone());
-                    ui.add(egui::TextEdit::singleline(draft).desired_width(200.0));
+                        .get(&project.id)
+                        .cloned()
+                        .unwrap_or_else(|| project.title.clone());
+                    if ui
+                        .add(egui::TextEdit::singleline(&mut draft).desired_width(200.0))
+                        .changed()
+                    {
+                        self.renames.insert(project.id, draft.clone());
+                    }
                     let changed = draft.trim() != project.title && !draft.trim().is_empty();
                     if ui
                         .add_enabled(changed, egui::Button::new("Rename"))
@@ -93,6 +131,7 @@ impl Panel {
                             title: draft.clone(),
                         });
                         self.renames.remove(&project.id);
+                        self.submitted = Some(Submitted::Rename(project.id, draft));
                     }
                 });
                 let (done, unfinished): (Vec<_>, Vec<_>) =
@@ -142,7 +181,7 @@ impl Panel {
                             project: project.id,
                             titles: names,
                         });
-                        draft.clear();
+                        self.submitted = Some(Submitted::Tasks(project.id, std::mem::take(draft)));
                     }
                 }
                 ui.horizontal(|ui| {
@@ -348,6 +387,53 @@ mod tests {
                 archived: true
             }]
         ));
+    }
+
+    #[test]
+    fn rename_box_follows_the_saved_title_and_cannot_send_the_old_name_back() {
+        let mut harness = Harness::new(vec![project(5, "Alpha", false, false)]);
+        harness.click("Alpha (1)");
+        harness.panel.renames.insert(5, "Renamed".into());
+        assert_eq!(harness.click("Rename").len(), 1);
+        // Frames keep running before the worker confirms, without keeping the old name.
+        harness.settled();
+        assert!(harness.panel.renames.is_empty());
+        harness.projects[0].title = "Renamed".into();
+        harness.panel.committed();
+        assert!(harness.visible("Renamed"));
+        assert!(
+            harness.click("Rename").is_empty(),
+            "the box shows the saved name, so there is nothing to send"
+        );
+    }
+
+    #[test]
+    fn refused_changes_give_their_text_back() {
+        let mut harness = Harness::new(vec![project(5, "Alpha", false, false)]);
+        harness.panel.new_projects = "One\nTwo".into();
+        assert_eq!(harness.click("Add projects").len(), 1);
+        assert!(harness.panel.new_projects.is_empty());
+        harness.panel.rejected();
+        assert_eq!(harness.panel.new_projects, "One\nTwo");
+        // A success forgets the text, so a later refusal cannot bring it back.
+        assert_eq!(harness.click("Add projects").len(), 1);
+        harness.panel.committed();
+        harness.panel.rejected();
+        assert!(harness.panel.new_projects.is_empty());
+        harness.click("Alpha (1)");
+        harness.panel.new_tasks.insert(5, "Task".into());
+        assert_eq!(harness.click("Add tasks").len(), 1);
+        harness.panel.rejected();
+        assert_eq!(harness.panel.new_tasks[&5], "Task");
+        harness.panel.renames.insert(5, "Taken name".into());
+        assert_eq!(harness.click("Rename").len(), 1);
+        harness.panel.rejected();
+        assert_eq!(harness.panel.renames[&5], "Taken name");
+        // A refusal does not replace what the user has started typing since.
+        harness.panel.submitted = Some(Submitted::Projects("Old".into()));
+        harness.panel.new_projects = "Newer".into();
+        harness.panel.rejected();
+        assert_eq!(harness.panel.new_projects, "Newer");
     }
 
     #[test]

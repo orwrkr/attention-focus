@@ -60,7 +60,9 @@ skip finished history outside their range.
 
 Projects that were listed in the former source but never tracked do not carry over; add
 them by pasting a list. Archive state from the former source is not known either, so
-converted projects start active. Older EXEs refuse a schema-four database, and returning
+converted projects start active. Former identities that recorded the same title stay separate
+projects with equal names, which only new names and renames are checked against. Older EXEs
+refuse a schema-four database, and returning
 to one requires restoring the backup, losing sessions recorded since. Former source
 paths remain in the local alias table. Older decision records and task cards still describe
 the source integration as history. T-0019 can rely on project IDs for corrections.

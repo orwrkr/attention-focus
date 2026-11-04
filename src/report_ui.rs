@@ -26,6 +26,7 @@ pub struct Panel {
     zone_search: String,
     active_start: Option<i64>,
     needs_review: bool,
+    project_titles: Vec<(i64, String)>,
     growing: bool,
     was_open: bool,
     export_request: Option<crate::export::Format>,
@@ -62,6 +63,7 @@ impl Default for Panel {
             zone_search: String::new(),
             active_start: None,
             needs_review: false,
+            project_titles: Vec::new(),
             growing: false,
             was_open: false,
             export_request: None,
@@ -133,10 +135,17 @@ impl Panel {
             Err(error) => self.error = Some(error),
         }
     }
-    pub fn invalidate(&mut self) {
-        self.dirty = true;
-    }
     pub fn tracking_changed(&mut self, state: &tracking::Snapshot, committed: bool, wall_ms: i64) {
+        // Totals show current project names, so a rename must refresh a report on screen.
+        let titles: Vec<_> = state
+            .projects
+            .iter()
+            .map(|project| (project.id, project.title.clone()))
+            .collect();
+        if titles != self.project_titles {
+            self.project_titles = titles;
+            self.dirty = true;
+        }
         let next = if state.running {
             state.active_start_ms
         } else {
@@ -753,6 +762,36 @@ mod tests {
         assert_eq!(panel.request.through, panel.request.from);
     }
     #[test]
+    fn renaming_a_project_refreshes_the_report_even_while_stopped() {
+        let mut panel = fixed();
+        let (_, end) = panel.request.bounds().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(8);
+        let now = Instant::now();
+        let state = |title: &str| tracking::Snapshot {
+            projects: vec![tracking::CatalogProject {
+                id: 1,
+                title: title.into(),
+                archived: false,
+                used: true,
+                tasks: Vec::new(),
+            }],
+            ..tracking::Snapshot::default()
+        };
+        panel.tracking_changed(&state("Old"), false, end + 1000);
+        panel.tick_at(&sender, true, now, end + 1000);
+        receiver.try_recv().unwrap();
+        panel.receive(panel.request_id, Ok(response(&panel.request)));
+        panel.tracking_changed(&state("Old"), true, end + 2000);
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL, end + 2000);
+        assert!(
+            receiver.try_recv().is_err(),
+            "unchanged names do not reload"
+        );
+        panel.tracking_changed(&state("New"), true, end + 3000);
+        panel.tick_at(&sender, true, now + REFRESH_INTERVAL * 2, end + 3000);
+        assert!(receiver.try_recv().is_ok());
+    }
+    #[test]
     fn period_hint_states_whether_dates_follow_the_current_day() {
         assert!(period_hint(Some(1), "UTC").contains("new date at midnight (UTC)"));
         assert!(period_hint(Some(7), "UTC").contains("last 7 days"));
@@ -934,7 +973,7 @@ mod tests {
         let id = panel.request_id;
         panel.receive(id - 1, Err("Stale failure".into()));
         assert!(panel.pending);
-        panel.invalidate();
+        panel.dirty = true;
         panel.receive(id, Ok(response(&panel.request)));
         panel.tick_at(&sender, true, now + Duration::from_millis(351), wall);
         assert!(matches!(
@@ -957,7 +996,7 @@ mod tests {
         assert!(panel.report.is_some());
         assert!(panel.error.is_some());
         sender.try_send(tracking::Command::Stop).unwrap();
-        panel.invalidate();
+        panel.dirty = true;
         panel.tick_at(&sender, true, now, wall);
         assert!(!panel.pending);
         receiver.try_recv().unwrap();

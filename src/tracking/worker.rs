@@ -38,7 +38,7 @@ pub fn spawn(
                         notify(Event::ExitReady);
                         break;
                     }
-                    notify(Event::Error(
+                    notify(Event::Rejected(
                         "Tracking is unavailable. Resolve the storage error and restart.".into(),
                     ));
                 }
@@ -46,12 +46,15 @@ pub fn spawn(
             }
         };
         let mut engine = Engine::new(store, now());
+        // Every command from the interface gets exactly one Committed or Rejected, so the
+        // interface knows when it may send the next one. Other work reports separately.
         let publish = |engine: &Engine, committed: bool| match engine.snapshot(now()) {
             Ok(state) => notify(if committed {
                 Event::Committed(state)
             } else {
                 Event::State(state)
             }),
+            Err(error) if committed => notify(Event::Rejected(error.to_string())),
             Err(error) => notify(Event::Error(error.to_string())),
         };
         publish(&engine, false);
@@ -82,7 +85,10 @@ pub fn spawn(
                 Some(Command::Report { id, request }) => Some((*id, request.clone())),
                 _ => None,
             };
-            let committed = command.is_some() && report_request.is_none();
+            let from_interface = matches!(
+                &command,
+                Some(c) if !matches!(c, Command::Report { .. } | Command::Interrupt { .. })
+            );
             let succeeded = match engine.apply(command, moment) {
                 Ok(true) => {
                     notify(Event::ExitReady);
@@ -96,7 +102,8 @@ pub fn spawn(
                         let result = engine
                             .snapshot(moment)
                             .and_then(|state| {
-                                engine.store.report(&request, moment, state.elapsed_ms)
+                                let at = engine.on_timeline(moment);
+                                engine.store.report(&request, at, state.elapsed_ms)
                             })
                             .map(Box::new)
                             .map_err(|error| format!("Cannot load report: {error}"));
@@ -112,11 +119,15 @@ pub fn spawn(
                             result: Err(message.clone()),
                         });
                     }
-                    notify(Event::Error(message));
+                    notify(if from_interface {
+                        Event::Rejected(message)
+                    } else {
+                        Event::Error(message)
+                    });
                     false
                 }
             };
-            publish(&engine, committed && succeeded);
+            publish(&engine, from_interface && succeeded);
         }
     });
     sender

@@ -74,7 +74,7 @@ impl Store {
     pub(super) fn catalog(&self) -> Result<Vec<CatalogProject>> {
         // A malformed historical row must not hide the list; it is reported by the report.
         let mut used = HashSet::<(i64, Option<String>)>::new();
-        let mut statement = self.connection.prepare("SELECT DISTINCT json_extract(activity,'$.project.id'),json_extract(activity,'$.project.task') FROM focus_sessions WHERE json_valid(activity) AND json_extract(activity,'$.project.id') IS NOT NULL")?;
+        let mut statement = self.connection.prepare("SELECT DISTINCT json_extract(activity,'$.project.id'),CASE WHEN json_type(activity,'$.project.task')='text' THEN json_extract(activity,'$.project.task') END FROM focus_sessions WHERE CASE WHEN json_valid(activity) THEN json_type(activity,'$.project.id')='integer' ELSE 0 END")?;
         let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
         for row in rows {
             used.insert(row?);
@@ -121,6 +121,38 @@ impl Store {
         }
         projects.sort_by_cached_key(|p| (p.title.to_lowercase(), p.id));
         Ok(projects)
+    }
+    /// New intervals cannot use what the list marks as archived or finished, even if a queued
+    /// command was decided before that change. Only the interface can name other activities.
+    pub(super) fn check_startable(&self, activity: &Activity) -> Result<()> {
+        let Some(project) = &activity.project else {
+            return Ok(());
+        };
+        let archived: Option<bool> = self
+            .connection
+            .query_row(
+                "SELECT archived FROM focus_projects WHERE id=?1",
+                [project.id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if archived == Some(true) {
+            return Err(invalid("This project is archived. Choose another activity.").into());
+        }
+        if let Some(task) = &project.task {
+            let done: Option<bool> = self
+                .connection
+                .query_row(
+                    "SELECT done FROM focus_tasks WHERE project_id=?1 AND title=?2",
+                    params![project.id, task],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if done == Some(true) {
+                return Err(invalid("This task is finished. Choose another activity.").into());
+            }
+        }
+        Ok(())
     }
     pub(super) fn current_titles(&self) -> Result<HashMap<i64, String>> {
         Ok(project_titles(&self.connection)?.into_iter().collect())

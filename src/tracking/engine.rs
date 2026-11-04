@@ -36,6 +36,20 @@ impl Engine {
     fn zone(&self) -> jiff::tz::TimeZone {
         self.zone.clone().unwrap_or_else(jiff::tz::TimeZone::system)
     }
+    /// Windows can step a clock back slightly when it synchronizes. While tracking, wall time
+    /// then continues from the latest observation by monotonic time, so a saved interval
+    /// always spans its elapsed time and the next one cannot overlap it.
+    pub(super) fn on_timeline(&self, now: Moment) -> Moment {
+        if self.started.is_none() {
+            return now;
+        }
+        let continued = i128::from(self.observed.wall_ms) + i128::from(now.mono_ms)
+            - i128::from(self.observed.mono_ms);
+        Moment {
+            wall_ms: i64::try_from(continued).map_or(now.wall_ms, |wall| now.wall_ms.max(wall)),
+            ..now
+        }
+    }
     pub fn snapshot(&self, now: Moment) -> Result<Snapshot> {
         self.snapshot_in_zone(now, self.zone())
     }
@@ -44,6 +58,7 @@ impl Engine {
         now: Moment,
         zone: jiff::tz::TimeZone,
     ) -> Result<Snapshot> {
+        let now = self.on_timeline(now);
         let mut snapshot = match self.stored.borrow().as_ref() {
             Some(stored) => stored.clone(),
             None => self.store.snapshot()?,
@@ -165,16 +180,7 @@ impl Engine {
             self.started = None;
             self.stored.borrow_mut().take();
         }
-        // Windows can step a clock back slightly when it synchronizes. Hold the timeline at
-        // its latest point until the clock catches up, so saved intervals never overlap.
-        let now = if self.started.is_some() && mono_delta >= 0 && wall_delta < 0 {
-            Moment {
-                wall_ms: self.observed.wall_ms,
-                ..now
-            }
-        } else {
-            now
-        };
+        let now = self.on_timeline(now);
         if mono_delta >= 0 {
             self.observed = now;
         }
@@ -209,6 +215,7 @@ impl Engine {
                         match self.store.change_mode()? {
                             ChangeMode::NewInterval => self.start(now, &activity, Some(elapsed))?,
                             ChangeMode::EditCurrent => {
+                                self.store.check_startable(&activity)?;
                                 self.store.reassign(&activity, now.wall_ms, elapsed)?;
                                 self.checkpoint_mono = now.mono_ms;
                             }
@@ -333,6 +340,7 @@ impl Engine {
         Ok(())
     }
     fn start(&mut self, now: Moment, activity: &Activity, switching: Option<u64>) -> Result<()> {
+        self.store.check_startable(activity)?;
         self.store.begin(now.wall_ms, activity, switching)?;
         self.started = Some(now);
         self.checkpoint_mono = now.mono_ms;

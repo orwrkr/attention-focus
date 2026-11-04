@@ -430,7 +430,10 @@ impl Desktop {
                 self.command(tracking::Command::ChangeActivity(self.activity.clone()));
             }
         }
-        if !self.state.running && !self.state.available(&self.activity) {
+        // An interval already running finishes normally, until an edit would need to apply.
+        if !self.state.available(&self.activity)
+            && (!self.state.running || self.activity != self.state.activity)
+        {
             ui.label("The selected project or task is archived, finished or removed. Choose another activity.");
         }
         if self.state.projects.iter().all(|project| project.archived) {
@@ -476,7 +479,10 @@ impl eframe::App for Desktop {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, STORAGE_KEY, &self.note_memory);
+        // Until older notes are converted, saving empty memory would make them look done.
+        if self.legacy_notes.is_none() {
+            eframe::set_value(storage, STORAGE_KEY, &self.note_memory);
+        }
         eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
         eframe::set_value(storage, "startup_tray", &self.startup.tray);
         eframe::set_value(storage, "project_search", &self.project_search);
@@ -600,13 +606,16 @@ impl eframe::App for Desktop {
                     self.state = state;
                     self.ready = true;
                     if completed {
+                        self.projects_panel.committed();
                         self.command_finished();
                     }
                 }
-                Action::Tracking(tracking::Event::Error(error)) => {
+                Action::Tracking(tracking::Event::Rejected(error)) => {
+                    self.projects_panel.rejected();
                     self.command_finished();
                     self.show_error(ctx, error);
                 }
+                Action::Tracking(tracking::Event::Error(error)) => self.show_error(ctx, error),
                 Action::Tracking(tracking::Event::ExitReady) => {
                     self.exiting = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -633,6 +642,9 @@ impl eframe::App for Desktop {
                 self.error = Some(format!("Cannot update tray icon: {error}"));
             }
             self.tray_level = Some(key);
+        }
+        if let Err(error) = self.outbox.pump() {
+            self.error = Some(error);
         }
         let (show, delay) = self.clicks.poll(Instant::now());
         if show {

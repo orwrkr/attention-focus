@@ -209,12 +209,17 @@ impl Boundary {
     }
 }
 pub enum Event {
+    /// Current state, from a timer tick, a report or a Windows interruption.
     State(Snapshot),
+    /// A command from the interface succeeded.
     Committed(Snapshot),
     Report {
         id: u64,
         result: std::result::Result<Box<reports::Report>, String>,
     },
+    /// A command from the interface failed.
+    Rejected(String),
+    /// Background work failed; no interface command is affected.
     Error(String),
     ExitReady,
 }

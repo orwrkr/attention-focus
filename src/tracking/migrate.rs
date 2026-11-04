@@ -96,7 +96,7 @@ impl ProjectConversion<'_> {
 fn upgrade_to_application_projects(tx: &Transaction<'_>) -> Result<()> {
     tx.execute_batch("CREATE TABLE focus_projects(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0,1)));
         CREATE TABLE focus_tasks(id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES focus_projects(id) ON DELETE CASCADE, title TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0 CHECK(done IN (0,1)), UNIQUE(project_id,title));
-        CREATE TABLE focus_project_aliases(legacy_key TEXT PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES focus_projects(id));
+        CREATE TABLE focus_project_aliases(legacy_key TEXT PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES focus_projects(id) ON DELETE CASCADE);
         CREATE INDEX focus_sessions_ended ON focus_sessions(ended_ms);")?;
     let mut conversion = ProjectConversion {
         tx,

@@ -797,20 +797,20 @@ fn small_backward_clock_corrections_keep_tracking_and_the_timeline_monotonic() {
         state.elapsed_ms, 11_000,
         "monotonic time stays authoritative"
     );
-    // Saved times never move backward, so the next interval cannot overlap this one.
+    // Saved times continue by monotonic time, so the next interval cannot overlap this one.
     engine
         .apply(Some(Command::Switch(activity("B"))), corrected(12_000))
         .unwrap();
     let stored = rows(&engine);
-    assert_eq!(stored[0].end, Some(at(10_000).wall_ms));
+    assert_eq!(stored[0].end, Some(at(12_000).wall_ms));
     assert_eq!(stored[0].elapsed, 12_000);
-    assert_eq!(stored[1].start, at(10_000).wall_ms);
+    assert_eq!(stored[1].start, at(12_000).wall_ms);
     engine.apply(None, corrected(14_000)).unwrap();
     engine
         .apply(Some(Command::Stop), corrected(15_000))
         .unwrap();
     let stored = rows(&engine);
-    assert_eq!(stored[1].end, Some(corrected(15_000).wall_ms));
+    assert_eq!(stored[1].end, Some(at(15_000).wall_ms));
     assert_eq!(stored[1].elapsed, 3_000);
     let overlaps: i64 = engine.store.connection.query_row("SELECT COUNT(*) FROM focus_sessions a JOIN focus_sessions b ON a.id<b.id AND a.started_ms<b.ended_ms AND b.started_ms<a.ended_ms", [], |r| r.get(0)).unwrap();
     assert_eq!(overlaps, 0);
@@ -827,6 +827,48 @@ fn small_backward_clock_corrections_keep_tracking_and_the_timeline_monotonic() {
     };
     engine.apply(None, changed).unwrap();
     assert!(engine.snapshot(changed).unwrap().needs_review);
+}
+
+#[test]
+fn interval_inside_a_clock_correction_still_counts_everywhere() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let corrected = |mono_ms: u64| Moment {
+        wall_ms: 1_000_000 + mono_ms as i64 - 2_000,
+        mono_ms,
+    };
+    let request = whole_day("1970-01-01", "UTC");
+    engine
+        .apply(Some(Command::Start(activity("A"))), at(0))
+        .unwrap();
+    engine.apply(None, corrected(1_000)).unwrap();
+    // While running, a report and Today agree with the timer despite the earlier clock.
+    let state = engine.snapshot(corrected(1_500)).unwrap();
+    assert_eq!(state.elapsed_ms, 1_500);
+    assert_eq!(state.daily_all_ms, Some(1_500));
+    let report = engine
+        .store
+        .report(
+            &request,
+            engine.on_timeline(corrected(1_500)),
+            state.elapsed_ms,
+        )
+        .unwrap();
+    assert!(report.diagnostics.is_empty());
+    assert_eq!(report.running_ms, 1_500);
+    // The whole interval lies within the correction, yet it has a real wall span.
+    engine.apply(Some(Command::Stop), corrected(2_000)).unwrap();
+    let stored = rows(&engine);
+    assert_eq!(
+        (stored[0].start, stored[0].end, stored[0].elapsed),
+        (at(0).wall_ms, Some(at(2_000).wall_ms), 2_000)
+    );
+    let report = engine.store.report(&request, corrected(2_000), 0).unwrap();
+    assert!(report.diagnostics.is_empty(), "the session is not excluded");
+    assert_eq!(report.saved_ms, 2_000);
+    let state = engine.snapshot(corrected(2_000)).unwrap();
+    assert_eq!(state.total_ms, 2_000);
+    assert_eq!(state.daily_all_ms, Some(2_000), "all totals agree");
 }
 
 #[test]
@@ -1808,9 +1850,10 @@ fn worker_exit_and_lifecycle_confirmation_follow_commit() {
         })
         .unwrap();
     saved.recv_timeout(Duration::from_secs(5)).unwrap();
+    // Windows interruptions did not come from the interface, so they finish no command of its.
     assert!(matches!(
         receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
-        Event::Committed(Snapshot { running: false, .. })
+        Event::State(Snapshot { running: false, .. })
     ));
     commands.send(Command::Start(activity("Next"))).unwrap();
     assert!(matches!(
@@ -2531,6 +2574,166 @@ fn archiving_blocks_new_starts_but_keeps_running_time_and_reports() {
             )
             .is_err()
     );
+}
+
+#[test]
+fn queued_commands_cannot_start_on_archived_projects_or_finished_tasks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    add(&mut engine, &["Alpha", "Beta"]).unwrap();
+    let alpha = project_id(&engine, "Alpha");
+    let beta = project_id(&engine, "Beta");
+    engine
+        .apply(
+            Some(Command::AddTasks {
+                project: beta,
+                titles: vec!["Task".into()],
+            }),
+            at(0),
+        )
+        .unwrap();
+    let archived = chosen(&engine, "Alpha", None);
+    engine
+        .apply(Some(Command::Select(archived.clone())), at(0))
+        .unwrap();
+    engine
+        .apply(
+            Some(Command::SetProjectArchived {
+                id: alpha,
+                archived: true,
+            }),
+            at(0),
+        )
+        .unwrap();
+    // A tray toggle decided before the archive arrived starts nothing.
+    assert!(engine.apply(Some(Command::Toggle), at(1)).is_err());
+    assert!(
+        engine
+            .apply(Some(Command::Start(archived.clone())), at(1))
+            .is_err()
+    );
+    assert!(rows(&engine).is_empty());
+    assert!(!engine.snapshot(at(1)).unwrap().running);
+    let finished = chosen(&engine, "Beta", Some("Task"));
+    engine
+        .apply(
+            Some(Command::SetTaskDone {
+                project: beta,
+                title: "Task".into(),
+                done: true,
+            }),
+            at(1),
+        )
+        .unwrap();
+    assert!(
+        engine
+            .apply(Some(Command::Start(finished.clone())), at(1))
+            .is_err()
+    );
+    // While running, neither a switch nor a reassignment can move onto them either.
+    engine
+        .apply(Some(Command::Start(chosen(&engine, "Beta", None))), at(2))
+        .unwrap();
+    for mode in [ChangeMode::NewInterval, ChangeMode::EditCurrent] {
+        engine
+            .apply(Some(Command::SetChangeMode(mode)), at(3))
+            .unwrap();
+        for target in [&archived, &finished] {
+            assert!(
+                engine
+                    .apply(Some(Command::ChangeActivity(target.clone())), at(4))
+                    .is_err()
+            );
+        }
+    }
+    let state = engine.snapshot(at(5)).unwrap();
+    assert!(state.running);
+    assert_eq!(state.activity.label(), "Beta");
+    assert_eq!(rows(&engine).len(), 1);
+}
+
+#[test]
+fn project_only_selected_before_the_upgrade_can_be_deleted_after_choosing_another() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("focus.sqlite3");
+    legacy_database(&path, 3, &[]);
+    Connection::open(&path)
+        .unwrap()
+        .execute(
+            "UPDATE focus_selection SET activity=?1",
+            [legacy_activity(1, "chosen", "Chosen only", None)],
+        )
+        .unwrap();
+    let mut engine = Engine::new(Store::open(&path).unwrap(), at(0));
+    engine.zone = Some(jiff::tz::TimeZone::UTC);
+    let id = project_id(&engine, "Chosen only");
+    assert!(
+        engine
+            .apply(Some(Command::DeleteProject(id)), at(0))
+            .is_err(),
+        "it is still the saved selection"
+    );
+    engine
+        .apply(Some(Command::Select(Activity::default())), at(0))
+        .unwrap();
+    engine
+        .apply(Some(Command::DeleteProject(id)), at(0))
+        .unwrap();
+    let state = engine.snapshot(at(0)).unwrap();
+    assert!(state.projects.is_empty() && state.legacy_projects.is_empty());
+}
+
+#[test]
+fn odd_recorded_activities_do_not_stop_the_list_from_loading() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("focus.sqlite3");
+    let store = Store::open(&path).unwrap();
+    for (start, activity) in [
+        (1_000_i64, "not JSON"),
+        (2_000, r#"{"project":{"id":"text","task":5},"note":""}"#),
+        (3_000, r#"{"project":{"id":7,"task":5},"note":""}"#),
+    ] {
+        store.connection.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,ended_ms,elapsed_ms,state,activity) VALUES(?1,?1,?1,0,'stopped',?2)", rusqlite::params![start, activity]).unwrap();
+    }
+    drop(store);
+    assert!(Store::open(&path).unwrap().snapshot().is_ok());
+}
+
+#[test]
+fn refused_interface_commands_answer_once_and_later_commands_still_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let (events, receiver) = std::sync::mpsc::channel();
+    let commands = spawn(dir.path().join("focus.sqlite3"), move |event| {
+        let _ = events.send(event);
+    });
+    let timeout = Duration::from_secs(5);
+    assert!(matches!(
+        receiver.recv_timeout(timeout).unwrap(),
+        Event::State(_)
+    ));
+    commands
+        .send(Command::AddProjects(vec!["  ".into()]))
+        .unwrap();
+    assert!(matches!(
+        receiver.recv_timeout(timeout).unwrap(),
+        Event::Rejected(_)
+    ));
+    assert!(matches!(
+        receiver.recv_timeout(timeout).unwrap(),
+        Event::State(_)
+    ));
+    commands
+        .send(Command::AddProjects(vec!["Alpha".into()]))
+        .unwrap();
+    assert!(matches!(
+        receiver.recv_timeout(timeout).unwrap(),
+        Event::Committed(_)
+    ));
+    commands.send(Command::Exit).unwrap();
+    assert!(matches!(
+        receiver.recv_timeout(timeout).unwrap(),
+        Event::ExitReady
+    ));
 }
 
 #[test]
