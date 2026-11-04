@@ -625,86 +625,82 @@ impl Panel {
                         });
                 });
             });
-        ui.collapsing(
-            tf(
-                "reports.sessions",
-                &[("count", &report.matching_sessions.to_string())],
-            ),
-            |ui| {
-                if report.matching_sessions > report.history.len() {
-                    paragraph(ui, &message("reports.showing_recent", &[]));
-                }
-                paragraph(ui, &message("reports.clipped_hint", &[]));
-                crate::ui_support::inner_area("session-history", 360.0).show(ui, |ui| {
-                    for row in &report.history {
-                        let record = &row.record;
-                        let status = match record.state {
-                            reports::State::Saved => message("reports.status_saved", &[]),
-                            reports::State::Running => message("reports.status_running", &[]),
-                            reports::State::Review => message("reports.status_interrupted", &[]),
-                        };
-                        ui.push_id(record.id, |ui| {
-                            ui.collapsing(
-                                tf(
-                                    "reports.session_row",
-                                    &[
-                                        ("start", &report.range.format_time(record.start_ms)),
-                                        ("duration", &duration(row.clipped_ms)),
-                                        ("status", &status),
-                                    ],
-                                ),
-                                |ui| {
-                                    ui.strong(record.activity.painted_label().as_ref());
-                                    if let Some(project) = &record.activity.project
-                                        && let Some(task) = &project.task
-                                    {
-                                        ui.label(user(task).as_ref());
-                                    }
-                                    if !record.activity.note.is_empty() {
-                                        ui.label(user(&record.activity.note).as_ref());
-                                    }
-                                    ui.label(tf(
-                                        "reports.start",
-                                        &[("time", &report.range.format_time(record.start_ms))],
-                                    ));
-                                    ui.label(tf(
-                                        "reports.end",
-                                        &[("time", &report.range.format_time(record.end_ms))],
-                                    ));
-                                    ui.label(tf(
-                                        "reports.full_time",
-                                        &[("duration", &duration(record.elapsed_ms))],
-                                    ));
-                                    let reason = match record.reason.as_str() {
-                                        "stop" => message("reports.reason.stop", &[]),
-                                        "switch" => message("reports.reason.switch", &[]),
-                                        "day_boundary" => {
-                                            message("reports.reason.day_boundary", &[])
-                                        }
-                                        "exit" => message("reports.reason.exit", &[]),
-                                        "lock" => message("reports.reason.lock", &[]),
-                                        "logoff" => message("reports.reason.logoff", &[]),
-                                        "shutdown" => message("reports.reason.shutdown", &[]),
-                                        "suspend" => message("reports.reason.suspend", &[]),
-                                        "controller_lost" => {
-                                            message("reports.reason.controller_lost", &[])
-                                        }
-                                        "crash" => message("reports.reason.crash", &[]),
-                                        "clock_or_heartbeat" => {
-                                            message("reports.reason.clock_or_heartbeat", &[])
-                                        }
-                                        _ => message("reports.reason.unknown", &[]),
-                                    };
-                                    if record.state != reports::State::Running {
-                                        ui.label(tf("reports.ended", &[("reason", &reason)]));
-                                    }
-                                },
-                            );
+        // The text holds a count and is translated, so it cannot identify the section.
+        egui::CollapsingHeader::new(tf(
+            "reports.sessions",
+            &[("count", &report.matching_sessions.to_string())],
+        ))
+        .id_salt("Sessions")
+        .show(ui, |ui| {
+            if report.matching_sessions > report.history.len() {
+                paragraph(ui, &message("reports.showing_recent", &[]));
+            }
+            paragraph(ui, &message("reports.clipped_hint", &[]));
+            crate::ui_support::inner_area("session-history", 360.0).show(ui, |ui| {
+                for row in &report.history {
+                    let record = &row.record;
+                    let status = match record.state {
+                        reports::State::Saved => message("reports.status_saved", &[]),
+                        reports::State::Running => message("reports.status_running", &[]),
+                        reports::State::Review => message("reports.status_interrupted", &[]),
+                    };
+                    ui.push_id(record.id, |ui| {
+                        // The text holds a running duration, so it cannot identify the row.
+                        egui::CollapsingHeader::new(tf(
+                            "reports.session_row",
+                            &[
+                                ("start", &report.range.format_time(record.start_ms)),
+                                ("duration", &duration(row.clipped_ms)),
+                                ("status", &status),
+                            ],
+                        ))
+                        .id_salt("session")
+                        .show(ui, |ui| {
+                            ui.strong(record.activity.painted_label().as_ref());
+                            if let Some(project) = &record.activity.project
+                                && let Some(task) = &project.task
+                            {
+                                ui.label(user(task).as_ref());
+                            }
+                            if !record.activity.note.is_empty() {
+                                ui.label(user(&record.activity.note).as_ref());
+                            }
+                            ui.label(tf(
+                                "reports.start",
+                                &[("time", &report.range.format_time(record.start_ms))],
+                            ));
+                            ui.label(tf(
+                                "reports.end",
+                                &[("time", &report.range.format_time(record.end_ms))],
+                            ));
+                            ui.label(tf(
+                                "reports.full_time",
+                                &[("duration", &duration(record.elapsed_ms))],
+                            ));
+                            let reason = match record.reason.as_str() {
+                                "stop" => message("reports.reason.stop", &[]),
+                                "switch" => message("reports.reason.switch", &[]),
+                                "day_boundary" => message("reports.reason.day_boundary", &[]),
+                                "exit" => message("reports.reason.exit", &[]),
+                                "lock" => message("reports.reason.lock", &[]),
+                                "logoff" => message("reports.reason.logoff", &[]),
+                                "shutdown" => message("reports.reason.shutdown", &[]),
+                                "suspend" => message("reports.reason.suspend", &[]),
+                                "controller_lost" => message("reports.reason.controller_lost", &[]),
+                                "crash" => message("reports.reason.crash", &[]),
+                                "clock_or_heartbeat" => {
+                                    message("reports.reason.clock_or_heartbeat", &[])
+                                }
+                                _ => message("reports.reason.unknown", &[]),
+                            };
+                            if record.state != reports::State::Running {
+                                ui.label(tf("reports.ended", &[("reason", &reason)]));
+                            }
                         });
-                    }
-                });
-            },
-        );
+                    });
+                }
+            });
+        });
         if report.matching_sessions == 0 {
             ui.label(t("reports.no_sessions"));
         }
@@ -926,6 +922,106 @@ mod tests {
         assert_eq!(restored.chart_view, crate::charts::View::Timeline);
         assert_eq!(restored.project_colors, Default::default());
     }
+    #[test]
+    fn the_sessions_section_stays_open_when_its_count_or_language_changes() {
+        let context = egui::Context::default();
+        let panel = fixed();
+        let (begin, _) = panel.request.bounds().unwrap();
+        let report_with = |count: i64| {
+            let records = (0..count)
+                .map(|id| reports::Record {
+                    id: id + 1,
+                    start_ms: begin + id * 3_600_000,
+                    end_ms: begin + (id + 1) * 3_600_000,
+                    elapsed_ms: 3_600_000,
+                    state: reports::State::Saved,
+                    activity: tracking::Activity::default(),
+                    reason: "stop".into(),
+                })
+                .collect();
+            reports::compute(reports::Range::new(&panel.request).unwrap(), records, begin)
+        };
+        let mut step = 0;
+        let mut pass = |report: &reports::Report, events: Vec<egui::Event>| {
+            step += 1;
+            let mut output = context.run_ui(
+                egui::RawInput {
+                    time: Some(f64::from(step) * 0.2),
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(700.0, 1600.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    let mut view = crate::charts::View::default();
+                    let colors = crate::charts::ProjectColors::default();
+                    Panel::results(ui, report, &mut view, &colors);
+                },
+            );
+            output.textures_delta.clear();
+            output
+                .shapes
+                .iter()
+                .filter_map(|shape| match &shape.shape {
+                    egui::Shape::Text(text) => {
+                        Some((text.galley.job.text.clone(), text.visual_bounding_rect()))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let one = report_with(1);
+        let shown = pass(&one, vec![]);
+        let header = shown
+            .iter()
+            .find(|(text, _)| text == "Sessions (1)")
+            .expect("the section header is painted")
+            .1
+            .center();
+        pass(&one, vec![egui::Event::PointerMoved(header)]);
+        pass(
+            &one,
+            vec![
+                egui::Event::PointerButton {
+                    pos: header,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerButton {
+                    pos: header,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        );
+        for _ in 0..6 {
+            pass(&one, vec![]);
+        }
+        let has = |texts: &[(String, egui::Rect)], wanted: &str| {
+            texts.iter().any(|(text, _)| text == wanted)
+        };
+        let hint = message("reports.clipped_hint", &[]);
+        assert!(
+            has(&pass(&one, vec![]), &hint),
+            "the click opens the section"
+        );
+        let two = report_with(2);
+        pass(&two, vec![]);
+        assert!(has(&pass(&two, vec![]), &hint), "a new count keeps it open");
+        crate::i18n::with_language(crate::i18n::Language::German, || {
+            let hint = message("reports.clipped_hint", &[]);
+            pass(&two, vec![]);
+            assert!(
+                has(&pass(&two, vec![]), &hint),
+                "a new language keeps it open"
+            );
+        });
+    }
+
     #[test]
     fn reports_fit_the_narrowest_window_in_every_language() {
         let overflow = std::cell::RefCell::new(Vec::new());

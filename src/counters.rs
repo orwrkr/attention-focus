@@ -138,7 +138,7 @@ fn cards(
         );
     };
     if wide {
-        ui.horizontal(|ui| {
+        ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             let order = if mirrored { [2, 1, 0] } else { [0, 1, 2] };
             for index in order {
@@ -148,7 +148,7 @@ fn cards(
     } else {
         card(ui, 0, available - margin);
         ui.add_space(8.0);
-        ui.horizontal(|ui| {
+        ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             let order = if mirrored { [2, 1] } else { [1, 2] };
             for index in order {
@@ -255,7 +255,8 @@ mod tests {
                                 show(ui, &Snapshot::default(), true, false)
                             });
                             let [_, second, third] = response.bounds;
-                            if second.intersects(third) {
+                            if second.intersects(third) || (second.top() - third.top()).abs() > 0.5
+                            {
                                 overlap.borrow_mut().push(language);
                             }
                             // A failure inside a frame would abort the whole test process.

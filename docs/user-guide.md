@@ -176,8 +176,8 @@ This guide and the contents of exports stay in English.
 
 Chinese, Japanese, Korean and Arabic use fonts included with Windows, as do project names in those
 scripts. In Arabic, text reads from right to left and aligns to the right, while checkboxes, section
-arrows, scroll bars and the chart time axis stay where they are, and text fields show typed words
-in the order you type them.
+headings, date fields, scroll bars and the chart time axis stay where they are, and text fields show
+typed words in the order you type them.
 
 ## Start with Windows
 
@@ -211,14 +211,6 @@ static. Stopped tracking never animates. The app does not change Windows motion 
 The border stops requesting animation frames when the timer card is outside the visible
 scroll area or the window is minimized. Hiding to tray also suspends window rendering;
 tracking continues. Animation returns when the window and card become visible again.
-
-## Disk activity and saving
-
-History checkpoints are written about every ten seconds while tracking (about six
-updates per minute); timer repainting does not write history. UI preferences are checked
-for saving every thirty seconds and on normal Exit; unchanged settings skip the file
-write. A forced exit may lose the most recent UI changes. Start/stop and activity changes
-are saved immediately.
 
 <!-- pagebreak -->
 
@@ -377,6 +369,14 @@ days; reports and Today still divide its time by day. This option is remembered 
 If you enable it during a long interval, that interval is divided at every midnight it has
 already passed. The Windows time zone decides when midnight occurs. Editing the current
 interval changes only the part after the last split.
+
+## Disk activity and saving
+
+History checkpoints are written about every ten seconds while tracking (about six
+updates per minute); timer repainting does not write history. UI preferences are checked
+for saving every thirty seconds and on normal Exit; unchanged settings skip the file
+write. A forced exit may lose the most recent UI changes. Start/stop and activity changes
+are saved immediately.
 
 <!-- pagebreak -->
 

@@ -1,21 +1,22 @@
 # Current Context
 
-Updated: 2026-11-04. History lives in Git and the task cards, and decisions in the ADRs.
+Updated: 2026-11-05. History lives in Git and the task cards, and decisions in the ADRs.
 
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.21.0, built and verified but not yet run by the owner, and it keeps schema
-four. Production runs 0.20.0 until the owner replaces it. The application owns its project
-and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
+Current release: 0.22.0, built and verified but not yet run by the owner, and it keeps schema
+four. Production runs an earlier version until the owner replaces it. The application owns its
+project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
 Recent work:
 
+- T-0039: thirteen interface languages including Arabic (ADR-0035). Text is composed in logical
+  order and painted for egui at the last moment; see `src/i18n.rs` before touching interface text.
 - T-0038: one scroll bar style, light, dark and system themes, the interval option in Settings
   (ADR-0034), checked in the real window.
 - T-0036: timeline, by-day and weekly rhythm charts in reports (ADR-0032).
-- T-0039: interface languages, waiting for the owner to choose the set.
 - T-0037: release workflow and preparation for free signing through SignPath Foundation
   (ADR-0033). Blocked until the repository is public and has a first release.
 - T-0034: preparation for publishing. What remains needs the owner.
@@ -45,6 +46,7 @@ do not change the Windows app mode.
 ## Unverified behavior
 
 - The theme following a change of the Windows app mode (T-0038).
+- Six languages in the real window, the tray in other languages, and typed Arabic or Chinese (T-0039).
 - The running interval and review outlines on charts in the real window (T-0036).
 - The project panel and note conversion in the running application (T-0035).
 - Real tray foreground behavior and a real midnight crossing (T-0031, T-0033).
@@ -55,9 +57,8 @@ do not change the Windows app mode.
 
 ## Exact next step
 
-See [tasks/INDEX.md](../tasks/INDEX.md). T-0039 starts once the owner chooses the languages, and
-has its findings and decisions in its card. Publishing is the owner's decision: T-0034 and then
-T-0037. T-0019 stays the next larger feature; research compatibility before any further migration.
+See [tasks/INDEX.md](../tasks/INDEX.md). Publishing is the owner's decision: T-0034 and then T-0037.
+T-0019 stays the next larger feature; research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires

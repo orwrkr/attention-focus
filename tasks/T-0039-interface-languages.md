@@ -1,42 +1,59 @@
 # T-0039: Interface Languages
 
-Status: blocked.
+Status: done.
 Dependencies: T-0038.
 
 ## Goal
 
 Let the user choose the interface language. By default it follows the Windows language, and an
-unsupported language falls back to English.
+unsupported language falls back to English. See ADR-0035.
 
-**Blocked on:** the owner choosing the set of languages and the scope below.
-**Resumes when:** the owner has decided.
+The owner chose English, Russian, German, French, Spanish, Portuguese (Brazil), Italian, Polish,
+Turkish, Chinese (Simplified), Japanese, Korean and Arabic. Ukrainian is left out for now. The user
+guide and export contents stay in English, as recommended and approved.
 
-## Findings on 2026-11-04
+The same request renamed report labels: Running now, and Interrupted, not counted yet, which
+appears only when there is such time. A `CLAUDE.md` now imports `AGENTS.md`.
 
-- About 400 distinct English strings exist in application code, by a rough count that includes
-  errors and export headings.
-- The font bundled with egui covers Latin, Cyrillic and Greek, including German, French, Spanish,
-  Portuguese, Italian, Polish, Turkish, Ukrainian, Czech, Dutch, Swedish and Romanian. It lacks
-  full Vietnamese coverage.
-- It has no Chinese, Japanese, Korean, Arabic, Hebrew, Hindi or Thai. Project names in those scripts
-  cannot display today either.
-- Windows includes fonts for Chinese, Japanese and Korean (`msyh.ttc`, `YuGothR.ttc`, `malgun.ttf`
-  were present on the one machine checked), so they could load on demand with no growth in the EXE.
-- egui 0.37 shapes text but has no bidirectional layout. Its source marks RTL support as future
-  work, so Arabic and Hebrew interfaces are not feasible now.
+## Acceptance criteria
 
-## Decisions needed
+- [x] Settings offers Same as Windows and each language by its own name; the choice survives a restart.
+- [x] Same as Windows follows the Windows preference order, then English.
+- [x] Every user-visible string in the running interface comes from `locales/`.
+- [x] Plural forms follow each language's rules.
+- [x] Chinese, Japanese, Korean and Arabic use fonts included with Windows, also for user data.
+- [x] Arabic reads from right to left, including dates, numbers and wrapped sentences.
+- [x] Export contents do not depend on the interface language (test).
+- [x] The layout holds at the narrowest window in every language (tests for reports and counters).
 
-1. Which languages to support.
-2. Whether the user guide PDF and export headings are translated as well. Recommended: not at
-   first. Exports keep stable English column names for other tools.
+## Checks
 
-## Implementation notes
+`cargo fmt --check`, Clippy and `cargo test --locked` passed. Tests check every language for all keys,
+the same placeholders, the plural forms its rules need, glyphs in the bundled or Windows font, the
+tray tooltip limit, overflow, and that exports are byte-identical across languages. Temporary failures
+confirmed that the layout tests detect overflow and overlap.
 
-- Requires a new ADR, partly superseding ADR-0002: project-authored content stays in English, and
-  translations live only in dedicated locale files. AGENTS.md changes accordingly.
-- Research the library choice in that ADR, such as Fluent or embedded tables. Russian and Polish
-  plurals need real plural rules.
-- The Windows language comes from `GetUserPreferredUILanguages`, already reachable through
-  `windows-sys`. Weekday and month names in charts must come from the locale files too.
-- Keep tests independent of the selected language.
+Checked in the real Development window on 2026-11-05, at 150% scale in the light theme: Russian from
+the Windows language with no choice made, then German, Chinese, Japanese, Korean and Arabic in
+Settings and reports, and the language list. That check found what the tests could not: counter cards
+overlapping in Arabic, Yu Gothic's plain faces sitting above the baseline, invented abbreviations for
+Arabic dates, a version number reordered around its letter, and chart columns too narrow. All are fixed.
+
+An independent review of the language code by another model family found one defect, now fixed with
+a test: the Sessions section and its rows took their identity from their text, so they closed when
+the language or a count changed. It found no problem with text order, fonts, exports or mirroring,
+though it could not read the `unicode-bidi` source, which tests cover instead.
+
+Translations are machine-made. The owner can review Russian, and the rest have had only automated
+checks and a look at their rendering, so errors of meaning are possible.
+
+Unverified: French, Spanish, Portuguese, Italian, Polish and Turkish in the real window, which tests
+cover for glyphs and overflow; the tray menu and tooltip in other languages, which Windows draws;
+typed Arabic and Chinese input; user data in those scripts; other scales. The language list took about
+3 seconds to open for the first time in a debug build, because it reads about 30 MB of fonts; a release
+build was not timed.
+
+## Handoff
+
+Corrections to a translation only need a change to its file in `locales/`. To add a language, see the
+last paragraph of ADR-0035.

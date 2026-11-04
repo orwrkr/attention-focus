@@ -392,6 +392,32 @@ mod tests {
         assert!(summary.contains("\"215000\""));
     }
     #[test]
+    fn exports_do_not_depend_on_the_interface_language() {
+        let (_dir, path, request) = fixture(3);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let activity = serde_json::to_string(&tracking::Activity::default()).unwrap();
+        conn.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,elapsed_ms,state,activity) VALUES(300000,310000,10000,'running',?1)", [&activity]).unwrap();
+        conn.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,ended_ms,elapsed_ms,state,activity,end_reason) VALUES(400000,410000,410000,10000,'interrupted',?1,'crash')", [&activity]).unwrap();
+        conn.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,ended_ms,elapsed_ms,state,activity,end_reason) VALUES(500000,500000,400000,10000,'stopped',?1,'stop')", [&activity]).unwrap();
+        drop(conn);
+        let rendered = |format| {
+            let mut report = tracking::export_snapshot(&path, &request).unwrap();
+            report.generated_ms = 0;
+            let mut bytes = Vec::new();
+            render(&mut bytes, &report, format).unwrap();
+            String::from_utf8(bytes).unwrap()
+        };
+        for format in [Format::Csv, Format::Markdown] {
+            let english = rendered(format);
+            assert!(english.contains("Unassigned focus"));
+            for language in crate::i18n::Language::ALL {
+                crate::i18n::with_language(language, || {
+                    assert_eq!(rendered(format), english, "{language:?}");
+                });
+            }
+        }
+    }
+    #[test]
     fn escaping_keeps_unicode_and_makes_imported_syntax_literal() {
         for value in ["=1", "+1", "-1", "@SUM(A1)", " \u{ff1d}1", "\t=1"] {
             assert!(csv(value).starts_with("\"'"));

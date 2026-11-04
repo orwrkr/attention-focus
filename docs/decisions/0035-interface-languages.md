@@ -53,6 +53,13 @@ Three things follow from that:
 - Inserted values are isolated, or Unicode rules would reverse the groups of a date next to Arabic.
 
 A root layout that prefers the right side makes egui mirror rows and align text to the right.
+Collapsing sections reset this, so their contents ask for it again. Grids stay out of it, since they
+work in unlimited width, which a mirrored layout turns into an invalid position. Counter cards are
+placed by measure, so their row runs from left to right, in reversed order, with mirrored contents.
+
+**Japanese uses the UI faces of Yu Gothic.** Its plain faces have a line gap of half an em, which lifts
+them off the baseline they share with Latin letters and digits. Chart columns are measured rather than
+fixed, because translated dates and totals can be wider than English ones.
 
 ## Alternatives
 
@@ -63,10 +70,10 @@ A root layout that prefers the right side makes egui mirror rows and align text 
 
 ## Consequences
 
-Arabic is not a fully mirrored interface. Checkboxes keep their box on the left, collapsing headers
-their arrow, scroll bars stay on the right, and charts keep a left-to-right time axis. Text fields
-show typed Arabic words in typing order, because egui edits logical text directly. These limits are
-stated in the user guide.
+Arabic is not a fully mirrored interface. Checkboxes keep their box on the left, section headings stay
+on the left, the report's date fields keep their order, scroll bars stay on the right, and charts keep
+a left-to-right time axis. Text fields show typed Arabic words in typing order, because egui edits
+logical text directly. These limits are stated in the user guide.
 
 Translations are machine-made and reviewed only by tests, except Russian, which the owner can read.
 Tests check that every language has every key, the same placeholders, every plural form its rules

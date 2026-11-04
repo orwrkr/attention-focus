@@ -40,13 +40,13 @@
 | [T-0036](T-0036-activity-visualization.md) | done | Graphical Activity Views | T-0035 |
 | [T-0037](T-0037-code-signing.md) | blocked | Free Code Signing Through SignPath Foundation | T-0034; first public release |
 | [T-0038](T-0038-scroll-bars-themes-settings.md) | done | Scroll Bars, Themes and Interval Setting | T-0036 |
-| [T-0039](T-0039-interface-languages.md) | blocked | Interface Languages | T-0038; owner's choice of languages |
+| [T-0039](T-0039-interface-languages.md) | done | Interface Languages | T-0038 |
 
 Task template: `templates/TASK.md` from the repository root.
 
 Next check: the project panel (T-0035), native tray activation (T-0031) and a real midnight
 crossing (T-0032, T-0033) in Development, using fresh desktop permission.
-Next steps: [T-0039](T-0039-interface-languages.md) once the owner chooses the languages. Publishing
-through [T-0034](T-0034-public-release-readiness.md) and then [T-0037](T-0037-code-signing.md) needs
-the owner. [T-0019](T-0019-history-correction.md) stays the next larger feature. T-0002 remains a
-separate desktop acceptance gate and does not authorize disruptive system tests.
+Next steps: publishing through [T-0034](T-0034-public-release-readiness.md) and then
+[T-0037](T-0037-code-signing.md) needs the owner. [T-0019](T-0019-history-correction.md) stays the next
+larger feature. T-0002 remains a separate desktop acceptance gate and does not authorize disruptive
+system tests.
