@@ -58,7 +58,7 @@ pub fn tooltip(profile: Profile, state: &Snapshot) -> String {
             .map(duration)
             .unwrap_or_else(|| "unavailable".into()),
         if state.needs_review {
-            "\nReview pending"
+            "\nInterrupted time to accept"
         } else {
             ""
         }
@@ -120,7 +120,7 @@ mod tests {
         state.running = false;
         assert!(tooltip(Profile::Production, &state).contains("Project:"));
         state.needs_review = true;
-        assert!(tooltip(Profile::Production, &state).contains("Review pending"));
+        assert!(tooltip(Profile::Production, &state).contains("Interrupted time to accept"));
         assert_eq!(shorten("\u{1f331}\u{1f331}", 4), "\u{1f331}\u{1f331}");
     }
 }

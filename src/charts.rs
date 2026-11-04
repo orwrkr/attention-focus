@@ -276,7 +276,7 @@ fn state_note(state: State) -> Option<&'static str> {
     match state {
         State::Saved => None,
         State::Running => Some("Running, not finished yet"),
-        State::Review => Some("Needs review, not in totals"),
+        State::Review => Some("Interrupted, not counted yet"),
     }
 }
 /// Finished time is solid. Unfinished time keeps the project's hue in a visibly lighter form.
@@ -423,8 +423,6 @@ struct Columns {
 }
 impl Columns {
     const HEIGHT: f32 = 210.0;
-    /// Room for the widest short date, such as Wed 30, with a small gap.
-    const DATE_ROOM: f32 = 44.0;
 
     fn new(rect: Rect, count: usize, most_ms: u64) -> Self {
         let hours = (most_ms as f64 / 3_600_000.0 / 2.0).ceil().max(1.0) as u64 * 2;
@@ -446,9 +444,9 @@ impl Columns {
     fn grid_step(&self) -> u64 {
         self.scale_hours.div_ceil(4).next_multiple_of(2)
     }
-    /// Label every this many columns, so dates never collide at any width.
-    fn date_stride(&self) -> usize {
-        let fits = (Self::DATE_ROOM / self.band()).ceil() as usize;
+    /// Label every this many columns, so dates of this width never collide.
+    fn date_stride(&self, widest_date: f32) -> usize {
+        let fits = ((widest_date + 4.0) / self.band()).ceil() as usize;
         fits.max(if self.count <= 14 { 1 } else { 7 })
     }
     fn band(&self) -> f32 {
@@ -521,7 +519,7 @@ fn day_details(ui: &mut egui::Ui, day: &ChartDay, styles: &Styles) {
     }
     if day.review_ms > 0 {
         ui.label(format!(
-            "Needs review, not in totals: {}",
+            "Interrupted, not counted yet: {}",
             hours_minutes(day.review_ms)
         ));
     }
@@ -554,7 +552,17 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
         );
     }
     let band = layout.band();
-    let stride = layout.date_stride();
+    let widest_date = chart
+        .days
+        .iter()
+        .map(|day| {
+            painter
+                .layout_no_wrap(day.short_label.clone(), small(), ink.muted)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    let stride = layout.date_stride(widest_date);
     let first_most = chart.days.iter().position(|day| day.total_ms() == most);
     for (column, day) in chart.days.iter().enumerate() {
         let parts = layout.stack(column, day);
@@ -627,7 +635,7 @@ fn split_bar(ui: &mut egui::Ui, day: &ChartDay, styles: &Styles, ink: Ink) {
     ui.label(format!("{}: {}", day.long_label, hours_minutes(total)));
     if day.review_ms > 0 {
         ui.small(format!(
-            "Needs review, not in totals: {}",
+            "Interrupted, not counted yet: {}",
             hours_minutes(day.review_ms)
         ));
     }
@@ -849,7 +857,7 @@ fn legend(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink, view: Vie
                 painter.rect_filled(mark, 2, *color);
             });
         }
-        let states = [(State::Running, "Running"), (State::Review, "Needs review")];
+        let states = [(State::Running, "Running"), (State::Review, "Interrupted")];
         for (state, label) in states {
             // By day leaves out review time, so it has no such mark to explain.
             let drawn = state != State::Review || view != View::Days;
@@ -1466,16 +1474,16 @@ mod tests {
         timeline.frame(vec![], 0.0);
         let texts = Harness::texts(&timeline.frame(vec![], 0.1));
         assert!(texts.iter().any(|t| t == "Beta"), "its outline has a name");
-        assert!(texts.iter().any(|t| t == "Needs review"));
+        assert!(texts.iter().any(|t| t == "Interrupted"));
         let mut days = Harness::new(chart.clone(), View::Days);
         days.frame(vec![], 0.0);
         let texts = Harness::texts(&days.frame(vec![], 0.1));
         assert!(texts.iter().any(|t| t == "Alpha"));
-        assert!(!texts.iter().any(|t| t == "Beta" || t == "Needs review"));
+        assert!(!texts.iter().any(|t| t == "Beta" || t == "Interrupted"));
         assert!(
             texts
                 .iter()
-                .any(|t| t == "Needs review, not in totals: 30m")
+                .any(|t| t == "Interrupted, not counted yet: 30m")
         );
         // A day with only review time says so, and draws no empty bar.
         chart.days[0].saved.clear();
@@ -1486,7 +1494,7 @@ mod tests {
         assert!(
             texts
                 .iter()
-                .any(|t| t == "Needs review, not in totals: 30m")
+                .any(|t| t == "Interrupted, not counted yet: 30m")
         );
     }
 
@@ -1585,7 +1593,7 @@ mod tests {
         harness.frame(vec![], 0.0);
         let output = harness.frame(vec![], 0.1);
         let texts = Harness::texts(&output);
-        assert!(texts.iter().any(|t| t == "Running") && texts.iter().any(|t| t == "Needs review"));
+        assert!(texts.iter().any(|t| t == "Running") && texts.iter().any(|t| t == "Interrupted"));
         assert!(
             Harness::first_series_marks(&output).is_empty(),
             "neither is drawn as a solid fill"

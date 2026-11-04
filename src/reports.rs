@@ -326,10 +326,12 @@ impl Chart {
             };
             chart.weekday_counts[date.weekday().to_monday_zero_offset() as usize] += 1;
             if !chart.too_long {
+                let weekday = date.weekday().to_monday_zero_offset() as usize;
+                let month = (date.month() - 1) as usize;
                 days.push((
                     ChartDay {
-                        long_label: date.strftime("%a %-d %b").to_string(),
-                        short_label: date.strftime("%a %-d").to_string(),
+                        long_label: crate::i18n::long_date(weekday, date.day(), month),
+                        short_label: crate::i18n::short_date(weekday, date.day()),
                         saved: Vec::new(),
                         running: None,
                         review_ms: 0,

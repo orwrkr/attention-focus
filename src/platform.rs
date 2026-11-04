@@ -41,6 +41,42 @@ pub fn data_root() -> io::Result<PathBuf> {
     Ok(PathBuf::from(path).join("AttentionFocus"))
 }
 
+/// Windows display languages in the user's order of preference, as names such as `ru-RU`.
+pub fn preferred_languages() -> Vec<String> {
+    use windows_sys::Win32::Globalization::{GetUserPreferredUILanguages, MUI_LANGUAGE_NAME};
+    let (mut count, mut size) = (0_u32, 0_u32);
+    // The first call asks for the size of a list of null-terminated names.
+    let sized = unsafe {
+        GetUserPreferredUILanguages(
+            MUI_LANGUAGE_NAME,
+            &mut count,
+            std::ptr::null_mut(),
+            &mut size,
+        )
+    };
+    if sized == 0 || size == 0 {
+        return Vec::new();
+    }
+    let mut buffer = vec![0_u16; size as usize];
+    // The buffer has the size that was just reported.
+    let filled = unsafe {
+        GetUserPreferredUILanguages(
+            MUI_LANGUAGE_NAME,
+            &mut count,
+            buffer.as_mut_ptr(),
+            &mut size,
+        )
+    };
+    if filled == 0 {
+        return Vec::new();
+    }
+    buffer
+        .split(|unit| *unit == 0)
+        .filter(|name| !name.is_empty())
+        .map(String::from_utf16_lossy)
+        .collect()
+}
+
 /// The system setting that separates a single tray click from a double click.
 pub fn double_click_time() -> std::time::Duration {
     let milliseconds =

@@ -111,7 +111,7 @@ history only. The window and tray share both daily values.
 - A double left click starts or stops tracking using the last applied selection.
 - Hover shows status, project, **Session**, **Today/project** and **Today/all**.
   Today combines all its tasks and saved plus current time inside the Windows local
-  calendar day, excluding unreviewed time. Report filters do not affect this value.
+  calendar day, excluding interrupted time. Report filters do not affect this value.
   All-project Today also includes unassigned focus.
   Long names are shortened; the project's window label shows its full name in one hint.
   While stopped, project Today refers to the saved next project.
@@ -234,12 +234,13 @@ fields to retry. An earlier valid result keeps its own period and snapshot label
 ## Understand the totals
 
 - **Total (saved + running)** adds finalized and active time in the selected period,
-  excluding Needs review. Project, task and day tables end with **Total saved**.
+  excluding interrupted time. Project, task and day tables end with **Total saved**.
 - **Saved focus** includes finalized sessions in the selected period.
-- **Running (not finalized)** is the active interval's elapsed time inside this filter.
-  It remains separate from Saved focus until the interval stops or switches.
-- **Needs review (excluded)** is interrupted checkpoint time inside the filter, awaiting
-  your recovery decision. Accept saved time moves it into Saved focus, excluding downtime.
+- **Running now** is the active interval's elapsed time inside this filter. It remains
+  separate from Saved focus until the interval stops or switches.
+- **Interrupted, not counted yet** appears only when there is such time inside the filter:
+  the part of a cut-off interval saved up to its last checkpoint. **Accept saved time** in
+  the main window moves it into Saved focus.
 
 Zero means no matching time, which can happen while tracking outside the filter; values
 under one second also display as zero. Hover on either label for its explanation.
@@ -279,7 +280,7 @@ existing history; sessions keep the names they recorded.
   color means more time.
 
 Solid marks are finished time. A lighter mark with an outline is the running interval. An
-outline alone is time that needs review, which stays out of day totals and Weekly rhythm,
+outline alone is interrupted time, which stays out of day totals and Weekly rhythm,
 just as it stays out of Total. Hover over a mark for its details; the tables hold the same
 numbers, so nothing depends on the pointer.
 
@@ -300,7 +301,7 @@ data folders.
 The export is a snapshot of every matching session, including entries beyond the
 window's 200-row preview. It includes version, snapshot time, timezone, exact filter
 boundaries, integer millisecond durations, project IDs, activity names and notes.
-Saved, Running checkpoint and Needs review totals remain separate. The combined total
+Saved, Running checkpoint and Needs review (interrupted time) totals remain separate. The combined total
 adds Saved and Running checkpoint, excluding Needs review. Markdown grouping tables
 end with Total saved; CSV adds Total saved plus running checkpoint ms.
 

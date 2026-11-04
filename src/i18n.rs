@@ -1,0 +1,506 @@
+//! Interface languages. `locales/en.json` is the source text and the fallback for anything missing.
+//!
+//! Text comes in two forms. Logical text is in reading order: it is what gets stored, and what
+//! Windows draws itself, such as the tray menu. Painted text is what egui needs, which differs only
+//! in right-to-left languages; see `bidi`. `t` and `tf` return painted single lines. Use `message`
+//! for logical text, and `paragraph` for anything that can wrap.
+use crate::bidi;
+use eframe::egui;
+use serde::{Deserialize, Serialize};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    sync::{
+        OnceLock,
+        atomic::{AtomicU8, Ordering},
+    },
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Language {
+    English,
+    Russian,
+    German,
+    French,
+    Spanish,
+    PortugueseBrazil,
+    Italian,
+    Polish,
+    Turkish,
+    ChineseSimplified,
+    Japanese,
+    Korean,
+    Arabic,
+}
+impl Language {
+    /// In discriminant order, which also indexes the tables below.
+    pub const ALL: [Self; 13] = [
+        Self::English,
+        Self::Russian,
+        Self::German,
+        Self::French,
+        Self::Spanish,
+        Self::PortugueseBrazil,
+        Self::Italian,
+        Self::Polish,
+        Self::Turkish,
+        Self::ChineseSimplified,
+        Self::Japanese,
+        Self::Korean,
+        Self::Arabic,
+    ];
+    pub fn is_rtl(self) -> bool {
+        self == Self::Arabic
+    }
+    fn source(self) -> &'static str {
+        match self {
+            Self::English => include_str!("../locales/en.json"),
+            Self::Russian => include_str!("../locales/ru.json"),
+            Self::German => include_str!("../locales/de.json"),
+            Self::French => include_str!("../locales/fr.json"),
+            Self::Spanish => include_str!("../locales/es.json"),
+            Self::PortugueseBrazil => include_str!("../locales/pt-BR.json"),
+            Self::Italian => include_str!("../locales/it.json"),
+            Self::Polish => include_str!("../locales/pl.json"),
+            Self::Turkish => include_str!("../locales/tr.json"),
+            Self::ChineseSimplified => include_str!("../locales/zh-Hans.json"),
+            Self::Japanese => include_str!("../locales/ja.json"),
+            Self::Korean => include_str!("../locales/ko.json"),
+            Self::Arabic => include_str!("../locales/ar.json"),
+        }
+    }
+    /// Maps a Windows language name such as `ru-RU`. Traditional Chinese is not supported, and
+    /// showing it Simplified would be wrong for its readers, so it counts as unsupported.
+    pub fn from_locale_name(name: &str) -> Option<Self> {
+        let name = name.to_ascii_lowercase();
+        let mut parts = name.split(['-', '_']);
+        Some(match parts.next()? {
+            "en" => Self::English,
+            "ru" => Self::Russian,
+            "de" => Self::German,
+            "fr" => Self::French,
+            "es" => Self::Spanish,
+            "pt" => Self::PortugueseBrazil,
+            "it" => Self::Italian,
+            "pl" => Self::Polish,
+            "tr" => Self::Turkish,
+            "ja" => Self::Japanese,
+            "ko" => Self::Korean,
+            "ar" => Self::Arabic,
+            "zh" if !parts.any(|part| matches!(part, "hant" | "tw" | "hk" | "mo")) => {
+                Self::ChineseSimplified
+            }
+            _ => return None,
+        })
+    }
+    /// The plural category of a count, following the Unicode CLDR rules for whole numbers.
+    fn plural(self, count: u64) -> &'static str {
+        let (tens, hundreds) = (count % 10, count % 100);
+        let few = (2..=4).contains(&tens) && !(12..=14).contains(&hundreds);
+        match self {
+            Self::ChineseSimplified | Self::Japanese | Self::Korean => "other",
+            Self::French | Self::PortugueseBrazil if count <= 1 => "one",
+            Self::French | Self::PortugueseBrazil => "other",
+            Self::Russian if tens == 1 && hundreds != 11 => "one",
+            Self::Russian if few => "few",
+            Self::Russian => "many",
+            Self::Polish if count == 1 => "one",
+            Self::Polish if few => "few",
+            Self::Polish => "many",
+            Self::Arabic => match (count, hundreds) {
+                (0, _) => "zero",
+                (1, _) => "one",
+                (2, _) => "two",
+                (_, 3..=10) => "few",
+                (_, 11..=99) => "many",
+                _ => "other",
+            },
+            _ if count == 1 => "one",
+            _ => "other",
+        }
+    }
+}
+
+/// What the user chose. Same as Windows is the default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Choice {
+    #[default]
+    System,
+    Fixed(Language),
+}
+/// The first supported language in the Windows preference order, or else English.
+pub fn resolve(choice: Choice, preferred: &[String]) -> Language {
+    match choice {
+        Choice::Fixed(language) => language,
+        Choice::System => preferred
+            .iter()
+            .find_map(|name| Language::from_locale_name(name))
+            .unwrap_or(Language::English),
+    }
+}
+
+static CURRENT: AtomicU8 = AtomicU8::new(0);
+#[cfg(test)]
+thread_local! {
+    static TEST_LANGUAGE: std::cell::Cell<Option<Language>> = const { std::cell::Cell::new(None) };
+}
+
+pub fn set_language(language: Language) {
+    CURRENT.store(language as u8, Ordering::Relaxed);
+}
+pub fn current() -> Language {
+    #[cfg(test)]
+    if let Some(language) = TEST_LANGUAGE.get() {
+        return language;
+    }
+    Language::ALL[usize::from(CURRENT.load(Ordering::Relaxed))]
+}
+/// Tests run in parallel, so they choose a language for their own thread only.
+#[cfg(test)]
+pub(crate) fn with_language<R>(language: Language, run: impl FnOnce() -> R) -> R {
+    TEST_LANGUAGE.set(Some(language));
+    let result = run();
+    TEST_LANGUAGE.set(None);
+    result
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Entry {
+    Text(String),
+    Plural(HashMap<String, String>),
+}
+#[derive(Default)]
+struct Table {
+    entries: HashMap<String, Entry>,
+    /// Plain texts as egui must receive them, for right-to-left languages only.
+    painted: HashMap<String, String>,
+}
+fn table(language: Language) -> &'static Table {
+    static TABLES: [OnceLock<Table>; Language::ALL.len()] =
+        [const { OnceLock::new() }; Language::ALL.len()];
+    TABLES[language as usize].get_or_init(|| {
+        // A test checks that every file parses, so a release cannot reach the empty default.
+        let mut table = Table {
+            entries: serde_json::from_str(language.source()).unwrap_or_default(),
+            painted: HashMap::new(),
+        };
+        if language.is_rtl() {
+            table.painted = table
+                .entries
+                .iter()
+                .filter_map(|(key, entry)| match entry {
+                    Entry::Text(text) => Some((key.clone(), bidi::right_to_left(text))),
+                    Entry::Plural(_) => None,
+                })
+                .collect();
+        }
+        table
+    })
+}
+fn entry(language: Language, key: &str) -> Option<&'static Entry> {
+    table(language)
+        .entries
+        .get(key)
+        .or_else(|| table(Language::English).entries.get(key))
+}
+/// Logical text of a key, or the key itself, which a test keeps out of releases.
+fn logical(language: Language, key: &'static str) -> &'static str {
+    match entry(language, key) {
+        Some(Entry::Text(text)) => text,
+        Some(Entry::Plural(forms)) => forms.get("other").map_or(key, String::as_str),
+        None => key,
+    }
+}
+fn fill(template: &str, arguments: &[(&str, &str)]) -> String {
+    let rtl = current().is_rtl();
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        let value = after.find('}').and_then(|end| {
+            let name = &after[..end];
+            let value = arguments.iter().find(|(key, _)| *key == name)?.1;
+            Some((value, end))
+        });
+        if let Some((value, end)) = value {
+            if rtl {
+                out.push_str(&bidi::isolated(value));
+            } else {
+                out.push_str(value);
+            }
+            rest = &after[end + 1..];
+        } else {
+            out.push('{');
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Painted text of a key without placeholders, for one line of the interface.
+pub fn t(key: &'static str) -> &'static str {
+    let language = current();
+    if language.is_rtl()
+        && let Some(painted) = table(language).painted.get(key)
+    {
+        return painted;
+    }
+    logical(language, key)
+}
+/// Logical text with placeholders filled in: for storing, for Windows to draw, and for `paragraph`.
+pub fn message(key: &'static str, arguments: &[(&str, &str)]) -> String {
+    fill(logical(current(), key), arguments)
+}
+/// Logical text of a form chosen by `count`, which also fills `{count}`.
+pub fn message_plural(key: &'static str, count: u64, arguments: &[(&str, &str)]) -> String {
+    let language = current();
+    let template = match entry(language, key) {
+        Some(Entry::Plural(forms)) => forms
+            .get(language.plural(count))
+            .or_else(|| forms.get("other"))
+            .map_or(key, String::as_str),
+        Some(Entry::Text(text)) => text,
+        None => key,
+    };
+    let count = count.to_string();
+    let mut all = vec![("count", count.as_str())];
+    all.extend_from_slice(arguments);
+    fill(template, &all)
+}
+/// Painted text with placeholders filled in, for one line of the interface.
+pub fn tf(key: &'static str, arguments: &[(&str, &str)]) -> String {
+    paint(&message(key, arguments)).into_owned()
+}
+/// Painted text of a form chosen by `count`, for one line of the interface.
+pub fn tp(key: &'static str, count: u64, arguments: &[(&str, &str)]) -> String {
+    paint(&message_plural(key, count, arguments)).into_owned()
+}
+/// Logical interface text, such as a stored message, as egui must receive one line of it.
+pub fn paint(text: &str) -> Cow<'_, str> {
+    if current().is_rtl() {
+        Cow::Owned(bidi::right_to_left(text))
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+/// A project name, a task or a note, in any language and any interface language.
+pub fn user(text: &str) -> Cow<'_, str> {
+    bidi::user_text(text)
+}
+/// The language's name in that language, in logical order.
+pub fn native_name(language: Language) -> &'static str {
+    logical(language, "language.native")
+}
+
+/// Logical text as a label that wraps. egui's own wrapping works for left-to-right languages, and
+/// otherwise lines must be chosen before their words are reordered.
+pub fn paragraph(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    paragraph_styled(ui, text, |text| text)
+}
+pub fn paragraph_weak(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    paragraph_styled(ui, text, egui::RichText::weak)
+}
+pub fn paragraph_colored(ui: &mut egui::Ui, color: egui::Color32, text: &str) -> egui::Response {
+    paragraph_styled(ui, text, |text| text.color(color))
+}
+fn paragraph_styled(
+    ui: &mut egui::Ui,
+    text: &str,
+    style: impl FnOnce(egui::RichText) -> egui::RichText,
+) -> egui::Response {
+    if !current().is_rtl() {
+        return ui.label(style(egui::RichText::new(text)));
+    }
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let width = ui.available_width();
+    let painter = ui.painter().clone();
+    let lines = bidi::wrap(text, width, |line| {
+        painter
+            .layout_no_wrap(
+                bidi::right_to_left(line),
+                font.clone(),
+                egui::Color32::PLACEHOLDER,
+            )
+            .size()
+            .x
+    });
+    let painted: Vec<String> = lines.iter().map(|line| bidi::right_to_left(line)).collect();
+    ui.add(egui::Label::new(style(egui::RichText::new(painted.join("\n")))).extend())
+}
+/// A tooltip with logical text.
+pub fn tooltip(response: egui::Response, text: &str) -> egui::Response {
+    response.on_hover_ui(|ui| {
+        paragraph(ui, text);
+    })
+}
+
+/// Windows counts weekdays from Monday here, matching `reports`.
+const WEEKDAYS: [&str; 7] = [
+    "date.weekday.mon",
+    "date.weekday.tue",
+    "date.weekday.wed",
+    "date.weekday.thu",
+    "date.weekday.fri",
+    "date.weekday.sat",
+    "date.weekday.sun",
+];
+const MONTHS: [&str; 12] = [
+    "date.month.jan",
+    "date.month.feb",
+    "date.month.mar",
+    "date.month.apr",
+    "date.month.may",
+    "date.month.jun",
+    "date.month.jul",
+    "date.month.aug",
+    "date.month.sep",
+    "date.month.oct",
+    "date.month.nov",
+    "date.month.dec",
+];
+/// A short weekday name, Monday first, in logical order.
+pub fn weekday_name(monday_based: usize) -> &'static str {
+    logical(current(), WEEKDAYS[monday_based % 7])
+}
+pub fn painted_weekday_name(monday_based: usize) -> &'static str {
+    t(WEEKDAYS[monday_based % 7])
+}
+/// A short month name, January first, in logical order.
+pub fn month_name(zero_based: usize) -> &'static str {
+    logical(current(), MONTHS[zero_based % 12])
+}
+/// A date such as `Mon 26 Oct`, in logical order.
+pub fn long_date(weekday: usize, day: i8, month: usize) -> String {
+    message(
+        "date.long",
+        &[
+            ("weekday", weekday_name(weekday)),
+            ("day", &day.to_string()),
+            ("month", month_name(month)),
+        ],
+    )
+}
+/// A date such as `Mon 26`, in logical order.
+pub fn short_date(weekday: usize, day: i8) -> String {
+    message(
+        "date.short",
+        &[
+            ("weekday", weekday_name(weekday)),
+            ("day", &day.to_string()),
+        ],
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_language_names_map_to_supported_languages() {
+        for (name, expected) in [
+            ("en-US", Some(Language::English)),
+            ("ru-RU", Some(Language::Russian)),
+            ("DE-at", Some(Language::German)),
+            ("pt-PT", Some(Language::PortugueseBrazil)),
+            ("pt-BR", Some(Language::PortugueseBrazil)),
+            ("zh-CN", Some(Language::ChineseSimplified)),
+            ("zh-Hans-SG", Some(Language::ChineseSimplified)),
+            ("zh-TW", None),
+            ("zh-Hant-HK", None),
+            ("ar-SA", Some(Language::Arabic)),
+            ("uk-UA", None),
+            ("", None),
+        ] {
+            assert_eq!(Language::from_locale_name(name), expected, "{name}");
+        }
+    }
+    #[test]
+    fn the_system_language_falls_back_along_windows_preferences_to_english() {
+        let names = |list: &[&str]| list.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            resolve(Choice::System, &names(&["ru-RU", "en-US"])),
+            Language::Russian
+        );
+        assert_eq!(
+            resolve(Choice::System, &names(&["uk-UA", "de-DE"])),
+            Language::German
+        );
+        assert_eq!(
+            resolve(Choice::System, &names(&["uk-UA"])),
+            Language::English
+        );
+        assert_eq!(resolve(Choice::System, &[]), Language::English);
+        assert_eq!(
+            resolve(Choice::Fixed(Language::Korean), &names(&["ru-RU"])),
+            Language::Korean
+        );
+    }
+    #[test]
+    fn plural_categories_follow_the_rules_of_each_language() {
+        let forms = |language: Language, counts: &[u64]| -> Vec<&str> {
+            counts.iter().map(|&n| language.plural(n)).collect()
+        };
+        assert_eq!(
+            forms(Language::English, &[0, 1, 2]),
+            ["other", "one", "other"]
+        );
+        assert_eq!(forms(Language::French, &[0, 1, 2]), ["one", "one", "other"]);
+        assert_eq!(
+            forms(Language::PortugueseBrazil, &[0, 1, 2]),
+            ["one", "one", "other"]
+        );
+        assert_eq!(
+            forms(Language::Russian, &[1, 2, 5, 11, 12, 21, 22, 25, 101, 111]),
+            [
+                "one", "few", "many", "many", "many", "one", "few", "many", "one", "many"
+            ]
+        );
+        assert_eq!(
+            forms(Language::Polish, &[1, 2, 5, 12, 21, 22, 25]),
+            ["one", "few", "many", "many", "many", "few", "many"]
+        );
+        assert_eq!(
+            forms(Language::Japanese, &[0, 1, 2]),
+            ["other", "other", "other"]
+        );
+        assert_eq!(
+            forms(Language::Arabic, &[0, 1, 2, 3, 10, 11, 99, 100, 103, 111]),
+            [
+                "zero", "one", "two", "few", "few", "many", "many", "other", "few", "many"
+            ]
+        );
+    }
+    #[test]
+    fn placeholders_fill_in_one_pass_and_leave_unknown_names_alone() {
+        assert_eq!(fill("{a} and {b}", &[("a", "1"), ("b", "2")]), "1 and 2");
+        assert_eq!(fill("{a}", &[("a", "{b}"), ("b", "2")]), "{b}");
+        assert_eq!(fill("{unknown} {a}", &[("a", "1")]), "{unknown} 1");
+        assert_eq!(fill("open { only", &[]), "open { only");
+    }
+    #[test]
+    fn right_to_left_interface_text_is_painted_and_stored_text_stays_logical() {
+        with_language(Language::Arabic, || {
+            let logical_text = message("language.native", &[]);
+            assert!(!logical_text.is_empty());
+            assert_eq!(paint(&logical_text), bidi::right_to_left(&logical_text));
+        });
+        assert_eq!(paint("Plain text"), "Plain text");
+    }
+    #[test]
+    fn a_missing_key_shows_itself_rather_than_nothing() {
+        assert_eq!(t("no.such.key"), "no.such.key");
+    }
+    #[test]
+    fn a_test_language_stays_on_its_own_thread() {
+        with_language(Language::Korean, || {
+            assert_eq!(current(), Language::Korean);
+            std::thread::spawn(|| assert_eq!(current(), Language::English))
+                .join()
+                .unwrap();
+        });
+        assert_eq!(current(), Language::English);
+    }
+}

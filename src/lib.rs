@@ -1,8 +1,11 @@
 //! Local focus tracking with an application-owned project list, and desktop assets.
 
+pub mod bidi;
 pub mod charts;
 pub mod counters;
 pub mod export;
+pub mod fonts;
+pub mod i18n;
 pub mod icons;
 #[cfg(windows)]
 pub mod lifecycle;

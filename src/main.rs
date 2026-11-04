@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use attention_focus::{
-    export, icons, lifecycle,
+    export,
+    fonts::Fallbacks,
+    i18n, icons, lifecycle,
     note_memory::{LEGACY_STORAGE_KEY, LegacyNotes, NoteMemory, STORAGE_KEY},
     platform, presentation,
     profiles::{Paths, Profile},
@@ -33,7 +35,9 @@ enum Action {
 
 struct Desktop {
     tray: Option<TrayIcon>,
+    show_item: MenuItem,
     toggle_item: MenuItem,
+    exit_item: MenuItem,
     actions: Receiver<Action>,
     commands: SyncSender<tracking::Command>,
     outbox: attention_focus::outbox::Outbox,
@@ -59,12 +63,28 @@ struct Desktop {
     storage_root: std::path::PathBuf,
     stay_on_top: bool,
     theme: egui::ThemePreference,
+    language: i18n::Choice,
+    fonts: Fallbacks,
     motion_epoch: Instant,
     tray_level: Option<(bool, u8)>,
     running_icons: Vec<Icon>,
     drag_regions: platform::HeaderDragRegions,
     startup: attention_focus::startup_ui::Panel,
     settings_open: bool,
+}
+
+fn show_item_text(profile: Profile) -> String {
+    i18n::message(
+        if profile == Profile::Development {
+            "tray.show_development"
+        } else {
+            "tray.show"
+        },
+        &[],
+    )
+}
+fn toggle_item_text(running: bool) -> String {
+    i18n::message(if running { "tray.stop" } else { "tray.start" }, &[])
 }
 
 fn tray_icon(running: bool, profile: Profile) -> Icon {
@@ -97,6 +117,14 @@ impl Desktop {
     ) -> Self {
         let directory = paths.directory;
         let profile = paths.profile;
+        let language: i18n::Choice = context
+            .storage
+            .and_then(|storage| eframe::get_value(storage, "language"))
+            .unwrap_or_default();
+        let resolved = i18n::resolve(language, &platform::preferred_languages());
+        i18n::set_language(resolved);
+        let mut fonts = Fallbacks::new(resolved);
+        fonts.apply(&context.egui_ctx);
         let drag_regions = platform::HeaderDragRegions::default();
         let width_error = platform::constrain_window_bounds(
             context,
@@ -124,17 +152,9 @@ impl Desktop {
             }));
         let (sender, actions) = mpsc::channel();
         let menu = Menu::new();
-        let show = MenuItem::new(
-            if profile == Profile::Development {
-                "Show Development"
-            } else {
-                "Show Focus"
-            },
-            true,
-            None,
-        );
-        let toggle = MenuItem::new("Start tracking", false, None);
-        let exit = MenuItem::new("Exit", true, None);
+        let show = MenuItem::new(show_item_text(profile), true, None);
+        let toggle = MenuItem::new(toggle_item_text(false), false, None);
+        let exit = MenuItem::new(i18n::message("tray.exit", &[]), true, None);
         let tray_result = (|| -> Result<TrayIcon, Box<dyn std::error::Error>> {
             menu.append_items(&[&show, &toggle, &exit])?;
             Ok(TrayIconBuilder::new()
@@ -268,7 +288,9 @@ impl Desktop {
                 .map(|level| tray_icon_level(true, profile, level))
                 .collect(),
             tray,
+            show_item: show,
             toggle_item: toggle,
+            exit_item: exit,
             actions,
             outbox: attention_focus::outbox::Outbox::new(commands.clone()),
             _show_requests: show_requests,
@@ -300,6 +322,30 @@ impl Desktop {
             storage_root: paths.root,
             stay_on_top,
             theme,
+            language,
+            fonts,
+        }
+    }
+
+    /// Applies a new language choice to everything that is not redrawn on the next frame.
+    fn language_changed(&mut self, frame: &mut eframe::Frame) {
+        let language = i18n::resolve(self.language, &platform::preferred_languages());
+        i18n::set_language(language);
+        self.fonts.set_language(language);
+        self.show_item.set_text(show_item_text(self.profile));
+        self.toggle_item
+            .set_text(toggle_item_text(self.state.running));
+        self.exit_item.set_text(i18n::message("tray.exit", &[]));
+        if let Some(tray) = &self.tray
+            && let Err(error) =
+                tray.set_tooltip(Some(presentation::tooltip(self.profile, &self.state)))
+        {
+            self.error = Some(format!("Cannot update tray status: {error}"));
+        }
+        self.reports.language_changed();
+        if let Some(storage) = frame.storage_mut() {
+            eframe::set_value(storage, "language", &self.language);
+            storage.flush();
         }
     }
 
@@ -483,6 +529,7 @@ impl eframe::App for Desktop {
         }
         eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
         eframe::set_value(storage, "theme", &self.theme);
+        eframe::set_value(storage, "language", &self.language);
         eframe::set_value(storage, "startup_tray", &self.startup.tray);
         eframe::set_value(storage, "project_search", &self.project_search);
         let draft =
@@ -499,6 +546,21 @@ impl eframe::App for Desktop {
     }
 
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Text can be typed or pasted in any script, whatever the interface language.
+        ctx.input(|input| {
+            for event in &input.events {
+                match event {
+                    egui::Event::Text(text)
+                    | egui::Event::Paste(text)
+                    | egui::Event::Ime(
+                        egui::ImeEvent::Commit(text) | egui::ImeEvent::Preedit { text, .. },
+                    ) => self.fonts.require_text(text),
+                    _ => {}
+                }
+            }
+        });
+        self.fonts.require_text(&self.activity.note);
+        self.fonts.apply(ctx);
         if self.drag_regions.take_startup_hide() {
             Self::hide(ctx);
         }
@@ -538,6 +600,17 @@ impl eframe::App for Desktop {
                 }
                 Action::Exit => self.command(tracking::Command::Exit),
                 Action::Tracking(tracking::Event::Report { id, result }) => {
+                    if let Ok(report) = &result {
+                        for group in report.projects.iter().chain(&report.groups) {
+                            self.fonts.require_text(&group.project);
+                            self.fonts.require_text(group.task.as_deref().unwrap_or(""));
+                        }
+                        for row in &report.history {
+                            let activity = &row.record.activity;
+                            self.fonts.require_text(activity.label());
+                            self.fonts.require_text(&activity.note);
+                        }
+                    }
                     self.reports.receive(id, result.map(|report| *report))
                 }
                 Action::Tracking(
@@ -551,6 +624,12 @@ impl eframe::App for Desktop {
                     if self.state.running != state.running {
                         self.motion_epoch = Instant::now();
                     }
+                    for project in &state.projects {
+                        self.fonts.require_text(&project.title);
+                        for task in &project.tasks {
+                            self.fonts.require_text(&task.title);
+                        }
+                    }
                     // Update the selected project's local-day total even while hidden.
                     if let Some(tray) = &self.tray {
                         let label = presentation::tooltip(self.profile, &state);
@@ -558,11 +637,7 @@ impl eframe::App for Desktop {
                             self.error = Some(format!("Cannot update tray status: {error}"));
                         }
                     }
-                    self.toggle_item.set_text(if state.running {
-                        "Stop tracking"
-                    } else {
-                        "Start tracking"
-                    });
+                    self.toggle_item.set_text(toggle_item_text(state.running));
                     self.toggle_item.set_enabled(
                         !state.needs_review && (state.running || self.lifecycle.is_some()),
                     );
@@ -694,6 +769,13 @@ impl eframe::App for Desktop {
             .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
         let mut drag_regions = Vec::new();
         let mut reveal_settings = false;
+        // egui mirrors rows and text alignment under a layout that prefers the right side.
+        let layout = egui::Layout::top_down(if i18n::current().is_rtl() {
+            egui::Align::Max
+        } else {
+            egui::Align::Min
+        });
+        ui.with_layout(layout, |ui| {
         attention_focus::ui_support::window_frame(ui.style()).show(ui, |ui| {
             // The widest window, less the left margin of the frame.
             ui.set_max_width(ui.available_width().min(752.0));
@@ -780,6 +862,43 @@ impl eframe::App for Desktop {
                                 }
                             }
                         });
+                        let mut language_chosen = false;
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(i18n::t("settings.language"));
+                            let selected = match self.language {
+                                i18n::Choice::System => {
+                                    i18n::t("language.same_as_windows").to_owned()
+                                }
+                                i18n::Choice::Fixed(language) => {
+                                    i18n::user(i18n::native_name(language)).into_owned()
+                                }
+                            };
+                            egui::ComboBox::from_id_salt("language")
+                                .selected_text(selected)
+                                .show_ui(ui, |ui| {
+                                    self.fonts.require_language_names();
+                                    language_chosen |= ui
+                                        .selectable_value(
+                                            &mut self.language,
+                                            i18n::Choice::System,
+                                            i18n::t("language.same_as_windows"),
+                                        )
+                                        .changed();
+                                    for language in i18n::Language::ALL {
+                                        language_chosen |= ui
+                                            .selectable_value(
+                                                &mut self.language,
+                                                i18n::Choice::Fixed(language),
+                                                i18n::user(i18n::native_name(language))
+                                                    .into_owned(),
+                                            )
+                                            .changed();
+                                    }
+                                });
+                        });
+                        if language_chosen {
+                            self.language_changed(frame);
+                        }
                         ui.separator();
                         ui.strong("Intervals");
                         let enabled = self.ready && !self.outbox.busy();
@@ -926,6 +1045,7 @@ impl eframe::App for Desktop {
                     });
                 }
             });
+        });
         });
         self.drag_regions.set(&drag_regions, ctx.pixels_per_point());
         attention_focus::ui_support::maximized_edge(&ctx);

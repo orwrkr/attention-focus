@@ -186,6 +186,10 @@ impl Panel {
         self.active_start = next;
         self.needs_review = state.needs_review;
     }
+    /// Report labels come from the worker, so a new language needs a new report.
+    pub fn language_changed(&mut self) {
+        self.dirty = true;
+    }
     fn edited(&mut self, now: Instant) {
         self.dirty = true;
         self.debounce = Some(now + Duration::from_millis(350));
@@ -452,8 +456,10 @@ impl Panel {
             duration(report.saved_ms.saturating_add(report.running_ms))
         ));
         ui.label(format!("Saved focus: {}", duration(report.saved_ms)));
-        ui.label(format!("Running (not finalized): {}",duration(report.running_ms))).on_hover_text("Elapsed time from the active interval clipped to this filter. It is not included in Saved focus until the interval ends.");
-        ui.label(format!("Needs review (excluded): {}",duration(report.review_ms))).on_hover_text("Saved checkpoint time from interrupted intervals within this filter. It is excluded from Saved focus until you accept recovery.");
+        ui.label(format!("Running now: {}", duration(report.running_ms))).on_hover_text("Time of the interval still running, inside this period. It moves to Saved focus when the interval ends.");
+        if report.review_ms > 0 {
+            ui.label(format!("Interrupted, not counted yet: {}", duration(report.review_ms))).on_hover_text("Time saved up to the last checkpoint of an interval that was cut off, such as by a crash or a clock change. It counts once you choose Accept saved time in the main window.");
+        }
         for diagnostic in &report.diagnostics {
             ui.colored_label(ui.visuals().warn_fg_color, diagnostic);
         }
@@ -531,7 +537,7 @@ impl Panel {
                     let status = match record.state {
                         reports::State::Saved => "Saved",
                         reports::State::Running => "Running",
-                        reports::State::Review => "Needs review",
+                        reports::State::Review => "Interrupted",
                     };
                     ui.push_id(record.id, |ui| {
                         ui.collapsing(

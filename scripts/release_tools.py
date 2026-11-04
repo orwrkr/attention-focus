@@ -28,6 +28,7 @@ def sha(path: Path) -> str:
 def fingerprint(root: Path=ROOT) -> str:
     paths=[root/"Cargo.toml",root/"Cargo.lock",root/"build.rs",root/".cargo/config.toml",root/"docs/user-guide.md",root/"LICENSE",root/"rust-toolchain.toml"]
     paths+=list((root/"src").rglob("*.rs"))
+    paths+=list((root/"locales").glob("*.json"))
     paths+=list((root/"scripts").glob("*.py"))+list((root/"scripts").glob("*.ps1"))+[root/"scripts/requirements-docs.txt"]
     paths += [p for p in (root/"third-party/license-overrides").rglob("*") if p.is_file()]
     digest=hashlib.sha256()
