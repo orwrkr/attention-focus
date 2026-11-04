@@ -179,6 +179,34 @@ impl Range {
             zone,
         })
     }
+    /// Minutes since local midnight on the clock in the selected time zone.
+    fn clock_minute(&self, ms: i64) -> f32 {
+        let Ok(time) = Timestamp::from_millisecond(ms) else {
+            return 0.0;
+        };
+        let local = time.to_zoned(self.zone.clone());
+        f32::from(local.hour()) * 60.0
+            + f32::from(local.minute())
+            + f32::from(local.second()) / 60.0
+            + f32::from(local.millisecond()) / 60_000.0
+    }
+    /// Divide a record's time between the local hours it covers, keeping its exact total.
+    fn add_to_rhythm(&self, rhythm: &mut [[u64; 24]; 7], record: &Record, start: i64, end: i64) {
+        let mut at = start;
+        while at < end {
+            let Ok(time) = Timestamp::from_millisecond(at) else {
+                return;
+            };
+            let local = time.to_zoned(self.zone.clone());
+            let into_hour = i64::from(local.minute()) * 60_000
+                + i64::from(local.second()) * 1000
+                + i64::from(local.millisecond());
+            let next = (at + 3_600_000 - into_hour).min(end);
+            let weekday = local.weekday().to_monday_zero_offset() as usize;
+            rhythm[weekday][local.hour() as usize] += allocated(record, at, next);
+            at = next;
+        }
+    }
     pub fn format_time(&self, ms: i64) -> String {
         Timestamp::from_millisecond(ms)
             .map(|t| {
@@ -223,6 +251,179 @@ struct GroupKey {
     project: Option<i64>,
     task: Option<String>,
 }
+/// Longest period drawn day by day. Longer periods still get the weekly rhythm.
+pub const CHART_MAX_DAYS: usize = 92;
+
+/// One session's part of one day, positioned by local clock time.
+#[derive(Clone, Debug)]
+pub struct ChartSegment {
+    pub day: usize,
+    pub start_minute: f32,
+    pub end_minute: f32,
+    pub elapsed_ms: u64,
+    pub project: Option<i64>,
+    pub task: Option<String>,
+    pub state: State,
+}
+#[derive(Clone, Debug)]
+pub struct ChartPart {
+    pub project: Option<i64>,
+    pub ms: u64,
+}
+#[derive(Clone, Debug)]
+pub struct ChartDay {
+    pub long_label: String,
+    pub short_label: String,
+    /// Finished time by project, in the order of `Chart::series`.
+    pub saved: Vec<ChartPart>,
+    pub running: Option<ChartPart>,
+    pub review_ms: u64,
+}
+impl ChartDay {
+    /// Finished and running time. As in report totals, review time is left out.
+    pub fn total_ms(&self) -> u64 {
+        let saved: u64 = self.saved.iter().map(|part| part.ms).sum();
+        saved + self.running.as_ref().map_or(0, |part| part.ms)
+    }
+}
+#[derive(Clone, Debug)]
+pub struct ChartSeries {
+    pub project: Option<i64>,
+    pub title: String,
+    pub total_ms: u64,
+}
+/// Graphical views of the same elapsed time as the report's totals.
+#[derive(Clone, Debug, Default)]
+pub struct Chart {
+    /// Empty when the period is longer than `CHART_MAX_DAYS`.
+    pub days: Vec<ChartDay>,
+    pub segments: Vec<ChartSegment>,
+    /// Every project with drawn time, largest first.
+    pub series: Vec<ChartSeries>,
+    /// Finished and running time by weekday, Monday first, and local hour.
+    pub rhythm: [[u64; 24]; 7],
+    /// How many days of the period fall on each weekday, Monday first.
+    pub weekday_counts: [u32; 7],
+    pub too_long: bool,
+}
+impl Chart {
+    fn compute(range: &Range, records: &[Record]) -> Self {
+        let mut chart = Chart {
+            too_long: range.days.len() > CHART_MAX_DAYS,
+            ..Default::default()
+        };
+        let mut days: Vec<(ChartDay, BTreeMap<Option<i64>, u64>)> = Vec::new();
+        for day in &range.days {
+            let Ok(date) = day.date.parse::<Date>() else {
+                continue;
+            };
+            chart.weekday_counts[date.weekday().to_monday_zero_offset() as usize] += 1;
+            if !chart.too_long {
+                days.push((
+                    ChartDay {
+                        long_label: date.strftime("%a %-d %b").to_string(),
+                        short_label: date.strftime("%a %-d").to_string(),
+                        saved: Vec::new(),
+                        running: None,
+                        review_ms: 0,
+                    },
+                    BTreeMap::new(),
+                ));
+            }
+        }
+        let mut series = BTreeMap::<Option<i64>, (String, u64, i64)>::new();
+        for record in records.iter().filter(|r| counted(r, range)) {
+            let project = record.activity.project.as_ref();
+            let id = project.map(|p| p.id);
+            let first = range
+                .days
+                .partition_point(|day| day.end_ms <= record.start_ms);
+            let mut drawn = false;
+            for (index, day) in range.days.iter().enumerate().skip(first) {
+                if day.start_ms >= record.end_ms {
+                    break;
+                }
+                let (start, end) = (
+                    record.start_ms.max(day.start_ms),
+                    record.end_ms.min(day.end_ms),
+                );
+                if start >= end {
+                    continue;
+                }
+                let elapsed_ms = allocated(record, start, end);
+                drawn = true;
+                if record.state != State::Review {
+                    range.add_to_rhythm(&mut chart.rhythm, record, start, end);
+                    series.entry(id).or_default().1 += elapsed_ms;
+                }
+                let Some((row, saved)) = days.get_mut(index) else {
+                    continue;
+                };
+                match record.state {
+                    State::Saved => *saved.entry(id).or_default() += elapsed_ms,
+                    State::Running => {
+                        row.running = Some(ChartPart {
+                            project: id,
+                            ms: elapsed_ms,
+                        });
+                    }
+                    State::Review => row.review_ms += elapsed_ms,
+                }
+                let start_minute = range.clock_minute(start);
+                chart.segments.push(ChartSegment {
+                    day: index,
+                    start_minute,
+                    // Real duration, since local clock times repeat when daylight saving ends.
+                    end_minute: (start_minute + (end - start) as f32 / 60_000.0).min(1440.0),
+                    elapsed_ms,
+                    project: id,
+                    task: project.and_then(|p| p.task.clone()),
+                    state: record.state,
+                });
+            }
+            if drawn {
+                let entry = series.entry(id).or_default();
+                if record.id >= entry.2 {
+                    entry.0 = record.activity.label().to_owned();
+                    entry.2 = record.id;
+                }
+            }
+        }
+        chart.series = series
+            .into_iter()
+            .map(|(project, (title, total_ms, _))| ChartSeries {
+                project,
+                title,
+                total_ms,
+            })
+            .collect();
+        chart.sort_series();
+        chart.days = days
+            .into_iter()
+            .map(|(mut row, saved)| {
+                row.saved = chart
+                    .series
+                    .iter()
+                    .filter_map(|series| {
+                        saved.get(&series.project).map(|&ms| ChartPart {
+                            project: series.project,
+                            ms,
+                        })
+                    })
+                    .collect();
+                row
+            })
+            .collect();
+        chart
+    }
+    fn sort_series(&mut self) {
+        self.series.sort_by(|a, b| {
+            b.total_ms
+                .cmp(&a.total_ms)
+                .then_with(|| a.title.cmp(&b.title))
+        });
+    }
+}
 #[derive(Debug)]
 pub struct Report {
     pub range: Range,
@@ -235,6 +436,8 @@ pub struct Report {
     pub matching_sessions: usize,
     pub diagnostics: Vec<String>,
     pub generated_ms: i64,
+    /// Only the interface draws charts, so exports leave this out.
+    pub chart: Option<Chart>,
 }
 impl Report {
     /// Totals show each project's current name, while session rows keep the recorded one.
@@ -247,7 +450,26 @@ impl Report {
             }
             sort_groups(groups);
         }
+        if let Some(chart) = &mut self.chart {
+            for series in &mut chart.series {
+                if let Some(title) = series.project.and_then(|id| titles.get(&id)) {
+                    series.title = title.clone();
+                }
+            }
+            chart.sort_series();
+        }
     }
+}
+/// Whether a record has a valid interval that reaches into the selected range.
+fn counted(record: &Record, range: &Range) -> bool {
+    range.start_ms != range.end_ms
+        && valid_interval(record)
+        && record.start_ms < range.end_ms
+        && record.end_ms >= range.start_ms
+        && (record.end_ms != range.start_ms || record.start_ms == record.end_ms)
+}
+fn valid_interval(record: &Record) -> bool {
+    record.end_ms >= record.start_ms && (record.end_ms != record.start_ms || record.elapsed_ms == 0)
 }
 fn sort_groups(groups: &mut [Group]) {
     groups.sort_by(|a, b| {
@@ -271,7 +493,10 @@ pub(crate) fn allocated(record: &Record, start: i64, end: i64) -> u64 {
 }
 
 pub fn compute(range: Range, records: Vec<Record>, generated_ms: i64) -> Report {
-    compute_with_limit(range, records, generated_ms, Some(200))
+    let chart = Chart::compute(&range, &records);
+    let mut report = compute_with_limit(range, records, generated_ms, Some(200));
+    report.chart = Some(chart);
+    report
 }
 pub(crate) fn compute_all(range: Range, records: Vec<Record>, generated_ms: i64) -> Report {
     compute_with_limit(range, records, generated_ms, None)
@@ -290,19 +515,14 @@ fn compute_with_limit(
         if range.start_ms == range.end_ms {
             continue;
         }
-        if record.end_ms < record.start_ms
-            || (record.end_ms == record.start_ms && record.elapsed_ms > 0)
-        {
+        if !valid_interval(&record) {
             diagnostics.push(format!(
                 "Session {} has an invalid wall interval; its duration is excluded.",
                 record.id
             ));
             continue;
         }
-        if record.start_ms >= range.end_ms
-            || record.end_ms < range.start_ms
-            || (record.end_ms == range.start_ms && record.start_ms != record.end_ms)
-        {
+        if !counted(&record, &range) {
             continue;
         }
         let ms = allocated(&record, range.start_ms, range.end_ms);
@@ -378,6 +598,7 @@ fn compute_with_limit(
         matching_sessions,
         diagnostics,
         generated_ms,
+        chart: None,
     }
 }
 
@@ -718,6 +939,184 @@ mod tests {
             let contained = compute_all(range(from, through, zone), inside, 0);
             assert_eq!(contained.saved_ms, expected, "full durations: {context}");
         }
+    }
+    #[test]
+    fn chart_totals_match_the_report_across_calendar_boundaries() {
+        for (zone, from, through) in [
+            ("UTC", "2026-01-01", "2026-01-10"),
+            ("Europe/Istanbul", "2026-10-25", "2026-11-04"),
+            ("America/New_York", "2026-03-06", "2026-03-10"),
+            ("America/New_York", "2026-10-30", "2026-11-03"),
+            ("America/Sao_Paulo", "2015-10-16", "2015-10-20"),
+            ("Pacific/Apia", "2011-12-28", "2012-01-02"),
+            ("Asia/Kathmandu", "2026-05-01", "2026-05-05"),
+            ("Australia/Lord_Howe", "2026-04-03", "2026-04-07"),
+        ] {
+            let mut rng = Sequence(zone.len() as u64 ^ 0xc0ffee);
+            let whole = range(from, through, zone);
+            let (begin, end) = (whole.start_ms, whole.end_ms);
+            let records = timeline(&mut rng, begin - 18_000_000, end + 18_000_000);
+            let report = compute(whole, records, 0);
+            let chart = report.chart.as_ref().unwrap();
+            let context = format!("{zone} {from}..{through}");
+            assert_eq!(chart.days.len(), report.range.days.len(), "{context}");
+            for (row, day) in chart.days.iter().zip(&report.range.days) {
+                assert_eq!(row.total_ms(), day.saved_ms, "{context} {}", day.date);
+                assert!(row.running.is_none() && row.review_ms == 0);
+            }
+            assert_eq!(
+                chart.segments.iter().map(|s| s.elapsed_ms).sum::<u64>(),
+                report.saved_ms,
+                "segments must add up: {context}"
+            );
+            assert_eq!(
+                chart.rhythm.iter().flatten().sum::<u64>(),
+                report.saved_ms,
+                "the weekly rhythm must add up: {context}"
+            );
+            assert_eq!(
+                chart.series.iter().map(|s| s.total_ms).sum::<u64>(),
+                report.saved_ms,
+                "the series must add up: {context}"
+            );
+            for segment in &chart.segments {
+                assert!(segment.day < chart.days.len(), "{context}");
+                assert!(
+                    (0.0..=1440.0).contains(&segment.start_minute)
+                        && segment.start_minute <= segment.end_minute
+                        && segment.end_minute <= 1440.0,
+                    "{context}: {segment:?}"
+                );
+            }
+            assert_eq!(
+                chart.weekday_counts.iter().sum::<u32>() as usize,
+                report.range.days.len(),
+                "{context}"
+            );
+        }
+    }
+    #[test]
+    fn chart_places_sessions_on_the_local_clock_and_divides_them_at_midnight() {
+        let whole = range("2026-10-26", "2026-10-27", "Europe/Istanbul");
+        let (first, second) = (whole.days[0].start_ms, whole.days[1].start_ms);
+        // From 22:30 to 01:30 local time, across midnight, then one later session.
+        let mut crossing = record(
+            first + 22 * 3_600_000 + 1_800_000,
+            second + 5_400_000,
+            10_800_000,
+            State::Saved,
+        );
+        crossing.activity.project = Some(project(7, "Recorded title", Some("Task")));
+        let mut later = record(
+            second + 9 * 3_600_000,
+            second + 10 * 3_600_000,
+            3_600_000,
+            State::Saved,
+        );
+        later.id = 2;
+        let mut report = compute(whole, vec![crossing, later], 0);
+        report.use_current_titles(&HashMap::from([(7, "Current title".to_owned())]));
+        let chart = report.chart.as_ref().unwrap();
+        let spans: Vec<(usize, f32, f32, u64)> = chart
+            .segments
+            .iter()
+            .map(|s| (s.day, s.start_minute, s.end_minute, s.elapsed_ms))
+            .collect();
+        assert_eq!(
+            spans,
+            [
+                (0, 1350.0, 1440.0, 5_400_000),
+                (1, 0.0, 90.0, 5_400_000),
+                (1, 540.0, 600.0, 3_600_000),
+            ]
+        );
+        assert_eq!(chart.days[0].long_label, "Mon 26 Oct");
+        assert_eq!(chart.days[1].short_label, "Tue 27");
+        assert_eq!(chart.series[0].title, "Current title");
+        assert_eq!(chart.series[0].total_ms, 10_800_000);
+        assert_eq!(chart.series[1].title, "Unassigned focus");
+        assert_eq!(chart.segments[0].task.as_deref(), Some("Task"));
+        // 26 October 2026 is a Monday: its evening hours, then Tuesday's early and later ones.
+        assert_eq!(chart.rhythm[0][22], 1_800_000);
+        assert_eq!(chart.rhythm[0][23], 3_600_000);
+        assert_eq!(chart.rhythm[1][0], 3_600_000);
+        assert_eq!(chart.rhythm[1][1], 1_800_000);
+        assert_eq!(chart.rhythm[1][9], 3_600_000);
+        assert_eq!(&chart.weekday_counts[..3], [1, 1, 0]);
+    }
+    #[test]
+    fn chart_keeps_running_and_review_time_apart_like_the_totals() {
+        let whole = range("2026-01-01", "2026-01-01", "UTC");
+        let start = whole.start_ms;
+        let mut saved = record(start, start + 1000, 1000, State::Saved);
+        saved.activity.project = Some(project(1, "Alpha", None));
+        let mut running = record(start + 2000, start + 3000, 1000, State::Running);
+        running.id = 2;
+        running.activity.project = Some(project(1, "Alpha", None));
+        let mut review = record(start + 4000, start + 9000, 5000, State::Review);
+        review.id = 3;
+        review.activity.project = Some(project(2, "Beta", None));
+        let report = compute(whole, vec![saved, running, review], 0);
+        let chart = report.chart.as_ref().unwrap();
+        let day = &chart.days[0];
+        assert_eq!(day.total_ms(), report.saved_ms + report.running_ms);
+        assert_eq!(day.review_ms, report.review_ms);
+        assert_eq!(day.saved[0].ms, 1000);
+        assert_eq!(day.running.as_ref().unwrap().ms, 1000);
+        assert_eq!(
+            chart.rhythm.iter().flatten().sum::<u64>(),
+            2000,
+            "review time stays out, as in Total"
+        );
+        assert_eq!(chart.segments.len(), 3);
+        // A project with only review time still appears, so its outline has a name.
+        let beta = chart.series.iter().find(|s| s.title == "Beta").unwrap();
+        assert_eq!(beta.total_ms, 0);
+    }
+    #[test]
+    fn long_periods_keep_only_the_weekly_rhythm_and_exports_build_no_chart() {
+        let long = range("2026-01-01", "2026-04-30", "UTC");
+        assert!(long.days.len() > CHART_MAX_DAYS);
+        let start = long.start_ms;
+        let session = || {
+            record(
+                start + 3_600_000,
+                start + 7_200_000,
+                3_600_000,
+                State::Saved,
+            )
+        };
+        let report = compute(long, vec![session()], 0);
+        let chart = report.chart.as_ref().unwrap();
+        assert!(chart.too_long && chart.days.is_empty() && chart.segments.is_empty());
+        // 1 January 2026 is a Thursday.
+        assert_eq!(chart.rhythm[3][1], 3_600_000);
+        assert_eq!(chart.series[0].total_ms, 3_600_000);
+        assert_eq!(
+            chart.weekday_counts.iter().sum::<u32>() as usize,
+            report.range.days.len()
+        );
+        let fits = range("2026-01-01", "2026-04-02", "UTC");
+        assert_eq!(fits.days.len(), CHART_MAX_DAYS);
+        assert!(!compute(fits, vec![], 0).chart.unwrap().too_long);
+        let exported = compute_all(range("2026-01-01", "2026-01-01", "UTC"), vec![session()], 0);
+        assert!(exported.chart.is_none());
+    }
+    #[test]
+    fn chart_skips_invalid_sessions_like_the_totals() {
+        let whole = range("2026-01-01", "2026-01-01", "UTC");
+        let start = whole.start_ms;
+        let report = compute(
+            whole,
+            vec![
+                record(start + 5000, start + 1000, 1000, State::Saved),
+                record(start, start, 10, State::Saved),
+            ],
+            0,
+        );
+        assert_eq!(report.diagnostics.len(), 2);
+        let chart = report.chart.unwrap();
+        assert!(chart.segments.is_empty() && chart.series.is_empty());
     }
     #[test]
     fn half_open_boundaries_count_a_session_touching_midnight_on_one_side_only() {

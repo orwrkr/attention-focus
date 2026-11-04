@@ -1,5 +1,6 @@
 //! Local focus tracking with an application-owned project list, and desktop assets.
 
+pub mod charts;
 pub mod counters;
 pub mod export;
 pub mod icons;

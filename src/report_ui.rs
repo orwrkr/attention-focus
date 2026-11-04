@@ -27,6 +27,8 @@ pub struct Panel {
     active_start: Option<i64>,
     needs_review: bool,
     project_titles: Vec<(i64, String)>,
+    chart_view: crate::charts::View,
+    project_colors: crate::charts::ProjectColors,
     growing: bool,
     was_open: bool,
     export_request: Option<crate::export::Format>,
@@ -64,6 +66,8 @@ impl Default for Panel {
             active_start: None,
             needs_review: false,
             project_titles: Vec::new(),
+            chart_view: Default::default(),
+            project_colors: Default::default(),
             growing: false,
             was_open: false,
             export_request: None,
@@ -99,6 +103,8 @@ impl Panel {
             &(self.request.clone(), self.preset),
         );
         eframe::set_value(storage, "timezone_search", &self.zone_search);
+        eframe::set_value(storage, "chart_view", &self.chart_view);
+        eframe::set_value(storage, "project_colors", &self.project_colors);
     }
     pub fn restore(storage: Option<&dyn eframe::Storage>) -> Self {
         let mut panel = Self::default();
@@ -115,6 +121,8 @@ impl Panel {
                 }
             }
             panel.zone_search = eframe::get_value(storage, "timezone_search").unwrap_or_default();
+            panel.chart_view = eframe::get_value(storage, "chart_view").unwrap_or_default();
+            panel.project_colors = eframe::get_value(storage, "project_colors").unwrap_or_default();
         }
         panel
     }
@@ -136,6 +144,7 @@ impl Panel {
         }
     }
     pub fn tracking_changed(&mut self, state: &tracking::Snapshot, committed: bool, wall_ms: i64) {
+        self.project_colors.update(&state.projects);
         // Totals show current project names, so a rename must refresh a report on screen.
         let titles: Vec<_> = state
             .projects
@@ -400,7 +409,7 @@ impl Panel {
                 ui.colored_label(egui::Color32::LIGHT_RED, error);
             }
             if let Some(report) = &self.report {
-                Self::results(ui, report);
+                Self::results(ui, report, &mut self.chart_view, &self.project_colors);
             } else {
                 ui.label("The report loads automatically when history is ready.");
             }
@@ -419,7 +428,12 @@ impl Panel {
                 }));
         }
     }
-    fn results(ui: &mut egui::Ui, report: &reports::Report) {
+    fn results(
+        ui: &mut egui::Ui,
+        report: &reports::Report,
+        chart_view: &mut crate::charts::View,
+        project_colors: &crate::charts::ProjectColors,
+    ) {
         let request = &report.range.request;
         ui.label(format!(
             "Results: {} {} to {} {} (end excluded) | {}",
@@ -442,6 +456,13 @@ impl Panel {
         ui.label(format!("Needs review (excluded): {}",duration(report.review_ms))).on_hover_text("Saved checkpoint time from interrupted intervals within this filter. It is excluded from Saved focus until you accept recovery.");
         for diagnostic in &report.diagnostics {
             ui.colored_label(egui::Color32::YELLOW, diagnostic);
+        }
+        if let Some(chart) = &report.chart {
+            egui::CollapsingHeader::new("Charts")
+                .default_open(true)
+                .show(ui, |ui| {
+                    crate::charts::show(ui, chart, chart_view, project_colors);
+                });
         }
         ui.collapsing("By project", |ui| {
             egui::Grid::new("project-totals")
@@ -760,6 +781,113 @@ mod tests {
         click(&mut panel, "Today");
         assert_eq!(panel.preset, Some(1));
         assert_eq!(panel.request.through, panel.request.from);
+    }
+    #[test]
+    fn chart_view_and_project_colors_survive_restart() {
+        let mut panel = fixed();
+        panel.chart_view = crate::charts::View::Rhythm;
+        panel.tracking_changed(
+            &tracking::Snapshot {
+                projects: vec![tracking::CatalogProject {
+                    id: 4,
+                    title: "Alpha".into(),
+                    archived: false,
+                    used: true,
+                    tasks: Vec::new(),
+                }],
+                ..tracking::Snapshot::default()
+            },
+            false,
+            0,
+        );
+        assert_ne!(panel.project_colors, Default::default());
+        let mut storage = MemoryStorage::default();
+        panel.save(&mut storage);
+        let restored = Panel::restore(Some(&storage));
+        assert_eq!(restored.chart_view, crate::charts::View::Rhythm);
+        assert_eq!(restored.project_colors, panel.project_colors);
+        // Unreadable preferences fall back to defaults instead of blocking the report.
+        storage.set_string("chart_view", "broken preferences".into());
+        storage.set_string("project_colors", "broken preferences".into());
+        let restored = Panel::restore(Some(&storage));
+        assert_eq!(restored.chart_view, crate::charts::View::Timeline);
+        assert_eq!(restored.project_colors, Default::default());
+    }
+    #[test]
+    fn reports_on_screen_include_the_charts_and_keep_refreshing_them() {
+        let context = egui::Context::default();
+        let mut panel = fixed();
+        let (begin, _) = panel.request.bounds().unwrap();
+        let records = vec![reports::Record {
+            id: 1,
+            start_ms: begin + 3_600_000,
+            end_ms: begin + 7_200_000,
+            elapsed_ms: 3_600_000,
+            state: reports::State::Saved,
+            activity: tracking::Activity::default(),
+            reason: "stop".into(),
+        }];
+        panel.report = Some(reports::compute(
+            reports::Range::new(&panel.request).unwrap(),
+            records,
+            begin,
+        ));
+        let (sender, _receiver) = mpsc::sync_channel(8);
+        let frame = |panel: &mut Panel, events| {
+            let mut output = context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(700.0, 1200.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| panel.show(ui, &sender, true),
+            );
+            output.textures_delta.clear();
+            output
+        };
+        let texts = |output: &egui::FullOutput| -> Vec<(String, egui::Pos2)> {
+            output
+                .shapes
+                .iter()
+                .filter_map(|s| match &s.shape {
+                    egui::Shape::Text(text) => Some((text.galley.job.text.clone(), text.pos)),
+                    _ => None,
+                })
+                .collect()
+        };
+        frame(&mut panel, vec![]);
+        let output = frame(&mut panel, vec![]);
+        let header = texts(&output)
+            .into_iter()
+            .find(|(text, _)| text == "Focus history and reports")
+            .unwrap()
+            .1
+            + egui::vec2(3.0, 3.0);
+        let press = |pos, pressed| {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ]
+        };
+        frame(&mut panel, press(header, true));
+        frame(&mut panel, press(header, false));
+        let mut output = frame(&mut panel, vec![]);
+        for _ in 0..30 {
+            output = frame(&mut panel, vec![]);
+        }
+        let shown = texts(&output);
+        let has = |label: &str| shown.iter().any(|(text, _)| text == label);
+        assert!(has("Charts") && has("Timeline") && has("By day") && has("Weekly rhythm"));
+        assert!(has("Thu 1 Oct"), "the row for 1 October 2026");
+        assert!(has("Unassigned focus"), "the legend names the project");
     }
     #[test]
     fn renaming_a_project_refreshes_the_report_even_while_stopped() {

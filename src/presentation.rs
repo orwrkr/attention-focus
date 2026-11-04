@@ -10,6 +10,16 @@ pub fn duration(ms: u64) -> String {
         seconds % 60
     )
 }
+/// Compact form for chart labels, where seconds would only add noise.
+pub fn hours_minutes(ms: u64) -> String {
+    let minutes = (ms + 30_000) / 60_000;
+    match (minutes / 60, minutes % 60) {
+        (0, 0) if ms > 0 => "<1m".into(),
+        (0, minutes) => format!("{minutes}m"),
+        (hours, 0) => format!("{hours}h"),
+        (hours, minutes) => format!("{hours}h {minutes:02}m"),
+    }
+}
 fn shorten(text: &str, limit: usize) -> String {
     if text.encode_utf16().count() <= limit {
         return text.to_owned();
@@ -71,6 +81,15 @@ pub fn tooltip(profile: Profile, state: &Snapshot) -> String {
 mod tests {
     use super::*;
     use crate::tracking::{Activity, Project};
+    #[test]
+    fn chart_durations_round_to_minutes_without_hiding_small_amounts() {
+        assert_eq!(hours_minutes(0), "0m");
+        assert_eq!(hours_minutes(29_000), "<1m");
+        assert_eq!(hours_minutes(45 * 60_000), "45m");
+        assert_eq!(hours_minutes(3_600_000), "1h");
+        assert_eq!(hours_minutes(6 * 3_600_000 + 19 * 60_000), "6h 19m");
+        assert_eq!(hours_minutes(3_599_900), "1h");
+    }
     #[test]
     fn tooltip_names_the_selected_project_and_preserves_daily_time_with_long_unicode() {
         let mut state = Snapshot {
