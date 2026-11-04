@@ -84,9 +84,9 @@ impl Listener {
                 UnregisterClassW(class.as_ptr(), instance);
             }
         });
-        let window = receiver
-            .recv()
-            .map_err(|_| io::Error::other("Lifecycle listener initialization failed."))??;
+        let window = receiver.recv().map_err(|_| {
+            io::Error::other(crate::i18n::message("errors.lifecycle_init_failed", &[]))
+        })??;
         Ok(Self { window })
     }
 }

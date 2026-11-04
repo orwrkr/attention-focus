@@ -1,5 +1,8 @@
 //! Controls for the application's own project and task list; changes go through the worker.
-use crate::tracking::{CatalogProject, Command};
+use crate::{
+    i18n::{message, paragraph, t, tf, tooltip, user},
+    tracking::{CatalogProject, Command},
+};
 use eframe::egui;
 use std::collections::HashMap;
 
@@ -65,13 +68,16 @@ impl Panel {
             let wrap = ui.available_width();
             ui.add(
                 egui::TextEdit::multiline(&mut self.new_projects)
-                    .hint_text("New project name. Paste several, one per line.")
+                    .hint_text(t("projects.new_project_hint"))
                     .desired_rows(2)
                     .desired_width(wrap),
             );
             let names = lines(&self.new_projects);
             if ui
-                .add_enabled(!names.is_empty(), egui::Button::new("Add projects"))
+                .add_enabled(
+                    !names.is_empty(),
+                    egui::Button::new(t("projects.add_projects")),
+                )
                 .clicked()
             {
                 commands.push(Command::AddProjects(names));
@@ -81,12 +87,15 @@ impl Panel {
             if archived > 0 {
                 ui.checkbox(
                     &mut self.show_archived,
-                    format!("Show archived projects ({archived})"),
+                    tf(
+                        "projects.show_archived",
+                        &[("count", &archived.to_string())],
+                    ),
                 );
             }
             ui.separator();
             if projects.is_empty() {
-                ui.label("No projects yet. You can still track Unassigned focus.");
+                paragraph(ui, &message("projects.none_yet", &[]));
             }
             for project in projects {
                 if project.archived && !self.show_archived {
@@ -101,9 +110,12 @@ impl Panel {
     fn project(&mut self, ui: &mut egui::Ui, project: &CatalogProject, out: &mut Vec<Command>) {
         let open = project.tasks.iter().filter(|task| !task.done).count();
         let title = match (project.archived, open) {
-            (true, _) => format!("{} (Archived)", project.title),
-            (false, 0) => project.title.clone(),
-            (false, count) => format!("{} ({count})", project.title),
+            (true, _) => tf("projects.archived_title", &[("name", &project.title)]),
+            (false, 0) => user(&project.title).into_owned(),
+            (false, count) => tf(
+                "projects.open_tasks_title",
+                &[("name", &project.title), ("count", &count.to_string())],
+            ),
         };
         egui::CollapsingHeader::new(title)
             .id_salt("details")
@@ -121,11 +133,8 @@ impl Panel {
                         self.renames.insert(project.id, draft.clone());
                     }
                     let changed = draft.trim() != project.title && !draft.trim().is_empty();
-                    if ui
-                        .add_enabled(changed, egui::Button::new("Rename"))
-                        .on_hover_text("Earlier sessions keep the name they recorded.")
-                        .clicked()
-                    {
+                    let rename = ui.add_enabled(changed, egui::Button::new(t("projects.rename")));
+                    if tooltip(rename, &message("projects.rename_hint", &[])).clicked() {
                         out.push(Command::RenameProject {
                             id: project.id,
                             title: draft.clone(),
@@ -140,9 +149,9 @@ impl Panel {
                     ui.horizontal(|ui| {
                         let mut checked = task.done;
                         let label = if task.done {
-                            egui::RichText::new(&task.title).strikethrough()
+                            egui::RichText::new(user(&task.title).as_ref()).strikethrough()
                         } else {
-                            egui::RichText::new(&task.title)
+                            egui::RichText::new(user(&task.title).as_ref())
                         };
                         if ui.checkbox(&mut checked, label).changed() {
                             out.push(Command::SetTaskDone {
@@ -152,10 +161,11 @@ impl Panel {
                             });
                         }
                         if !task.used
-                            && ui
-                                .small_button("Delete")
-                                .on_hover_text("Never tracked, so it can be removed.")
-                                .clicked()
+                            && tooltip(
+                                ui.small_button(t("projects.delete")),
+                                &message("projects.delete_hint", &[]),
+                            )
+                            .clicked()
                         {
                             out.push(Command::DeleteTask {
                                 project: project.id,
@@ -168,13 +178,16 @@ impl Panel {
                     let draft = self.new_tasks.entry(project.id).or_default();
                     ui.add(
                         egui::TextEdit::multiline(draft)
-                            .hint_text("New task. Paste several, one per line.")
+                            .hint_text(t("projects.new_task_hint"))
                             .desired_rows(1)
                             .desired_width(ui.available_width()),
                     );
                     let names = lines(draft);
                     if ui
-                        .add_enabled(!names.is_empty(), egui::Button::new("Add tasks"))
+                        .add_enabled(
+                            !names.is_empty(),
+                            egui::Button::new(t("projects.add_tasks")),
+                        )
                         .clicked()
                     {
                         out.push(Command::AddTasks {
@@ -185,27 +198,23 @@ impl Panel {
                     }
                 }
                 ui.horizontal(|ui| {
-                    if ui
-                        .button(if project.archived {
-                            "Restore"
-                        } else {
-                            "Archive"
-                        })
-                        .on_hover_text(
-                            "Archived projects leave the pickers. Their history stays in reports.",
-                        )
-                        .clicked()
-                    {
+                    let archive = ui.button(if project.archived {
+                        t("projects.restore")
+                    } else {
+                        t("projects.archive")
+                    });
+                    if tooltip(archive, &message("projects.archive_hint", &[])).clicked() {
                         out.push(Command::SetProjectArchived {
                             id: project.id,
                             archived: !project.archived,
                         });
                     }
                     if !project.used
-                        && ui
-                            .button("Delete")
-                            .on_hover_text("Never tracked, so it can be removed.")
-                            .clicked()
+                        && tooltip(
+                            ui.button(t("projects.delete")),
+                            &message("projects.delete_hint", &[]),
+                        )
+                        .clicked()
                     {
                         out.push(Command::DeleteProject(project.id));
                     }

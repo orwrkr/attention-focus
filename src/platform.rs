@@ -335,7 +335,10 @@ pub fn constrain_window_bounds(
     let raw_window_handle::RawWindowHandle::Win32(handle) =
         window.window_handle().map_err(io::Error::other)?.as_raw()
     else {
-        return Err(io::Error::other("Expected a Windows root window."));
+        return Err(io::Error::other(crate::i18n::message(
+            "errors.windows_root_window",
+            &[],
+        )));
     };
     let hwnd = handle.hwnd.get() as _;
     // UI-thread-owned rectangles are released when the native window is destroyed.

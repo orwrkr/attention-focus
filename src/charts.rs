@@ -1,12 +1,16 @@
 //! Graphical report views, drawn with the egui painter from the report's own numbers.
 use crate::{
+    i18n::{message, message_plural, paint, paragraph, t, tf, tp, user},
     presentation::hours_minutes,
     reports::{Chart, ChartDay, ChartSegment, ChartSeries, State},
     tracking::CatalogProject,
 };
 use eframe::egui::{self, Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Stroke, vec2};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap, HashSet},
+};
 
 /// Categorical colors in a fixed order chosen so neighbors stay distinct with color vision
 /// differences. Each theme has its own validated steps of the same eight hues.
@@ -104,7 +108,9 @@ impl ProjectColors {
 /// larger keeps it and the smaller joins a neutral Other, so one color never names two.
 struct Styles {
     colors: HashMap<Option<i64>, Color32>,
+    /// Logical names, since a project name is user data and the unassigned name follows the language.
     titles: HashMap<Option<i64>, String>,
+    /// The same names as egui must receive them.
     legend: Vec<(Color32, String)>,
     other: usize,
 }
@@ -123,7 +129,16 @@ impl Styles {
             other: 0,
         };
         for series in series {
-            styles.titles.insert(series.project, series.title.clone());
+            // Time without a project carries the English label from the worker.
+            let (logical, painted) = if series.project.is_none() {
+                (
+                    message("activity.unassigned", &[]),
+                    t("activity.unassigned").to_owned(),
+                )
+            } else {
+                (series.title.clone(), user(&series.title).into_owned())
+            };
+            styles.titles.insert(series.project, logical);
             let color = match series.project {
                 None => Some(UNASSIGNED),
                 Some(id) => colors.slot(id).filter(|&slot| !used[slot]).map(|slot| {
@@ -134,25 +149,33 @@ impl Styles {
             match color {
                 Some(color) => {
                     styles.colors.insert(series.project, color);
-                    styles.legend.push((color, series.title.clone()));
+                    styles.legend.push((color, painted));
                 }
                 None => styles.other += 1,
             }
         }
         if styles.other > 0 {
-            styles
-                .legend
-                .push((OTHER, format!("Other ({})", styles.other)));
+            let other = tf("charts.other", &[("count", &styles.other.to_string())]);
+            styles.legend.push((OTHER, other));
         }
         styles
     }
     fn color(&self, project: Option<i64>) -> Color32 {
         self.colors.get(&project).copied().unwrap_or(OTHER)
     }
-    fn title(&self, project: Option<i64>) -> &str {
-        self.titles
-            .get(&project)
-            .map_or("Unassigned focus", String::as_str)
+    /// A name shown on its own, as egui must receive it.
+    fn title(&self, project: Option<i64>) -> Cow<'_, str> {
+        match self.titles.get(&project) {
+            Some(title) if project.is_some() => user(title),
+            _ => Cow::Borrowed(t("activity.unassigned")),
+        }
+    }
+    /// A name to compose into a message, in logical order.
+    fn logical_title(&self, project: Option<i64>) -> Cow<'_, str> {
+        match self.titles.get(&project) {
+            Some(title) => Cow::Borrowed(title.as_str()),
+            None => Cow::Owned(message("activity.unassigned", &[])),
+        }
     }
 }
 
@@ -184,6 +207,10 @@ fn clock(minute: f32) -> String {
 }
 fn hour_label(hour: usize) -> String {
     format!("{hour:02}:00")
+}
+/// A compact duration as egui must receive it.
+fn hm(ms: u64) -> String {
+    paint(&hours_minutes(ms)).into_owned()
 }
 /// Narrower than this, egui paints an outline solid, and unfinished time would look finished.
 const UNFINISHED_LEAST: f32 = 5.0;
@@ -275,8 +302,8 @@ impl Timeline {
 fn state_note(state: State) -> Option<&'static str> {
     match state {
         State::Saved => None,
-        State::Running => Some("Running, not finished yet"),
-        State::Review => Some("Interrupted, not counted yet"),
+        State::Running => Some(t("charts.running_note")),
+        State::Review => Some(t("charts.interrupted_note")),
     }
 }
 /// Finished time is solid. Unfinished time keeps the project's hue in a visibly lighter form.
@@ -325,8 +352,29 @@ fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
     crate::ui_support::inner_area("chart-timeline", 490.0).show(ui, |ui| {
         let size = vec2(ui.available_width(), Timeline::height(rows));
         let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
-        let layout = Timeline::new(rect, rows);
         let painter = ui.painter_at(rect);
+        let width_of = |text: String| painter.layout_no_wrap(text, small(), ink.muted).size().x;
+        let compact = rows > Timeline::COMPACT_ROWS;
+        let widest_date = chart
+            .days
+            .iter()
+            .map(|day| {
+                let label = if compact {
+                    &day.short_label
+                } else {
+                    &day.long_label
+                };
+                width_of(paint(label).into_owned())
+            })
+            .fold(0.0, f32::max);
+        let widest_total = chart
+            .days
+            .iter()
+            .map(|day| width_of(hm(day.total_ms())))
+            .fold(0.0, f32::max);
+        let mut layout = Timeline::new(rect, rows);
+        layout.labels = layout.labels.max(widest_date + 8.0);
+        layout.totals = layout.totals.max(widest_total + 8.0);
         for hour in (0..=24).step_by(6) {
             let x = layout.x(hour as f32 * 60.0);
             painter.vline(
@@ -362,14 +410,14 @@ fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
             painter.text(
                 egui::pos2(rect.left(), middle),
                 Align2::LEFT_CENTER,
-                label,
+                paint(label),
                 small(),
                 ink.muted,
             );
             painter.text(
                 egui::pos2(rect.right(), middle),
                 Align2::RIGHT_CENTER,
-                hours_minutes(day.total_ms()),
+                hm(day.total_ms()),
                 small(),
                 ink.text,
             );
@@ -393,16 +441,18 @@ fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
             outline_hovered(&painter, layout.mark(segment), ink);
             let day = &chart.days[segment.day];
             response.on_hover_ui_at_pointer(|ui| {
-                ui.strong(hours_minutes(segment.elapsed_ms));
-                ui.label(styles.title(segment.project));
+                ui.strong(hm(segment.elapsed_ms));
+                ui.label(styles.title(segment.project).as_ref());
                 if let Some(task) = &segment.task {
-                    ui.label(task);
+                    ui.label(user(task).as_ref());
                 }
-                ui.label(format!(
-                    "{}, {} to {}",
-                    day.long_label,
-                    clock(segment.start_minute),
-                    clock(segment.end_clock)
+                ui.label(tf(
+                    "charts.time_range",
+                    &[
+                        ("when", &day.long_label),
+                        ("from", &clock(segment.start_minute)),
+                        ("to", &clock(segment.end_clock)),
+                    ],
                 ));
                 if let Some(note) = state_note(segment.state) {
                     ui.label(note);
@@ -501,26 +551,30 @@ impl Columns {
 }
 
 fn day_details(ui: &mut egui::Ui, day: &ChartDay, styles: &Styles) {
-    ui.strong(hours_minutes(day.total_ms()));
-    ui.label(&day.long_label);
+    ui.strong(hm(day.total_ms()));
+    ui.label(paint(&day.long_label).as_ref());
     for part in &day.saved {
-        ui.label(format!(
-            "{}: {}",
-            styles.title(part.project),
-            hours_minutes(part.ms)
+        ui.label(tf(
+            "charts.part_total",
+            &[
+                ("title", &styles.logical_title(part.project)),
+                ("duration", &hours_minutes(part.ms)),
+            ],
         ));
     }
     if let Some(part) = &day.running {
-        ui.label(format!(
-            "{} (running): {}",
-            styles.title(part.project),
-            hours_minutes(part.ms)
+        ui.label(tf(
+            "charts.part_running",
+            &[
+                ("title", &styles.logical_title(part.project)),
+                ("duration", &hours_minutes(part.ms)),
+            ],
         ));
     }
     if day.review_ms > 0 {
-        ui.label(format!(
-            "Interrupted, not counted yet: {}",
-            hours_minutes(day.review_ms)
+        ui.label(tf(
+            "reports.interrupted",
+            &[("duration", &hours_minutes(day.review_ms))],
         ));
     }
 }
@@ -533,8 +587,17 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
     let size = vec2(ui.available_width(), Columns::HEIGHT);
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
     let most = chart.days.iter().map(ChartDay::total_ms).max().unwrap_or(0);
-    let layout = Columns::new(rect, chart.days.len(), most);
+    let mut layout = Columns::new(rect, chart.days.len(), most);
     let painter = ui.painter_at(rect);
+    let axis_label =
+        |hour: u64| paint(&message("units.hours", &[("hours", &hour.to_string())])).into_owned();
+    layout.left = layout.left.max(
+        painter
+            .layout_no_wrap(axis_label(layout.scale_hours), small(), ink.muted)
+            .size()
+            .x
+            + 10.0,
+    );
     for hour in (0..=layout.scale_hours).step_by(layout.grid_step() as usize) {
         let y = layout.y(hour.saturating_mul(3_600_000));
         let color = if hour == 0 { ink.axis } else { ink.grid };
@@ -546,7 +609,7 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
         painter.text(
             egui::pos2(rect.left() + layout.left - 8.0, y),
             Align2::RIGHT_CENTER,
-            format!("{hour}h"),
+            paint(&message("units.hours", &[("hours", &hour.to_string())])).as_ref(),
             small(),
             ink.muted,
         );
@@ -557,7 +620,7 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
         .iter()
         .map(|day| {
             painter
-                .layout_no_wrap(day.short_label.clone(), small(), ink.muted)
+                .layout_no_wrap(paint(&day.short_label).into_owned(), small(), ink.muted)
                 .size()
                 .x
         })
@@ -583,7 +646,7 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
         let total = day.total_ms();
         if total > 0 {
             // A total wider than its column would collide; the largest always shows.
-            let label = painter.layout_no_wrap(hours_minutes(total), small(), ink.text);
+            let label = painter.layout_no_wrap(hm(total), small(), ink.text);
             let size = label.size();
             if size.x + 2.0 <= band || Some(column) == first_most {
                 let center = layout.center(column).min(rect.right() - size.x / 2.0);
@@ -593,7 +656,8 @@ fn columns(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
             }
         }
         if column % stride == 0 {
-            let label = painter.layout_no_wrap(day.short_label.clone(), small(), ink.muted);
+            let label =
+                painter.layout_no_wrap(paint(&day.short_label).into_owned(), small(), ink.muted);
             let size = label.size();
             let center = layout.center(column);
             if center + size.x / 2.0 <= rect.right() {
@@ -632,11 +696,17 @@ fn split_mark(outer: Rect, state: State, bar: Rect) -> Rect {
 /// A single day has no other day to compare with, so it shows how the day was split.
 fn split_bar(ui: &mut egui::Ui, day: &ChartDay, styles: &Styles, ink: Ink) {
     let total = day.total_ms();
-    ui.label(format!("{}: {}", day.long_label, hours_minutes(total)));
+    ui.label(tf(
+        "charts.day_total",
+        &[
+            ("day", &day.long_label),
+            ("duration", &hours_minutes(total)),
+        ],
+    ));
     if day.review_ms > 0 {
-        ui.small(format!(
-            "Interrupted, not counted yet: {}",
-            hours_minutes(day.review_ms)
+        ui.small(tf(
+            "reports.interrupted",
+            &[("duration", &hours_minutes(day.review_ms))],
         ));
     }
     if total == 0 {
@@ -680,12 +750,17 @@ fn split_bar(ui: &mut egui::Ui, day: &ChartDay, styles: &Styles, ink: Ink) {
     if let Some((part, mark)) = hovered {
         outline_hovered(&painter, mark, ink);
         response.on_hover_ui_at_pointer(|ui| {
-            ui.strong(hours_minutes(part.ms));
-            ui.label(styles.title(part.project));
-            ui.label(format!(
-                "{:.0}% of {}",
-                part.ms as f32 / total as f32 * 100.0,
-                day.long_label
+            ui.strong(hm(part.ms));
+            ui.label(styles.title(part.project).as_ref());
+            ui.label(tf(
+                "charts.share_of_day",
+                &[
+                    (
+                        "percent",
+                        &format!("{:.0}", part.ms as f32 / total as f32 * 100.0),
+                    ),
+                    ("day", &day.long_label),
+                ],
             ));
         });
     }
@@ -706,7 +781,6 @@ fn rhythm_step(ms: u64, most: u64) -> usize {
     }
     ((ms as f64 / most as f64 * 6.0).ceil() as usize).clamp(1, 6)
 }
-const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /// Pure geometry of the weekly rhythm.
 struct Rhythm {
@@ -722,8 +796,11 @@ impl Rhythm {
     fn height(width: f32, rows: usize) -> f32 {
         20.0 + Self::cell_height(width) * rows as f32 + 2.0
     }
+    #[cfg(test)]
     fn new(rect: Rect) -> Self {
-        let left = 36.0;
+        Self::with_labels(rect, 36.0)
+    }
+    fn with_labels(rect: Rect, left: f32) -> Self {
         let height = Self::cell_height(rect.width());
         let width = (rect.width() - left) / 24.0;
         Self {
@@ -764,8 +841,21 @@ fn rhythm(ui: &mut egui::Ui, chart: &Chart, ink: Ink) {
         vec2(width, Rhythm::height(width, rows.len())),
         Sense::hover(),
     );
-    let layout = Rhythm::new(rect);
     let painter = ui.painter_at(rect);
+    let widest_weekday = rows
+        .iter()
+        .map(|&weekday| {
+            painter
+                .layout_no_wrap(
+                    crate::i18n::painted_weekday_name(weekday).to_owned(),
+                    small(),
+                    ink.muted,
+                )
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    let layout = Rhythm::with_labels(rect, (widest_weekday + 8.0).max(36.0));
     for hour in (0..=24).step_by(6) {
         let x = rect.left() + layout.left + hour as f32 * layout.cell.width();
         let anchor = match hour {
@@ -786,7 +876,7 @@ fn rhythm(ui: &mut egui::Ui, chart: &Chart, ink: Ink) {
         painter.text(
             egui::pos2(rect.left(), first.center().y),
             Align2::LEFT_CENTER,
-            WEEKDAYS[weekday],
+            crate::i18n::painted_weekday_name(weekday),
             small(),
             ink.muted,
         );
@@ -801,28 +891,27 @@ fn rhythm(ui: &mut egui::Ui, chart: &Chart, ink: Ink) {
         let weekday = rows[row];
         outline_hovered(&painter, layout.cell_at(row, hour).shrink(1.0), ink);
         response.on_hover_ui_at_pointer(|ui| {
-            ui.strong(hours_minutes(chart.rhythm[weekday][hour]));
-            ui.label(format!(
-                "{}, {:02}:00 to {:02}:00",
-                WEEKDAYS[weekday],
-                hour,
-                hour + 1
+            ui.strong(hm(chart.rhythm[weekday][hour]));
+            ui.label(tf(
+                "charts.time_range",
+                &[
+                    ("when", crate::i18n::weekday_name(weekday)),
+                    ("from", &hour_label(hour)),
+                    ("to", &hour_label(hour + 1)),
+                ],
             ));
             let count = chart.weekday_counts[weekday];
-            ui.label(format!(
-                "Across {count} {}",
-                if count == 1 { "day" } else { "days" }
-            ));
+            ui.label(tp("charts.across_days", u64::from(count), &[]));
         });
     }
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 3.0;
-        ui.small("Less");
+        ui.small(t("charts.less"));
         for color in ramp {
             let (swatch, _) = ui.allocate_exact_size(vec2(16.0, 10.0), Sense::hover());
             ui.painter().rect_filled(swatch, 2, *color);
         }
-        ui.small(format!("More (up to {} in one cell)", hours_minutes(most)));
+        ui.small(tf("charts.more", &[("duration", &hours_minutes(most))]));
     });
 }
 
@@ -857,7 +946,10 @@ fn legend(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink, view: Vie
                 painter.rect_filled(mark, 2, *color);
             });
         }
-        let states = [(State::Running, "Running"), (State::Review, "Interrupted")];
+        let states = [
+            (State::Running, t("reports.status_running")),
+            (State::Review, t("reports.status_interrupted")),
+        ];
         for (state, label) in states {
             // By day leaves out review time, so it has no such mark to explain.
             let drawn = state != State::Review || view != View::Days;
@@ -874,9 +966,9 @@ fn legend(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink, view: Vie
 pub fn show(ui: &mut egui::Ui, chart: &Chart, view: &mut View, colors: &ProjectColors) {
     ui.horizontal_wrapped(|ui| {
         for (value, label) in [
-            (View::Timeline, "Timeline"),
-            (View::Days, "By day"),
-            (View::Rhythm, "Weekly rhythm"),
+            (View::Timeline, t("charts.timeline")),
+            (View::Days, t("reports.by_day")),
+            (View::Rhythm, t("charts.weekly_rhythm")),
         ] {
             if ui
                 .add(egui::Button::new(label).selected(*view == value))
@@ -887,14 +979,18 @@ pub fn show(ui: &mut egui::Ui, chart: &Chart, view: &mut View, colors: &ProjectC
         }
     });
     if chart.series.is_empty() {
-        ui.label("No tracked time in this period.");
+        ui.label(t("charts.no_time"));
         return;
     }
     if chart.too_long && *view != View::Rhythm {
-        ui.label(format!(
-            "This view covers up to {} days. Choose a shorter period, or use Weekly rhythm.",
-            crate::reports::CHART_MAX_DAYS
-        ));
+        paragraph(
+            ui,
+            &message_plural(
+                "charts.too_long",
+                crate::reports::CHART_MAX_DAYS as u64,
+                &[],
+            ),
+        );
         return;
     }
     let ink = Ink::new(ui);
@@ -1551,6 +1647,76 @@ mod tests {
                 );
                 output.textures_delta.clear();
             }
+        }
+    }
+
+    #[test]
+    fn dates_and_totals_stay_clear_of_the_timeline_axis_in_every_language() {
+        for language in crate::i18n::Language::ALL {
+            crate::i18n::with_language(language, || {
+                let total = |hours: u64| ChartPart {
+                    project: Some(1),
+                    ms: hours * 3_600_000 + 2_700_000,
+                };
+                let chart = Chart {
+                    days: vec![
+                        ChartDay {
+                            long_label: crate::i18n::long_date(2, 30, 8),
+                            short_label: crate::i18n::short_date(2, 30),
+                            saved: vec![total(12)],
+                            running: None,
+                            review_ms: 0,
+                        };
+                        2
+                    ],
+                    series: vec![ChartSeries {
+                        project: Some(1),
+                        title: "Alpha".into(),
+                        total_ms: 1,
+                    }],
+                    ..Chart::default()
+                };
+                let mut harness = Harness::new(chart.clone(), View::Timeline);
+                harness.width = 544.0;
+                crate::fonts::Fallbacks::new(language).apply(&harness.context);
+                harness.frame(vec![], 0.0);
+                let output = harness.frame(vec![], 0.1);
+                let verticals: Vec<f32> = output
+                    .shapes
+                    .iter()
+                    .filter_map(|shape| match &shape.shape {
+                        egui::Shape::LineSegment { points, .. } if points[0].x == points[1].x => {
+                            Some(points[0].x)
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                let first = verticals.iter().copied().fold(f32::MAX, f32::min);
+                let last = verticals.iter().copied().fold(0.0, f32::max);
+                let date = crate::i18n::paint(&chart.days[0].long_label).into_owned();
+                let total = hm(chart.days[0].total_ms());
+                let mut found = (false, false);
+                for shape in &output.shapes {
+                    if let egui::Shape::Text(text) = &shape.shape {
+                        let bounds = text.visual_bounding_rect();
+                        if text.galley.job.text == date {
+                            found.0 = true;
+                            assert!(
+                                bounds.right() <= first,
+                                "{language:?} date {bounds:?} {first}"
+                            );
+                        }
+                        if text.galley.job.text == total {
+                            found.1 = true;
+                            assert!(
+                                bounds.left() >= last,
+                                "{language:?} total {bounds:?} {last}"
+                            );
+                        }
+                    }
+                }
+                assert_eq!(found, (true, true), "{language:?}");
+            });
         }
     }
 

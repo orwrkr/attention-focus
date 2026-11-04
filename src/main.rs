@@ -138,7 +138,12 @@ impl Desktop {
             &drag_regions,
         )
         .err()
-        .map(|error| format!("Cannot apply window width limit: {error}"));
+        .map(|error| {
+            i18n::message(
+                "errors.window_width_limit",
+                &[("error", &error.to_string())],
+            )
+        });
         let stay_on_top = context
             .storage
             .and_then(|storage| eframe::get_value(storage, "stay_on_top"))
@@ -158,7 +163,10 @@ impl Desktop {
         let tray_result = (|| -> Result<TrayIcon, Box<dyn std::error::Error>> {
             menu.append_items(&[&show, &toggle, &exit])?;
             Ok(TrayIconBuilder::new()
-                .with_tooltip(format!("{} - opening history...", profile.title()))
+                .with_tooltip(i18n::message(
+                    "tray.opening_history",
+                    &[("title", profile.title())],
+                ))
                 .with_icon(tray_icon(false, profile))
                 .with_menu(Box::new(menu))
                 .with_menu_on_left_click(false)
@@ -166,7 +174,13 @@ impl Desktop {
         })();
         let (tray, error) = match tray_result {
             Ok(tray) => (Some(tray), None),
-            Err(error) => (None, Some(format!("Tray unavailable: {error}"))),
+            Err(error) => (
+                None,
+                Some(i18n::message(
+                    "errors.tray_unavailable",
+                    &[("error", &error.to_string())],
+                )),
+            ),
         };
         if launch.hide_window(tray.is_some()) {
             drag_regions.suppress_first_show();
@@ -235,17 +249,19 @@ impl Desktop {
             if lifecycle_commands.try_send(command).is_err()
                 || saved.recv_timeout(Duration::from_millis(1500)).is_err()
             {
-                let _ = lifecycle_sender.send(Action::PlatformError(
-                    "Cannot confirm saving before the Windows interruption. Check session recovery.".into(),
-                ));
+                let _ = lifecycle_sender.send(Action::PlatformError(i18n::message(
+                    "errors.recovery_unconfirmed",
+                    &[],
+                )));
                 ctx.request_repaint();
             }
         });
         let listener = match listener {
             Ok(listener) => Some(listener),
             Err(error) => {
-                let _ = sender.send(Action::PlatformError(format!(
-                    "Windows lifecycle monitoring is unavailable: {error}"
+                let _ = sender.send(Action::PlatformError(i18n::message(
+                    "errors.lifecycle_unavailable",
+                    &[("error", &error.to_string())],
                 )));
                 None
             }
@@ -340,7 +356,10 @@ impl Desktop {
             && let Err(error) =
                 tray.set_tooltip(Some(presentation::tooltip(self.profile, &self.state)))
         {
-            self.error = Some(format!("Cannot update tray status: {error}"));
+            self.error = Some(i18n::message(
+                "errors.tray_status",
+                &[("error", &error.to_string())],
+            ));
         }
         self.reports.language_changed();
         if let Some(storage) = frame.storage_mut() {
@@ -367,20 +386,18 @@ impl Desktop {
         let split = self.state.change_mode == tracking::ChangeMode::NewInterval;
         // The option lives in Settings, but this mode rewrites time, so it stays visible here.
         if !split {
-            ui.label(
-                "Changes reassign the entire current interval, including its elapsed time. You can change this in Settings.",
-            );
+            i18n::paragraph(ui, &i18n::message("main.changes_reassign", &[]));
         }
         egui::ComboBox::from_id_salt("project")
             .width(ui.available_width().min(320.0))
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .selected_text(self.activity.label())
+            .selected_text(self.activity.painted_label().into_owned())
             .show_ui(ui, |ui| {
-                ui.add(
+                let search = ui.add(
                     egui::TextEdit::singleline(&mut self.project_search)
-                        .hint_text("Search projects"),
-                )
-                .on_hover_text("Filter projects by name. Searching does not change the activity.");
+                        .hint_text(i18n::t("main.search_projects")),
+                );
+                i18n::tooltip(search, &i18n::message("main.search_projects_hint", &[]));
                 ui.separator();
                 let query = self.project_search.trim().to_lowercase();
                 let mut choices = vec![tracking::Activity::default()];
@@ -401,12 +418,12 @@ impl Desktop {
                     let selected = self.activity.project.as_ref().map(|p| p.id)
                         == choice.project.as_ref().map(|p| p.id);
                     let label = if choice.project.is_none() {
-                        egui::RichText::new("Unassigned focus (no project)")
+                        egui::RichText::new(i18n::t("activity.unassigned_no_project"))
                             .strong()
                             .italics()
                             .color(ui.visuals().hyperlink_color)
                     } else {
-                        egui::RichText::new(choice.label())
+                        egui::RichText::new(choice.painted_label().into_owned())
                     };
                     if ui.selectable_label(selected, label).clicked() {
                         if !selected {
@@ -419,7 +436,10 @@ impl Desktop {
             });
         if let Some(project) = &mut self.activity.project {
             egui::ComboBox::from_id_salt("task")
-                .selected_text(project.task.as_deref().unwrap_or("No task"))
+                .selected_text(project.task.as_deref().map_or_else(
+                    || i18n::t("main.no_task").to_owned(),
+                    |task| i18n::user(task).into_owned(),
+                ))
                 .show_ui(ui, |ui| {
                     let mut no_task = project.clone();
                     no_task.task = None;
@@ -440,7 +460,10 @@ impl Desktop {
                     self.state.sort_tasks(&mut choices);
                     for choice in choices {
                         let task = choice.project.unwrap().task;
-                        let label = task.as_deref().unwrap_or("No task").to_owned();
+                        let label = task.as_deref().map_or_else(
+                            || i18n::t("main.no_task").to_owned(),
+                            |task| i18n::user(task).into_owned(),
+                        );
                         ui.selectable_value(&mut project.task, task, label);
                     }
                 });
@@ -451,9 +474,9 @@ impl Desktop {
         }
         if self.activity != self.state.activity {
             ui.label(if self.outbox.busy() {
-                "Saving selection..."
+                i18n::t("main.saving_selection")
             } else {
-                "Changes have not been saved."
+                i18n::t("main.changes_unsaved")
             });
             if ui
                 .add_enabled(
@@ -462,11 +485,11 @@ impl Desktop {
                         && !self.state.needs_review
                         && self.state.available(&self.activity),
                     egui::Button::new(if self.state.running && split {
-                        "Start new interval with changes"
+                        i18n::t("main.start_new_interval_with_changes")
                     } else if self.state.running {
-                        "Save changes to current interval"
+                        i18n::t("main.save_changes_to_interval")
                     } else {
-                        "Apply selection"
+                        i18n::t("main.apply_selection")
                     }),
                 )
                 .clicked()
@@ -478,10 +501,10 @@ impl Desktop {
         if !self.state.available(&self.activity)
             && (!self.state.running || self.activity != self.state.activity)
         {
-            ui.label("The selected project or task is archived, finished or removed. Choose another activity.");
+            i18n::paragraph(ui, &i18n::message("main.activity_unavailable", &[]));
         }
         if self.state.projects.iter().all(|project| project.archived) {
-            ui.weak("Add projects in the Projects section below, or track Unassigned focus.");
+            i18n::paragraph_weak(ui, &i18n::message("main.add_projects_hint", &[]));
         }
     }
 
@@ -634,7 +657,10 @@ impl eframe::App for Desktop {
                     if let Some(tray) = &self.tray {
                         let label = presentation::tooltip(self.profile, &state);
                         if let Err(error) = tray.set_tooltip(Some(label)) {
-                            self.error = Some(format!("Cannot update tray status: {error}"));
+                            self.error = Some(i18n::message(
+                                "errors.tray_status",
+                                &[("error", &error.to_string())],
+                            ));
                         }
                     }
                     self.toggle_item.set_text(toggle_item_text(state.running));
@@ -713,7 +739,10 @@ impl eframe::App for Desktop {
                 tray_icon(false, self.profile)
             };
             if let Err(error) = tray.set_icon(Some(icon)) {
-                self.error = Some(format!("Cannot update tray icon: {error}"));
+                self.error = Some(i18n::message(
+                    "errors.tray_icon",
+                    &[("error", &error.to_string())],
+                ));
             }
             self.tray_level = Some(key);
         }
@@ -776,28 +805,34 @@ impl eframe::App for Desktop {
             egui::Align::Min
         });
         ui.with_layout(layout, |ui| {
-        attention_focus::ui_support::window_frame(ui.style()).show(ui, |ui| {
-            // The widest window, less the left margin of the frame.
-            ui.set_max_width(ui.available_width().min(752.0));
-            // These actions stay outside the scrolling body at every content height.
-            attention_focus::ui_support::header_frame()
-                .show(ui, |ui| {
+            // Right-to-left text wraps through `i18n`, because egui would scramble the lines.
+            if i18n::current().is_rtl() {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            }
+            attention_focus::ui_support::window_frame(ui.style()).show(ui, |ui| {
+                // The widest window, less the left margin of the frame.
+                ui.set_max_width(ui.available_width().min(752.0));
+                // These actions stay outside the scrolling body at every content height.
+                attention_focus::ui_support::header_frame().show(ui, |ui| {
                     let heading = ui.horizontal(|ui| {
                         ui.set_min_width(ui.available_width());
                         ui.heading("Attention Focus");
-                        ui.weak(format!(
-                            "{}v{}",
+                        ui.weak(i18n::tf(
                             if self.profile == Profile::Development {
-                                "Development "
+                                "main.version_development"
                             } else {
-                                ""
+                                "main.version"
                             },
-                            env!("CARGO_PKG_VERSION")
+                            &[("version", env!("CARGO_PKG_VERSION"))],
                         ));
                     });
                     drag_regions.push(heading.response.rect);
-                    ui.horizontal(|ui| {
-                        if ui.checkbox(&mut self.stay_on_top, "Stay on top").changed() {
+                    // Translated labels can need a second row at the narrowest width.
+                    ui.horizontal_wrapped(|ui| {
+                        if ui
+                            .checkbox(&mut self.stay_on_top, i18n::t("main.stay_on_top"))
+                            .changed()
+                        {
                             if let Some(storage) = frame.storage_mut() {
                                 eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
                                 storage.flush();
@@ -811,20 +846,29 @@ impl eframe::App for Desktop {
                             ));
                         }
                         if ui
-                            .add(egui::Button::new("Settings").selected(self.settings_open))
+                            .add(
+                                egui::Button::new(i18n::t("main.settings"))
+                                    .selected(self.settings_open),
+                            )
                             .clicked()
                         {
                             self.settings_open = !self.settings_open;
                             reveal_settings = self.settings_open;
                         }
                         if ui
-                            .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
+                            .add_enabled(
+                                self.tray.is_some(),
+                                egui::Button::new(i18n::t("main.hide_to_tray")),
+                            )
                             .clicked()
                         {
                             Self::hide(&ctx);
                         }
                         if ui
-                            .add_enabled(!self.outbox.busy(), egui::Button::new("Exit"))
+                            .add_enabled(
+                                !self.outbox.busy(),
+                                egui::Button::new(i18n::t("tray.exit")),
+                            )
                             .clicked()
                         {
                             self.command(tracking::Command::Exit);
@@ -838,214 +882,241 @@ impl eframe::App for Desktop {
                     });
                     ui.separator();
                 });
-            attention_focus::ui_support::body(ui, |ui| {
-                if self.settings_open {
-                    let settings = ui.group(|ui| {
-                        ui.heading("Application settings");
-                        ui.strong("Appearance");
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label("Theme");
-                            for (theme, label) in [
-                                (egui::ThemePreference::System, "Same as Windows"),
-                                (egui::ThemePreference::Light, "Light"),
-                                (egui::ThemePreference::Dark, "Dark"),
-                            ] {
-                                if ui
-                                    .selectable_value(&mut self.theme, theme, label)
-                                    .changed()
-                                {
-                                    ctx.set_theme(self.theme);
-                                    if let Some(storage) = frame.storage_mut() {
-                                        eframe::set_value(storage, "theme", &self.theme);
-                                        storage.flush();
+                attention_focus::ui_support::body(ui, |ui| {
+                    if self.settings_open {
+                        let settings = ui.group(|ui| {
+                            ui.heading(i18n::t("settings.title"));
+                            ui.strong(i18n::t("settings.appearance"));
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(i18n::t("settings.theme"));
+                                for (theme, label) in [
+                                    (
+                                        egui::ThemePreference::System,
+                                        i18n::t("settings.theme_system"),
+                                    ),
+                                    (
+                                        egui::ThemePreference::Light,
+                                        i18n::t("settings.theme_light"),
+                                    ),
+                                    (egui::ThemePreference::Dark, i18n::t("settings.theme_dark")),
+                                ] {
+                                    if ui.selectable_value(&mut self.theme, theme, label).changed()
+                                    {
+                                        ctx.set_theme(self.theme);
+                                        if let Some(storage) = frame.storage_mut() {
+                                            eframe::set_value(storage, "theme", &self.theme);
+                                            storage.flush();
+                                        }
                                     }
                                 }
-                            }
-                        });
-                        let mut language_chosen = false;
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(i18n::t("settings.language"));
-                            let selected = match self.language {
-                                i18n::Choice::System => {
-                                    i18n::t("language.same_as_windows").to_owned()
-                                }
-                                i18n::Choice::Fixed(language) => {
-                                    i18n::user(i18n::native_name(language)).into_owned()
-                                }
-                            };
-                            egui::ComboBox::from_id_salt("language")
-                                .selected_text(selected)
-                                .show_ui(ui, |ui| {
-                                    self.fonts.require_language_names();
-                                    language_chosen |= ui
-                                        .selectable_value(
-                                            &mut self.language,
-                                            i18n::Choice::System,
-                                            i18n::t("language.same_as_windows"),
-                                        )
-                                        .changed();
-                                    for language in i18n::Language::ALL {
+                            });
+                            let mut language_chosen = false;
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(i18n::t("settings.language"));
+                                let selected = match self.language {
+                                    i18n::Choice::System => {
+                                        i18n::t("language.same_as_windows").to_owned()
+                                    }
+                                    i18n::Choice::Fixed(language) => {
+                                        i18n::user(i18n::native_name(language)).into_owned()
+                                    }
+                                };
+                                egui::ComboBox::from_id_salt("language")
+                                    .selected_text(selected)
+                                    .show_ui(ui, |ui| {
+                                        self.fonts.require_language_names();
                                         language_chosen |= ui
                                             .selectable_value(
                                                 &mut self.language,
-                                                i18n::Choice::Fixed(language),
-                                                i18n::user(i18n::native_name(language))
-                                                    .into_owned(),
+                                                i18n::Choice::System,
+                                                i18n::t("language.same_as_windows"),
                                             )
                                             .changed();
-                                    }
-                                });
+                                        for language in i18n::Language::ALL {
+                                            language_chosen |= ui
+                                                .selectable_value(
+                                                    &mut self.language,
+                                                    i18n::Choice::Fixed(language),
+                                                    i18n::user(i18n::native_name(language))
+                                                        .into_owned(),
+                                                )
+                                                .changed();
+                                        }
+                                    });
+                            });
+                            if language_chosen {
+                                self.language_changed(frame);
+                            }
+                            ui.separator();
+                            ui.strong(i18n::t("settings.intervals"));
+                            let enabled = self.ready && !self.outbox.busy();
+                            let mut split_on_change =
+                                self.state.change_mode == tracking::ChangeMode::NewInterval;
+                            if ui
+                                .add_enabled(
+                                    enabled,
+                                    egui::Checkbox::new(
+                                        &mut split_on_change,
+                                        i18n::checkbox_label(ui, "settings.split_on_change"),
+                                    ),
+                                )
+                                .changed()
+                            {
+                                self.command(tracking::Command::SetChangeMode(
+                                    if split_on_change {
+                                        tracking::ChangeMode::NewInterval
+                                    } else {
+                                        tracking::ChangeMode::EditCurrent
+                                    },
+                                ));
+                            }
+                            i18n::paragraph_weak(
+                                ui,
+                                &i18n::message("settings.split_on_change_hint", &[]),
+                            );
+                            let mut split = self.state.split_on_day;
+                            if ui
+                                .add_enabled(
+                                    enabled,
+                                    egui::Checkbox::new(
+                                        &mut split,
+                                        i18n::checkbox_label(ui, "settings.split_at_midnight"),
+                                    ),
+                                )
+                                .changed()
+                            {
+                                self.command(tracking::Command::SetSplitOnDay(split));
+                            }
+                            i18n::paragraph_weak(
+                                ui,
+                                &i18n::message("settings.split_at_midnight_hint", &[]),
+                            );
+                            ui.separator();
+                            ui.strong(i18n::t("settings.startup"));
+                            self.startup.show(ui);
                         });
-                        if language_chosen {
-                            self.language_changed(frame);
+                        if reveal_settings {
+                            settings.response.scroll_to_me(Some(egui::Align::Min));
                         }
                         ui.separator();
-                        ui.strong("Intervals");
-                        let enabled = self.ready && !self.outbox.busy();
-                        let mut split_on_change =
-                            self.state.change_mode == tracking::ChangeMode::NewInterval;
-                        if ui
-                            .add_enabled(
-                                enabled,
-                                egui::Checkbox::new(
-                                    &mut split_on_change,
-                                    "Start a new interval when project or task changes",
-                                ),
-                            )
-                            .changed()
-                        {
-                            self.command(tracking::Command::SetChangeMode(if split_on_change {
-                                tracking::ChangeMode::NewInterval
-                            } else {
-                                tracking::ChangeMode::EditCurrent
-                            }));
-                        }
-                        ui.weak(
-                            "When off, a change corrects the current interval instead: all its time moves to the new project or task.",
-                        );
-                        let mut split = self.state.split_on_day;
-                        if ui
-                            .add_enabled(
-                                enabled,
-                                egui::Checkbox::new(&mut split, "Start a new interval at midnight"),
-                            )
-                            .changed()
-                        {
-                            self.command(tracking::Command::SetSplitOnDay(split));
-                        }
-                        ui.weak(
-                            "Ends a running interval when the local day changes and continues it as a new one. Time totals stay the same.",
-                        );
-                        ui.separator();
-                        ui.strong("Startup");
-                        self.startup.show(ui);
-                    });
-                    if reveal_settings {
-                        settings.response.scroll_to_me(Some(egui::Align::Min));
                     }
-                    ui.separator();
-                }
-                ui.label(
-                    egui::RichText::new(if self.state.running {
-                        "Tracking now (saved activity)"
-                    } else {
-                        "Next tracking activity (saved selection)"
-                    })
-                    .color(secondary)
-                    .strong(),
-                );
-                ui.strong(self.state.activity.label());
-                if let Some(task) = self
-                    .state
-                    .activity
-                    .project
-                    .as_ref()
-                    .and_then(|p| p.task.as_ref())
-                {
-                    ui.label(task);
-                }
-                ui.add_enabled_ui(
-                    self.ready && !self.outbox.busy() && !self.state.needs_review,
-                    |ui| self.activity_picker(ui),
-                );
-                ui.add_space(12.0);
-                let enabled = self.ready
-                    && !self.outbox.busy()
-                    && !self.state.needs_review
-                    && (self.state.running
-                        || (self.lifecycle.is_some() && self.state.available(&self.activity)));
-                if attention_focus::counters::show(ui, &self.state, self.ready, enabled).toggle {
-                    self.command(if self.state.running {
-                        tracking::Command::Stop
-                    } else {
-                        tracking::Command::Start(self.activity.clone())
-                    });
-                }
-                ui.add_space(8.0);
-                ui.separator();
-                ui.label(format!(
-                    "All projects, all time (saved): {} in {} sessions",
-                    presentation::duration(self.state.total_ms),
-                    self.state.completed
-                ));
-                if self.state.needs_review {
-                    ui.label("An interrupted session was saved up to its last checkpoint.");
-                    ui.label("Time after that checkpoint is excluded. Tracking has not resumed.");
-                    if ui
-                        .add_enabled(!self.outbox.busy(), egui::Button::new("Accept saved time"))
-                        .clicked()
+                    ui.label(
+                        egui::RichText::new(if self.state.running {
+                            i18n::t("main.tracking_now")
+                        } else {
+                            i18n::t("main.next_activity")
+                        })
+                        .color(secondary)
+                        .strong(),
+                    );
+                    ui.strong(self.state.activity.painted_label().as_ref());
+                    if let Some(task) = self
+                        .state
+                        .activity
+                        .project
+                        .as_ref()
+                        .and_then(|p| p.task.as_ref())
                     {
-                        self.command(tracking::Command::AcceptRecovery);
+                        ui.label(i18n::user(task).as_ref());
                     }
-                }
-                if let Some(error) = &self.error {
-                    ui.colored_label(ui.visuals().error_fg_color, error);
-                }
-                ui.add_space(12.0);
-                ui.label("Double-click the tray icon to start or stop.");
-                ui.label("Click the tray icon to show this window. Hover to see tracked time.");
-                let enabled = self.ready && !self.outbox.busy();
-                let changes = egui::CollapsingHeader::new("Projects")
-                    .default_open(self.state.projects.is_empty())
-                    .show(ui, |ui| {
-                        self.projects_panel.show(ui, &self.state.projects, enabled)
-                    })
-                    .body_returned
-                    .unwrap_or_default();
-                for change in changes {
-                    self.command(change);
-                }
-                self.reports.show(ui, &self.commands, self.ready);
-                if let Some((format, request)) = self.reports.take_export() {
-                    let directory = self.directory.clone();
-                    let root = self.storage_root.clone();
-                    let sender = self.sender.clone();
-                    let ctx = ctx.clone();
-                    let owner = platform::active_window();
-                    std::thread::spawn(move || {
-                        let result =
-                            (|| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-                                let report = tracking::export_snapshot(
-                                    &directory.join("focus.sqlite3"),
-                                    &request,
-                                )?;
-                                let Some(path) = export::pick_path(owner, format)? else {
-                                    return Ok("Export canceled.".into());
-                                };
-                                let path = export::write(&report, &path, format, &[root])?;
-                                Ok(format!(
-                                    "Exported {} sessions to {}",
-                                    report.matching_sessions,
-                                    path.display()
-                                ))
-                            })()
-                            .map_err(|error| format!("Cannot export report: {error}"));
-                        let _ = sender.send(Action::Export(result));
-                        ctx.request_repaint();
-                    });
-                }
+                    ui.add_enabled_ui(
+                        self.ready && !self.outbox.busy() && !self.state.needs_review,
+                        |ui| self.activity_picker(ui),
+                    );
+                    ui.add_space(12.0);
+                    let enabled = self.ready
+                        && !self.outbox.busy()
+                        && !self.state.needs_review
+                        && (self.state.running
+                            || (self.lifecycle.is_some() && self.state.available(&self.activity)));
+                    if attention_focus::counters::show(ui, &self.state, self.ready, enabled).toggle
+                    {
+                        self.command(if self.state.running {
+                            tracking::Command::Stop
+                        } else {
+                            tracking::Command::Start(self.activity.clone())
+                        });
+                    }
+                    ui.add_space(8.0);
+                    ui.separator();
+                    i18n::paragraph(
+                        ui,
+                        &i18n::message_plural(
+                            "main.all_time_total",
+                            self.state.completed,
+                            &[("duration", &presentation::duration(self.state.total_ms))],
+                        ),
+                    );
+                    if self.state.needs_review {
+                        i18n::paragraph(ui, &i18n::message("main.recovery_saved", &[]));
+                        i18n::paragraph(ui, &i18n::message("main.recovery_excluded", &[]));
+                        if ui
+                            .add_enabled(
+                                !self.outbox.busy(),
+                                egui::Button::new(i18n::t("main.accept_recovery")),
+                            )
+                            .clicked()
+                        {
+                            self.command(tracking::Command::AcceptRecovery);
+                        }
+                    }
+                    if let Some(error) = &self.error {
+                        i18n::paragraph_colored(ui, ui.visuals().error_fg_color, error);
+                    }
+                    ui.add_space(12.0);
+                    i18n::paragraph(ui, &i18n::message("main.tray_double_click", &[]));
+                    i18n::paragraph(ui, &i18n::message("main.tray_click", &[]));
+                    let enabled = self.ready && !self.outbox.busy();
+                    let changes = egui::CollapsingHeader::new(i18n::t("main.projects"))
+                        // The identity of the header stays fixed when the language changes.
+                        .id_salt("Projects")
+                        .default_open(self.state.projects.is_empty())
+                        .show(ui, |ui| {
+                            i18n::mirrored(ui, |ui| {
+                                self.projects_panel.show(ui, &self.state.projects, enabled)
+                            })
+                        })
+                        .body_returned
+                        .unwrap_or_default();
+                    for change in changes {
+                        self.command(change);
+                    }
+                    self.reports.show(ui, &self.commands, self.ready);
+                    if let Some((format, request)) = self.reports.take_export() {
+                        let directory = self.directory.clone();
+                        let root = self.storage_root.clone();
+                        let sender = self.sender.clone();
+                        let ctx = ctx.clone();
+                        let owner = platform::active_window();
+                        std::thread::spawn(move || {
+                            let result =
+                                (|| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+                                    let report = tracking::export_snapshot(
+                                        &directory.join("focus.sqlite3"),
+                                        &request,
+                                    )?;
+                                    let Some(path) = export::pick_path(owner, format)? else {
+                                        return Ok(i18n::message("main.export_canceled", &[]));
+                                    };
+                                    let path = export::write(&report, &path, format, &[root])?;
+                                    Ok(i18n::message_plural(
+                                        "main.exported",
+                                        report.matching_sessions as u64,
+                                        &[("path", &path.display().to_string())],
+                                    ))
+                                })()
+                                .map_err(|error| {
+                                    i18n::message(
+                                        "errors.export_failed",
+                                        &[("error", &error.to_string())],
+                                    )
+                                });
+                            let _ = sender.send(Action::Export(result));
+                            ctx.request_repaint();
+                        });
+                    }
+                });
             });
-        });
         });
         self.drag_regions.set(&drag_regions, ctx.pixels_per_point());
         attention_focus::ui_support::maximized_edge(&ctx);

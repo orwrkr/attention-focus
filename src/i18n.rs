@@ -283,7 +283,7 @@ pub fn paint(text: &str) -> Cow<'_, str> {
     if current().is_rtl() {
         Cow::Owned(bidi::right_to_left(text))
     } else {
-        Cow::Borrowed(text)
+        bidi::left_to_right(text)
     }
 }
 /// A project name, a task or a note, in any language and any interface language.
@@ -314,11 +314,14 @@ fn paragraph_styled(
     if !current().is_rtl() {
         return ui.label(style(egui::RichText::new(text)));
     }
+    let painted = painted_lines(ui, text, ui.available_width());
+    ui.add(egui::Label::new(style(egui::RichText::new(painted))).extend())
+}
+/// Right-to-left text broken into lines of at most this width, ready to paint.
+fn painted_lines(ui: &egui::Ui, text: &str, width: f32) -> String {
     let font = egui::TextStyle::Body.resolve(ui.style());
-    let width = ui.available_width();
-    let painter = ui.painter().clone();
     let lines = bidi::wrap(text, width, |line| {
-        painter
+        ui.painter()
             .layout_no_wrap(
                 bidi::right_to_left(line),
                 font.clone(),
@@ -328,7 +331,35 @@ fn paragraph_styled(
             .x
     });
     let painted: Vec<String> = lines.iter().map(|line| bidi::right_to_left(line)).collect();
-    ui.add(egui::Label::new(style(egui::RichText::new(painted.join("\n")))).extend())
+    painted.join("\n")
+}
+/// The label of a checkbox that can need more than one line. egui wraps it in other languages.
+pub fn checkbox_label(ui: &egui::Ui, key: &'static str) -> String {
+    let language = current();
+    if !language.is_rtl() {
+        return t(key).to_owned();
+    }
+    let spacing = ui.spacing();
+    let width = ui.available_width() - spacing.icon_width - spacing.icon_spacing;
+    painted_lines(ui, logical(language, key), width)
+}
+/// egui resets collapsing sections to left-aligned rows, so their contents ask for mirroring again.
+pub fn mirrored<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if current().is_rtl() {
+        ui.with_layout(egui::Layout::top_down(egui::Align::Max), add)
+            .inner
+    } else {
+        add(ui)
+    }
+}
+/// A grid works in unlimited width, which a mirrored layout turns into an invalid position.
+pub fn unmirrored<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if current().is_rtl() {
+        ui.with_layout(egui::Layout::top_down(egui::Align::Min), add)
+            .inner
+    } else {
+        add(ui)
+    }
 }
 /// A tooltip with logical text.
 pub fn tooltip(response: egui::Response, text: &str) -> egui::Response {
@@ -395,8 +426,140 @@ pub fn short_date(weekday: usize, day: i8) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+
+    fn placeholders(text: &str) -> Vec<&str> {
+        let mut names: Vec<&str> = text
+            .split('{')
+            .skip(1)
+            .filter_map(|part| part.split_once('}').map(|(name, _)| name))
+            .collect();
+        names.sort_unstable();
+        names
+    }
+    pub(crate) fn all_texts(language: Language) -> Vec<&'static str> {
+        table(language)
+            .entries
+            .values()
+            .flat_map(|entry| match entry {
+                Entry::Text(text) => vec![text.as_str()],
+                Entry::Plural(forms) => forms.values().map(String::as_str).collect(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_language_has_every_key_its_placeholders_and_its_plural_forms() {
+        for language in Language::ALL {
+            let parsed: HashMap<String, Entry> = serde_json::from_str(language.source())
+                .unwrap_or_else(|error| panic!("{language:?}: {error}"));
+            assert_eq!(
+                parsed.len(),
+                table(Language::English).entries.len(),
+                "{language:?} has missing or unknown keys"
+            );
+            for (key, source) in &table(Language::English).entries {
+                let target = parsed
+                    .get(key)
+                    .unwrap_or_else(|| panic!("{language:?} lacks {key}"));
+                match (source, target) {
+                    (Entry::Text(source), Entry::Text(target)) => {
+                        assert_eq!(
+                            placeholders(source),
+                            placeholders(target),
+                            "{language:?} {key}"
+                        );
+                        assert!(!target.trim().is_empty(), "{language:?} {key}");
+                    }
+                    (Entry::Plural(source), Entry::Plural(target)) => {
+                        fn without_count(text: &str) -> Vec<&str> {
+                            let mut names = placeholders(text);
+                            names.retain(|name| *name != "count");
+                            names.dedup();
+                            names
+                        }
+                        let wanted = without_count(&source["other"]);
+                        for count in 0..=1200 {
+                            let form = language.plural(count);
+                            let text = target
+                                .get(form)
+                                .unwrap_or_else(|| panic!("{language:?} {key} lacks {form}"));
+                            assert_eq!(without_count(text), wanted, "{language:?} {key} {form}");
+                        }
+                    }
+                    _ => panic!("{language:?} {key} has the wrong shape"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn keys_in_the_code_and_in_the_english_file_match() {
+        fn read_sources(directory: &std::path::Path, out: &mut String) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    read_sources(&path, out);
+                } else if path.extension().is_some_and(|extension| extension == "rs")
+                    && path.file_name().is_some_and(|name| name != "tests.rs")
+                {
+                    out.push_str(&std::fs::read_to_string(path).unwrap());
+                }
+            }
+        }
+        let mut source = String::new();
+        read_sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut source,
+        );
+        let english = &table(Language::English).entries;
+        for key in english.keys() {
+            assert!(source.contains(&format!("\"{key}\"")), "{key} is not used");
+        }
+        const AREAS: [&str; 16] = [
+            "language", "main", "activity", "settings", "startup", "tray", "counters", "notes",
+            "projects", "reports", "charts", "calendar", "date", "units", "export", "errors",
+        ];
+        for literal in source.split('"').skip(1).step_by(2) {
+            let is_key = literal.split_once('.').is_some_and(|(area, rest)| {
+                AREAS.contains(&area)
+                    && !rest.is_empty()
+                    && literal.chars().all(|c| {
+                        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_'
+                    })
+            });
+            if is_key {
+                assert!(english.contains_key(literal), "{literal} is not in en.json");
+            }
+        }
+    }
+
+    #[test]
+    fn bundled_fonts_cover_the_languages_that_rely_on_them() {
+        let context = egui::Context::default();
+        let mut output = context.run_ui(egui::RawInput::default(), |_| {});
+        output.textures_delta.clear();
+        let font = egui::FontId::proportional(14.0);
+        for language in [
+            Language::English,
+            Language::Russian,
+            Language::German,
+            Language::French,
+            Language::Spanish,
+            Language::PortugueseBrazil,
+            Language::Italian,
+            Language::Polish,
+            Language::Turkish,
+        ] {
+            for text in all_texts(language) {
+                for c in text.chars() {
+                    let found = context.fonts_mut(|fonts| fonts.has_glyph(&font, c));
+                    assert!(found, "{language:?} {c:?} in {text}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn windows_language_names_map_to_supported_languages() {

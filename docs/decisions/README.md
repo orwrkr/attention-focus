@@ -7,7 +7,7 @@ record a replacement and link to the superseded record. Translation preserves me
 | ADR | Status | Topic |
 | --- | --- | --- |
 | [0001](0001-product-boundaries.md) | superseded in part | Rust and read-only MetaPlan integration |
-| [0002](0002-english-only.md) | accepted | English-only project and application UI |
+| [0002](0002-english-only.md) | superseded in part | English-only project and application UI |
 | [0003](0003-chat-language.md) | accepted | Chat language clarification |
 | [0004](0004-desktop-stack.md) | accepted | Native Rust UI and transactional storage |
 | [0005](0005-desktop-state-and-branding.md) | accepted | Persistent desktop state and tray tracking |
@@ -40,5 +40,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0032](0032-activity-charts.md) | accepted | Activity charts in reports |
 | [0033](0033-release-workflow-and-signing.md) | accepted | Release workflow and free code signing |
 | [0034](0034-scroll-bars-and-themes.md) | accepted | One scroll bar style and selectable themes |
+| [0035](0035-interface-languages.md) | accepted | Interface languages and right-to-left text |
 
-Next number: `0035`. Template: `templates/ADR.md` from the repository root.
+Next number: `0036`. Template: `templates/ADR.md` from the repository root.

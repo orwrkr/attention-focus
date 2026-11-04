@@ -1,5 +1,5 @@
 //! The clock-injected timer: applies commands and detects clock or heartbeat problems.
-use super::{Activity, ActivityKey, ChangeMode, Command, Moment, Result, Snapshot, Store, invalid};
+use super::{Activity, ActivityKey, ChangeMode, Command, Moment, Result, Snapshot, Store, reject};
 use crate::reports;
 use rusqlite::params;
 
@@ -192,20 +192,19 @@ impl Engine {
         match command {
             Some(Command::Start(activity)) => {
                 if self.started.is_some() {
-                    return Err(invalid("Tracking is already running.").into());
+                    return Err(reject("errors.already_running").into());
                 }
                 self.start(now, &activity, None)?;
             }
             Some(Command::Switch(activity)) => {
-                let elapsed =
-                    elapsed.ok_or_else(|| invalid("Start tracking before switching focus."))?;
+                let elapsed = elapsed.ok_or_else(|| reject("errors.start_before_switch"))?;
                 if self.store.selected()? != activity {
                     self.start(now, &activity, Some(elapsed))?;
                 }
             }
             Some(Command::Select(activity)) => {
                 if self.started.is_some() {
-                    return Err(invalid("Use Switch focus while tracking.").into());
+                    return Err(reject("errors.use_switch").into());
                 }
                 self.store.select(&activity)?;
             }
@@ -223,9 +222,7 @@ impl Engine {
                     }
                 } else {
                     if self.store.snapshot()?.needs_review {
-                        return Err(
-                            invalid("Review interrupted time before changing activity.").into()
-                        );
+                        return Err(reject("errors.review_before_change").into());
                     }
                     self.store.select(&activity)?;
                 }

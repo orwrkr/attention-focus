@@ -1,6 +1,6 @@
 //! Explicit schema versions. Every upgrade backs up an existing database first and applies
 //! its changes in one transaction.
-use super::{Activity, ActivityKey, Project, Result, invalid};
+use super::{Activity, ActivityKey, Project, Result, reject};
 use rusqlite::{Connection, Transaction, params};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path, time::Duration};
@@ -168,7 +168,7 @@ fn backup_before_upgrade(connection: &Connection, path: &Path, prefix: &str) -> 
         .suffix(".sqlite3")
         .tempfile_in(
             path.parent()
-                .ok_or_else(|| invalid("Missing storage directory."))?,
+                .ok_or_else(|| reject("errors.storage_missing"))?,
         )?;
     let mut destination = Connection::open(file.path())?;
     {
@@ -183,7 +183,7 @@ fn backup_before_upgrade(connection: &Connection, path: &Path, prefix: &str) -> 
 pub(super) fn upgrade(connection: &mut Connection, path: &Path) -> Result<()> {
     let version: i64 = connection.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if version > SCHEMA_VERSION {
-        return Err(invalid("History was created by a newer application version.").into());
+        return Err(reject("errors.history_newer").into());
     }
     if version == 0 {
         let legacy: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='focus_sessions')", [], |r| r.get(0))?;

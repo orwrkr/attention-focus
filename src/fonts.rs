@@ -14,12 +14,20 @@ pub enum Script {
 impl Script {
     /// Fonts that Windows includes, best first. Arabic comes from a font that also has spaces, but
     /// it is only ever a fallback, so `bidi` can rely on spaces forming separate runs.
-    fn files(self) -> &'static [&'static str] {
+    ///
+    /// Each entry also names the face within the file. Japanese uses the UI faces of Yu Gothic:
+    /// its plain faces have a line gap of half an em, which lifts them off the shared baseline.
+    fn files(self) -> &'static [(&'static str, u32)] {
         match self {
-            Self::Arabic => &["segoeui.ttf", "tahoma.ttf", "arial.ttf"],
-            Self::Chinese => &["msyh.ttc", "simsun.ttc"],
-            Self::Japanese => &["YuGothR.ttc", "meiryo.ttc", "msgothic.ttc"],
-            Self::Korean => &["malgun.ttf", "gulim.ttc"],
+            Self::Arabic => &[("segoeui.ttf", 0), ("tahoma.ttf", 0), ("arial.ttf", 0)],
+            Self::Chinese => &[("msyh.ttc", 0), ("simsun.ttc", 0)],
+            Self::Japanese => &[
+                ("YuGothM.ttc", 1),
+                ("YuGothR.ttc", 1),
+                ("meiryo.ttc", 0),
+                ("msgothic.ttc", 2),
+            ],
+            Self::Korean => &[("malgun.ttf", 0), ("gulim.ttc", 0)],
         }
     }
     fn name(self) -> &'static str {
@@ -115,9 +123,11 @@ impl Fallbacks {
         );
     }
     fn read(&self, script: Script) -> Option<Arc<egui::FontData>> {
-        script.files().iter().find_map(|file| {
+        script.files().iter().find_map(|(file, face)| {
             let bytes = std::fs::read(self.directory.join(file)).ok()?;
-            Some(Arc::new(egui::FontData::from_owned(bytes)))
+            let mut data = egui::FontData::from_owned(bytes);
+            data.index = *face;
+            Some(Arc::new(data))
         })
     }
     /// The interface language's own script comes first among the additions.
@@ -207,6 +217,34 @@ mod tests {
         assert!(fallbacks.wanted.is_empty());
         fallbacks.require_text("\u{D55C}");
         assert_eq!(fallbacks.wanted.len(), 1);
+    }
+    #[test]
+    fn windows_fonts_cover_the_languages_that_rely_on_them() {
+        for language in [
+            Language::ChineseSimplified,
+            Language::Japanese,
+            Language::Korean,
+            Language::Arabic,
+        ] {
+            let mut fallbacks = Fallbacks::new(language);
+            if fallbacks
+                .read(Script::of_language(language).unwrap())
+                .is_none()
+            {
+                continue;
+            }
+            let context = egui::Context::default();
+            fallbacks.apply(&context);
+            let mut output = context.run_ui(egui::RawInput::default(), |_| {});
+            output.textures_delta.clear();
+            let font = egui::FontId::proportional(14.0);
+            for text in crate::i18n::tests::all_texts(language) {
+                for c in text.chars() {
+                    let found = context.fonts_mut(|fonts| fonts.has_glyph(&font, c));
+                    assert!(found, "{language:?} {c:?} in {text}");
+                }
+            }
+        }
     }
     /// This checks egui itself, so that an upgrade which changes its layout fails here first.
     #[test]

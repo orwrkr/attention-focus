@@ -1,5 +1,8 @@
 //! Profile-local note suggestions, updated only from confirmed activities.
-use crate::tracking::{Activity, LegacyProject, Project};
+use crate::{
+    i18n::{t, user},
+    tracking::{Activity, LegacyProject, Project},
+};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 
@@ -102,7 +105,7 @@ impl NoteMemory {
     }
     pub fn show(&mut self, ui: &mut egui::Ui, activity: &mut Activity) {
         let response = ui
-            .add(egui::TextEdit::singleline(&mut activity.note).hint_text("Optional session note"));
+            .add(egui::TextEdit::singleline(&mut activity.note).hint_text(t("notes.placeholder")));
         let suggestions = self.suggestions(activity);
         if response.gained_focus() || response.changed() || response.clicked() {
             self.popup_open = true;
@@ -115,9 +118,9 @@ impl NoteMemory {
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .width(response.rect.width())
             .show(|ui| {
-                ui.weak("Recent notes for this project");
+                ui.weak(t("notes.recent"));
                 for note in suggestions {
-                    if ui.selectable_label(false, &note).clicked() {
+                    if ui.selectable_label(false, user(&note).as_ref()).clicked() {
                         activity.note = note;
                         ui.close();
                     }

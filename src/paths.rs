@@ -12,13 +12,19 @@ fn invalid(message: &str) -> io::Error {
 /// Parent components are rejected rather than guessed across a missing directory.
 pub fn resolve(path: &Path) -> io::Result<PathBuf> {
     if !path.is_absolute() || path.components().any(|c| matches!(c, Component::ParentDir)) {
-        return Err(invalid("Use an absolute path without parent components."));
+        return Err(invalid(&crate::i18n::message(
+            "errors.absolute_path_required",
+            &[],
+        )));
     }
     match fs::canonicalize(path) {
         Ok(path) => Ok(path),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             let parent = path.parent().ok_or(error)?;
-            Ok(resolve(parent)?.join(path.file_name().ok_or_else(|| invalid("Invalid path."))?))
+            Ok(resolve(parent)?.join(
+                path.file_name()
+                    .ok_or_else(|| invalid(&crate::i18n::message("errors.invalid_path", &[])))?,
+            ))
         }
         Err(error) => Err(error),
     }

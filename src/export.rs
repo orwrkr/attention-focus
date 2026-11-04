@@ -1,5 +1,6 @@
 //! Immutable report exports. Destination validation precedes every filesystem write.
 use crate::{
+    i18n::message,
     paths,
     reports::{Report, State},
 };
@@ -231,15 +232,13 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
 fn destination(path: &Path, protected: &[PathBuf]) -> io::Result<PathBuf> {
     let target = paths::resolve(path)?;
     if target.try_exists()? {
-        return Err(io::Error::other(
-            "Choose a new filename; existing files are never overwritten.",
-        ));
+        return Err(io::Error::other(message("errors.export_exists", &[])));
     }
     let key = target.to_string_lossy().to_lowercase();
     for root in protected {
         let root = paths::resolve(root)?;
         if Path::new(&key).starts_with(Path::new(&root.to_string_lossy().to_lowercase())) {
-            return Err(io::Error::other("Export outside application storage."));
+            return Err(io::Error::other(message("errors.export_in_storage", &[])));
         }
     }
     Ok(target)
@@ -253,7 +252,7 @@ pub fn write(
     let target = destination(path, protected)?;
     let parent = target
         .parent()
-        .ok_or_else(|| io::Error::other("Choose an export folder."))?;
+        .ok_or_else(|| io::Error::other(message("errors.export_folder", &[])))?;
     let mut file = tempfile::NamedTempFile::new_in(parent)?;
     render(file.as_file_mut(), report, format)?;
     file.as_file_mut().sync_all()?;
@@ -266,9 +265,13 @@ pub fn write(
 pub fn pick_path(owner: usize, format: Format) -> io::Result<Option<PathBuf>> {
     use windows_sys::Win32::UI::Controls::Dialogs::*;
     let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
-    let title = wide("Export Attention Focus report (choose a new filename)");
+    let title = wide(&message("export.dialog_title", &[]));
     let ext = wide(format.extension());
-    let filter = wide(&format!("Report files\0*.{}\0", format.extension()));
+    let filter = wide(&format!(
+        "{}\0*.{}\0",
+        message("export.file_filter", &[]),
+        format.extension()
+    ));
     let name = format!(
         "AttentionFocus-report-{}.{}",
         jiff::Timestamp::now().strftime("%Y%m%d-%H%M%S"),
@@ -298,8 +301,9 @@ pub fn pick_path(owner: usize, format: Format) -> io::Result<Option<PathBuf>> {
         if error == 0 {
             return Ok(None);
         }
-        return Err(io::Error::other(format!(
-            "Cannot select export file (Windows error {error})."
+        return Err(io::Error::other(message(
+            "errors.export_dialog_failed",
+            &[("code", &error.to_string())],
         )));
     }
     use std::os::windows::ffi::OsStringExt;

@@ -47,18 +47,19 @@ fn name(profile: Profile) -> &'static str {
 }
 
 pub fn command(executable: &Path, profile: Profile, tray: bool) -> io::Result<String> {
-    let path = executable
-        .to_str()
-        .ok_or_else(|| io::Error::other("Startup path must be valid Unicode."))?;
+    let path = executable.to_str().ok_or_else(|| {
+        io::Error::other(crate::i18n::message("errors.startup_path_unicode", &[]))
+    })?;
     let path = if let Some(unc) = path.strip_prefix("\\\\?\\UNC\\") {
         format!("\\\\{unc}")
     } else {
         path.strip_prefix("\\\\?\\").unwrap_or(path).to_owned()
     };
     if !executable.is_absolute() || path.contains(['"', '\0']) {
-        return Err(io::Error::other(
-            "Startup requires an absolute executable path without quotes or NUL.",
-        ));
+        return Err(io::Error::other(crate::i18n::message(
+            "errors.startup_path_absolute",
+            &[],
+        )));
     }
     let command = format!(
         "\"{path}\" --profile {} --autostart{}",
@@ -70,9 +71,10 @@ pub fn command(executable: &Path, profile: Profile, tray: bool) -> io::Result<St
         if tray { " --start-in-tray" } else { "" }
     );
     if command.encode_utf16().count() > 260 {
-        return Err(io::Error::other(
-            "The Windows startup command exceeds 260 characters. Move the EXE to a shorter path.",
-        ));
+        return Err(io::Error::other(crate::i18n::message(
+            "errors.startup_command_long",
+            &[],
+        )));
     }
     Ok(command)
 }
@@ -99,8 +101,9 @@ fn checked(status: u32) -> io::Result<()> {
     if status == ERROR_SUCCESS {
         Ok(())
     } else {
-        Err(io::Error::other(format!(
-            "Windows startup registry operation failed (error {status})."
+        Err(io::Error::other(crate::i18n::message(
+            "errors.startup_registry_failed",
+            &[("code", &status.to_string())],
         )))
     }
 }
@@ -137,9 +140,10 @@ fn read_entry(path: &str, name: &str) -> io::Result<Option<String>> {
     }
     checked(status)?;
     if kind != REG_SZ || bytes < 2 || bytes % 2 != 0 || bytes > 65536 {
-        return Err(io::Error::other(
-            "Startup registration has an invalid string format.",
-        ));
+        return Err(io::Error::other(crate::i18n::message(
+            "errors.startup_invalid_format",
+            &[],
+        )));
     }
     let mut buffer = vec![0_u16; bytes as usize / 2];
     checked(unsafe {
@@ -153,19 +157,21 @@ fn read_entry(path: &str, name: &str) -> io::Result<Option<String>> {
         )
     })?;
     if kind != REG_SZ || bytes < 2 || bytes % 2 != 0 || bytes as usize > buffer.len() * 2 {
-        return Err(io::Error::other(
-            "Startup registration changed while being read. Refresh and retry.",
-        ));
+        return Err(io::Error::other(crate::i18n::message(
+            "errors.startup_changed_while_reading",
+            &[],
+        )));
     }
     buffer.truncate(bytes as usize / 2);
     if buffer.pop() != Some(0) || buffer.contains(&0) {
-        return Err(io::Error::other(
-            "Startup registration contains an invalid terminator.",
-        ));
+        return Err(io::Error::other(crate::i18n::message(
+            "errors.startup_invalid_terminator",
+            &[],
+        )));
     }
     String::from_utf16(&buffer)
         .map(Some)
-        .map_err(|_| io::Error::other("Startup registration contains invalid Unicode."))
+        .map_err(|_| io::Error::other(crate::i18n::message("errors.startup_invalid_unicode", &[])))
 }
 fn set_entry(path: &str, name: &str, value: Option<&str>) -> io::Result<()> {
     let mut key = std::ptr::null_mut();

@@ -1,7 +1,7 @@
 # Attention Focus
 ## User Guide
 
-Version {{VERSION}} | Windows x64 | English interface
+Version {{VERSION}} | Windows x64
 
 Attention Focus records time that you choose to spend on a project or task. It stays
 in the Windows notification area (system tray) when its window is hidden. It does not
@@ -165,6 +165,19 @@ counters and scroll into view. Click **Settings** again to close the panel.
 **Theme** offers **Same as Windows**, **Light** and **Dark**. **Same as Windows** is the default
 and switches by itself when Windows changes between its light and dark app modes. The title bar
 follows the choice, which is remembered separately for Production and Development.
+
+## Choose a language
+
+**Language** offers **Same as Windows** and each supported language: English, Russian, German,
+French, Spanish, Portuguese (Brazil), Italian, Polish, Turkish, Chinese (Simplified), Japanese,
+Korean and Arabic. **Same as Windows** uses your first Windows display language that the
+application supports, or else English. Translations are machine-made, and corrections are welcome.
+This guide and the contents of exports stay in English.
+
+Chinese, Japanese, Korean and Arabic use fonts included with Windows, as do project names in those
+scripts. In Arabic, text reads from right to left and aligns to the right, while checkboxes, section
+arrows, scroll bars and the chart time axis stay where they are, and text fields show typed words
+in the order you type them.
 
 ## Start with Windows
 

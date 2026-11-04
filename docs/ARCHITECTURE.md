@@ -18,6 +18,7 @@ area, and bundled SQLite through rusqlite for history. Decisions and their reaso
 | `reports` | Calendar boundaries, clipping, totals, chart data | Pure; counts each interval once |
 | `charts` | Draws the chart views and assigns project colors | Paints computed data; holds no totals of its own |
 | `export` | CSV and Markdown output with protected destinations | Reads a separate snapshot |
+| `i18n`, `bidi`, `fonts` | Interface languages, right-to-left text, Windows fonts on demand | Tables are read-only; the language is process-wide |
 | `paths`, `profiles` | Storage identity, link checks, Production and Development | Fixed locations only |
 | `platform`, `lifecycle`, `startup` | Windows APIs: windows, instance lock, session events, sign-in startup | Windows code stays here |
 | `main`, `counters`, `project_ui`, `report_ui`, `note_memory`, `motion`, `ui_support` | Window, tray, interface and shared style | Change state only through commands |
@@ -113,6 +114,14 @@ ADR-0009, ADR-0013, ADR-0014 and ADR-0017. Exports read an independent read-only
 
 Chart data is computed next to the report from the same records and rules, so charts cannot
 disagree with the tables, and project colors are interface preferences. See ADR-0032.
+
+## Languages
+
+`locales/en.json` is the source text and the fallback; other files there translate it. Text is
+composed in logical order, and painted for egui at the last moment, which only matters in Arabic:
+see `src/i18n.rs` and [ADR-0035](decisions/0035-interface-languages.md). Windows draws the tray menu
+and tooltip, so those stay logical. Exports never go through `i18n`, so their contents do not depend
+on the interface language.
 
 ## Validation
 

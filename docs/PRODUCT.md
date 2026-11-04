@@ -18,8 +18,9 @@
 - **Honest icons.** A neutral logo identifies the application everywhere. Only the tray icon and
   the window's status show whether tracking is running.
 - **Separate profiles.** Production and Development have independent data and can run together.
-- **Interface languages.** Selectable, following the Windows language by default and falling back
-  to English. The owner has not chosen the set yet (T-0039), so the interface is English for now.
+- **Interface languages.** English, Russian, German, French, Spanish, Portuguese (Brazil), Italian,
+  Polish, Turkish, Chinese (Simplified), Japanese, Korean and Arabic, selectable, following the
+  Windows language by default and falling back to English. The guide and exports stay in English.
 - **Releases.** A Rust implementation under the MIT License. English-only project content.
   Consistent version metadata, and a versioned ZIP holding the EXE, an English guide
   PDF and the required notices. Main builds also produce the development EXE.

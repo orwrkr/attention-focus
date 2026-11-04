@@ -1,7 +1,8 @@
 # ADR-0002: English-Only Project and Application UI
 
 Date: 2026-10-26.
-Status: accepted.
+Status: superseded in part by [ADR-0035](0035-interface-languages.md), for translations of the
+application interface. All project-authored content remains in English.
 Basis: explicit user instructions to translate the project, allow only English,
 and clean the repository, recreating it if necessary.
 

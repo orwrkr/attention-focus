@@ -1,5 +1,12 @@
 //! Report controls; database access remains on the tracking worker.
-use crate::{date_picker::Calendar, presentation::duration, reports, tracking};
+use crate::{
+    date_picker::Calendar,
+    i18n::{
+        message, message_plural, paragraph, paragraph_colored, paragraph_weak, t, tf, tooltip, user,
+    },
+    presentation::duration,
+    reports, tracking,
+};
 use eframe::egui;
 use std::{
     sync::mpsc::SyncSender,
@@ -76,11 +83,24 @@ impl Default for Panel {
         }
     }
 }
+/// The hint under the period buttons, in logical order.
 fn period_hint(preset: Option<usize>, timezone: &str) -> String {
     match preset {
-        Some(1) => format!("Follows the current day: moves to the new date at midnight ({timezone})."),
-        Some(days) => format!("Follows the current day: always the last {days} days ({timezone})."),
-        None => "Fixed dates: this range stays as entered when the day changes. Choose Today to follow the current day.".into(),
+        Some(1) => message("reports.period_today_hint", &[("timezone", timezone)]),
+        Some(days) => message_plural(
+            "reports.period_days_hint",
+            days as u64,
+            &[("timezone", timezone)],
+        ),
+        None => message("reports.period_fixed_hint", &[]),
+    }
+}
+/// A project name for the totals; time without a project carries the English label from the worker.
+fn group_project(group: &reports::Group) -> std::borrow::Cow<'_, str> {
+    if group.project_id.is_none() {
+        std::borrow::Cow::Borrowed(t("activity.unassigned"))
+    } else {
+        user(&group.project)
     }
 }
 impl Panel {
@@ -257,7 +277,12 @@ impl Panel {
                 self.pending = true;
                 self.sent_request = Some(self.request.clone());
             }
-            Err(error) => self.error = Some(format!("Cannot request report: {error}")),
+            Err(error) => {
+                self.error = Some(message(
+                    "errors.report_request_failed",
+                    &[("error", &error.to_string())],
+                ));
+            }
         }
     }
     pub fn show(
@@ -267,157 +292,197 @@ impl Panel {
         ready: bool,
     ) {
         let now = Instant::now();
-        let response = ui.collapsing("Focus history and reports", |ui| {
-            ui.add_enabled_ui(ready, |ui| {
-                let mut dates_changed = false;
-                let old_zone = self.request.timezone.clone();
-                egui::Grid::new("report-range")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        ui.label("From (included)");
-                        dates_changed |= self.from_calendar.show(
-                            ui,
-                            &mut self.request.from,
-                            "from",
-                            &self.request.timezone,
-                        );
-                        ui.end_row();
-                        ui.label("From time (HH:MM)");
-                        dates_changed |= self.from_time_picker.show(
-                            ui,
-                            &mut self.request.from_time,
-                            "from-time",
-                            false,
-                        );
-                        ui.end_row();
-                        ui.label("Until (excluded)");
-                        dates_changed |= self.through_calendar.show(
-                            ui,
-                            &mut self.request.through,
-                            "through",
-                            &self.request.timezone,
-                        );
-                        ui.end_row();
-                        ui.label("Until time (HH:MM)");
-                        dates_changed |= self.through_time_picker.show(
-                            ui,
-                            &mut self.request.through_time,
-                            "until-time",
-                            true,
-                        );
-                        ui.end_row();
-                        ui.label("Time zone");
-                        egui::ComboBox::from_id_salt("report-timezone")
-                            .selected_text(&self.request.timezone)
-                            .width(235.0)
-                            .show_ui(ui, |ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut self.zone_search)
-                                        .hint_text("Search time zones"),
-                                );
-                                let query = self.zone_search.trim().to_lowercase();
-                                let mut found = false;
-                                for zone in self
-                                    .zones
-                                    .iter()
-                                    .filter(|zone| zone.to_lowercase().contains(&query))
-                                {
-                                    found = true;
-                                    ui.selectable_value(
-                                        &mut self.request.timezone,
-                                        zone.clone(),
-                                        zone,
+        let response = egui::CollapsingHeader::new(t("reports.title"))
+            // The identity of the header stays fixed when the language changes.
+            .id_salt("Focus history and reports")
+            .show(ui, |ui| {
+                crate::i18n::mirrored(ui, |ui| {
+                    ui.add_enabled_ui(ready, |ui| {
+                        let mut dates_changed = false;
+                        let old_zone = self.request.timezone.clone();
+                        // Translated labels do not fit beside their fields in a narrow window.
+                        let stacked = ui.available_width() < 470.0;
+                        crate::i18n::unmirrored(ui, |ui| {
+                            egui::Grid::new("report-range")
+                                .num_columns(2)
+                                .show(ui, |ui| {
+                                    ui.label(t("reports.from"));
+                                    if stacked {
+                                        ui.end_row();
+                                    }
+                                    dates_changed |= self.from_calendar.show(
+                                        ui,
+                                        &mut self.request.from,
+                                        "from",
+                                        &self.request.timezone,
                                     );
-                                }
-                                if !found {
-                                    ui.label("No matching time zones.");
-                                }
-                            });
-                        ui.end_row();
-                    });
-                if dates_changed {
-                    self.preset = None;
-                    self.edited(now);
-                }
-                if old_zone != self.request.timezone {
-                    self.edited(now);
-                }
-                ui.horizontal_wrapped(|ui| {
-                    for (label, days) in [("Today", 1), ("Last 7 days", 7), ("Last 30 days", 30)] {
-                        if ui
-                            .add(egui::Button::new(label).selected(self.preset == Some(days)))
-                            .clicked()
-                        {
-                            match reports::Request::recent(days, &self.request.timezone) {
-                                Ok(request) => {
-                                    self.request = request;
-                                    self.preset = Some(days);
-                                    self.debounce = None;
-                                    self.dirty = true;
-                                }
-                                Err(error) => {
-                                    self.error = Some(format!("Cannot set dates: {error}"))
+                                    ui.end_row();
+                                    ui.label(t("reports.from_time"));
+                                    if stacked {
+                                        ui.end_row();
+                                    }
+                                    dates_changed |= self.from_time_picker.show(
+                                        ui,
+                                        &mut self.request.from_time,
+                                        "from-time",
+                                        false,
+                                    );
+                                    ui.end_row();
+                                    ui.label(t("reports.until"));
+                                    if stacked {
+                                        ui.end_row();
+                                    }
+                                    dates_changed |= self.through_calendar.show(
+                                        ui,
+                                        &mut self.request.through,
+                                        "through",
+                                        &self.request.timezone,
+                                    );
+                                    ui.end_row();
+                                    ui.label(t("reports.until_time"));
+                                    if stacked {
+                                        ui.end_row();
+                                    }
+                                    dates_changed |= self.through_time_picker.show(
+                                        ui,
+                                        &mut self.request.through_time,
+                                        "until-time",
+                                        true,
+                                    );
+                                    ui.end_row();
+                                    ui.label(t("reports.time_zone"));
+                                    if stacked {
+                                        ui.end_row();
+                                    }
+                                    egui::ComboBox::from_id_salt("report-timezone")
+                                        .selected_text(&self.request.timezone)
+                                        .width(235.0)
+                                        .show_ui(ui, |ui| {
+                                            ui.add(
+                                                egui::TextEdit::singleline(&mut self.zone_search)
+                                                    .hint_text(t("reports.search_time_zones")),
+                                            );
+                                            let query = self.zone_search.trim().to_lowercase();
+                                            let mut found = false;
+                                            for zone in self
+                                                .zones
+                                                .iter()
+                                                .filter(|zone| zone.to_lowercase().contains(&query))
+                                            {
+                                                found = true;
+                                                ui.selectable_value(
+                                                    &mut self.request.timezone,
+                                                    zone.clone(),
+                                                    zone,
+                                                );
+                                            }
+                                            if !found {
+                                                ui.label(t("reports.no_matching_zones"));
+                                            }
+                                        });
+                                    ui.end_row();
+                                });
+                        });
+                        if dates_changed {
+                            self.preset = None;
+                            self.edited(now);
+                        }
+                        if old_zone != self.request.timezone {
+                            self.edited(now);
+                        }
+                        ui.horizontal_wrapped(|ui| {
+                            for (label, days) in [
+                                (t("reports.today"), 1),
+                                (t("reports.last_7_days"), 7),
+                                (t("reports.last_30_days"), 30),
+                            ] {
+                                if ui
+                                    .add(
+                                        egui::Button::new(label)
+                                            .selected(self.preset == Some(days)),
+                                    )
+                                    .clicked()
+                                {
+                                    match reports::Request::recent(days, &self.request.timezone) {
+                                        Ok(request) => {
+                                            self.request = request;
+                                            self.preset = Some(days);
+                                            self.debounce = None;
+                                            self.dirty = true;
+                                        }
+                                        Err(error) => {
+                                            self.error = Some(message(
+                                                "errors.set_dates_failed",
+                                                &[("error", &error.to_string())],
+                                            ))
+                                        }
+                                    }
                                 }
                             }
+                            let custom = ui.add(
+                                egui::Button::new(t("reports.custom"))
+                                    .selected(self.preset.is_none()),
+                            );
+                            if tooltip(custom, &message("reports.custom_hint", &[])).clicked() {
+                                self.preset = None;
+                            }
+                            if ui.button(t("reports.refresh")).clicked() {
+                                self.debounce = None;
+                                self.dirty = true;
+                            }
+                        });
+                        paragraph_weak(ui, &period_hint(self.preset, &self.request.timezone));
+                    });
+                    if !ready {
+                        ui.label(t("reports.history_unavailable"));
+                    }
+                    ui.horizontal_wrapped(|ui| {
+                        for (label, format) in [
+                            (t("reports.export_csv"), crate::export::Format::Csv),
+                            (
+                                t("reports.export_markdown"),
+                                crate::export::Format::Markdown,
+                            ),
+                        ] {
+                            if ui
+                                .add_enabled(
+                                    ready && !self.export_pending && self.request.bounds().is_ok(),
+                                    egui::Button::new(label),
+                                )
+                                .clicked()
+                            {
+                                self.export_request = Some(format);
+                                self.export_pending = true;
+                                self.export_message = None;
+                            }
                         }
+                    });
+                    if self.export_pending {
+                        ui.weak(t("reports.preparing_export"));
                     }
-                    if ui
-                        .add(egui::Button::new("Custom").selected(self.preset.is_none()))
-                        .on_hover_text("Keep the current dates when the day changes.")
-                        .clicked()
-                    {
-                        self.preset = None;
+                    if let Some(text) = &self.export_message {
+                        paragraph(ui, text);
                     }
-                    if ui.button("Refresh report").clicked() {
-                        self.debounce = None;
-                        self.dirty = true;
+                    paragraph_weak(
+                        ui,
+                        &if self.pending {
+                            message("reports.updating", &[])
+                        } else if self.growing {
+                            message("reports.auto_refresh", &[])
+                        } else {
+                            message("reports.auto_refresh_paused", &[])
+                        },
+                    );
+                    if let Some(error) = &self.error {
+                        paragraph_colored(ui, ui.visuals().error_fg_color, error);
+                    }
+                    if let Some(report) = &self.report {
+                        Self::results(ui, report, &mut self.chart_view, &self.project_colors);
+                    } else {
+                        paragraph(ui, &message("reports.loads_automatically", &[]));
                     }
                 });
-                ui.weak(period_hint(self.preset, &self.request.timezone));
             });
-            if !ready {
-                ui.label("History is not available yet.");
-            }
-            ui.horizontal(|ui| {
-                for (label, format) in [
-                    ("Export CSV", crate::export::Format::Csv),
-                    ("Export Markdown", crate::export::Format::Markdown),
-                ] {
-                    if ui
-                        .add_enabled(
-                            ready && !self.export_pending && self.request.bounds().is_ok(),
-                            egui::Button::new(label),
-                        )
-                        .clicked()
-                    {
-                        self.export_request = Some(format);
-                        self.export_pending = true;
-                        self.export_message = None;
-                    }
-                }
-            });
-            if self.export_pending {
-                ui.weak("Preparing export...");
-            }
-            if let Some(message) = &self.export_message {
-                ui.label(message);
-            }
-            ui.weak(if self.pending {
-                "Updating report..."
-            } else if self.growing {
-                "Auto-refresh: tracking is inside this range"
-            } else {
-                "Auto-refresh paused: no tracking time is growing in this range"
-            });
-            if let Some(error) = &self.error {
-                ui.colored_label(ui.visuals().error_fg_color, error);
-            }
-            if let Some(report) = &self.report {
-                Self::results(ui, report, &mut self.chart_view, &self.project_colors);
-            } else {
-                ui.label("The report loads automatically when history is ready.");
-            }
-        });
         let open = response.body_returned.is_some() && ui.is_visible();
         self.tick_at(
             commands,
@@ -439,161 +504,209 @@ impl Panel {
         project_colors: &crate::charts::ProjectColors,
     ) {
         let request = &report.range.request;
-        ui.label(format!(
-            "Results: {} {} to {} {} (end excluded) | {}",
-            request.from,
-            request.from_time,
-            request.through,
-            request.through_time,
-            request.timezone
+        paragraph(
+            ui,
+            &message(
+                "reports.results",
+                &[
+                    ("from", &request.from),
+                    ("from_time", &request.from_time),
+                    ("through", &request.through),
+                    ("through_time", &request.through_time),
+                    ("timezone", &request.timezone),
+                ],
+            ),
+        );
+        ui.weak(tf(
+            "reports.snapshot",
+            &[("time", &report.range.format_time(report.generated_ms))],
         ));
-        ui.weak(format!(
-            "Snapshot: {}",
-            report.range.format_time(report.generated_ms)
+        ui.strong(tf(
+            "reports.total_with_running",
+            &[(
+                "duration",
+                &duration(report.saved_ms.saturating_add(report.running_ms)),
+            )],
         ));
-        ui.strong(format!(
-            "Total (saved + running): {}",
-            duration(report.saved_ms.saturating_add(report.running_ms))
+        ui.label(tf(
+            "reports.saved_focus",
+            &[("duration", &duration(report.saved_ms))],
         ));
-        ui.label(format!("Saved focus: {}", duration(report.saved_ms)));
-        ui.label(format!("Running now: {}", duration(report.running_ms))).on_hover_text("Time of the interval still running, inside this period. It moves to Saved focus when the interval ends.");
+        let running = ui.label(tf(
+            "reports.running_now",
+            &[("duration", &duration(report.running_ms))],
+        ));
+        tooltip(running, &message("reports.running_now_hint", &[]));
         if report.review_ms > 0 {
-            ui.label(format!("Interrupted, not counted yet: {}", duration(report.review_ms))).on_hover_text("Time saved up to the last checkpoint of an interval that was cut off, such as by a crash or a clock change. It counts once you choose Accept saved time in the main window.");
+            let interrupted = ui.label(tf(
+                "reports.interrupted",
+                &[("duration", &duration(report.review_ms))],
+            ));
+            tooltip(interrupted, &message("reports.interrupted_hint", &[]));
         }
-        for diagnostic in &report.diagnostics {
-            ui.colored_label(ui.visuals().warn_fg_color, diagnostic);
+        // Exports carry the English diagnostics; the interface describes the same sessions itself.
+        for id in &report.invalid_sessions {
+            paragraph_colored(
+                ui,
+                ui.visuals().warn_fg_color,
+                &message("reports.invalid_interval", &[("id", &id.to_string())]),
+            );
         }
         if let Some(chart) = &report.chart {
-            egui::CollapsingHeader::new("Charts")
+            egui::CollapsingHeader::new(t("reports.charts"))
+                .id_salt("Charts")
                 .default_open(true)
                 .show(ui, |ui| {
-                    crate::charts::show(ui, chart, chart_view, project_colors);
+                    crate::i18n::mirrored(ui, |ui| {
+                        crate::charts::show(ui, chart, chart_view, project_colors);
+                    });
                 });
         }
-        ui.collapsing("By project", |ui| {
-            egui::Grid::new("project-totals")
-                .striped(true)
-                .show(ui, |ui| {
-                    ui.strong("Project");
-                    ui.strong("Saved time");
-                    ui.end_row();
-                    for group in &report.projects {
-                        ui.label(&group.project);
-                        ui.label(duration(group.saved_ms));
-                        ui.end_row();
-                    }
-                    ui.strong("Total saved");
-                    ui.strong(duration(report.saved_ms));
-                    ui.end_row();
-                });
-        });
-        ui.collapsing("By project and task", |ui| {
-            egui::Grid::new("task-totals").striped(true).show(ui, |ui| {
-                ui.strong("Project");
-                ui.strong("Task");
-                ui.strong("Saved time");
-                ui.end_row();
-                for group in &report.groups {
-                    ui.label(&group.project);
-                    ui.label(group.task.as_deref().unwrap_or("No task"));
-                    ui.label(duration(group.saved_ms));
-                    ui.end_row();
-                }
-                ui.strong("Total saved");
-                ui.label("");
-                ui.strong(duration(report.saved_ms));
-                ui.end_row();
-            });
-        });
-        ui.collapsing("By day", |ui| {
-            crate::ui_support::inner_area("daily-focus", 240.0).show(ui, |ui| {
-                egui::Grid::new("daily-totals")
+        egui::CollapsingHeader::new(t("reports.by_project"))
+            .id_salt("By project")
+            .show(ui, |ui| {
+                egui::Grid::new("project-totals")
                     .striped(true)
                     .show(ui, |ui| {
-                        ui.strong("Day");
-                        ui.strong("Saved time");
+                        ui.strong(t("reports.project"));
+                        ui.strong(t("reports.saved_time"));
                         ui.end_row();
-                        for day in &report.range.days {
-                            ui.label(&day.date);
-                            ui.label(duration(day.saved_ms));
+                        for group in &report.projects {
+                            ui.label(group_project(group).as_ref());
+                            ui.label(duration(group.saved_ms));
                             ui.end_row();
                         }
-                        ui.strong("Total saved");
+                        ui.strong(t("reports.total_saved"));
                         ui.strong(duration(report.saved_ms));
                         ui.end_row();
                     });
             });
-        });
-        ui.collapsing(format!("Sessions ({})", report.matching_sessions), |ui| {
-            if report.matching_sessions > report.history.len() {
-                ui.label(
-                    "Showing the 200 most recent sessions. Totals include all matching sessions.",
-                );
-            }
-            ui.label("Session time below is clipped to the selected period.");
-            crate::ui_support::inner_area("session-history", 360.0).show(ui, |ui| {
-                for row in &report.history {
-                    let record = &row.record;
-                    let status = match record.state {
-                        reports::State::Saved => "Saved",
-                        reports::State::Running => "Running",
-                        reports::State::Review => "Interrupted",
-                    };
-                    ui.push_id(record.id, |ui| {
-                        ui.collapsing(
-                            format!(
-                                "{} | {} | {}",
-                                report.range.format_time(record.start_ms),
-                                duration(row.clipped_ms),
-                                status
-                            ),
-                            |ui| {
-                                ui.strong(record.activity.label());
-                                if let Some(project) = &record.activity.project
-                                    && let Some(task) = &project.task
-                                {
-                                    ui.label(task);
-                                }
-                                if !record.activity.note.is_empty() {
-                                    ui.label(&record.activity.note);
-                                }
-                                ui.label(format!(
-                                    "Start: {}",
-                                    report.range.format_time(record.start_ms)
-                                ));
-                                ui.label(format!(
-                                    "End / snapshot: {}",
-                                    report.range.format_time(record.end_ms)
-                                ));
-                                ui.label(format!(
-                                    "Full recorded time: {}",
-                                    duration(record.elapsed_ms)
-                                ));
-                                let reason = match record.reason.as_str() {
-                                    "stop" => "Stopped",
-                                    "switch" => "Focus changed",
-                                    "day_boundary" => "New day started",
-                                    "exit" => "Application exit",
-                                    "lock" => "Windows locked",
-                                    "logoff" => "Windows sign-out",
-                                    "shutdown" => "Windows shutdown",
-                                    "suspend" => "Sleep",
-                                    "controller_lost" => "Application window closed",
-                                    "crash" => "Interrupted before restart",
-                                    "clock_or_heartbeat" => "Clock change or missed heartbeat",
-                                    _ => "Tracking interrupted",
-                                };
-                                if record.state != reports::State::Running {
-                                    ui.label(format!("Ended: {reason}"));
-                                }
-                            },
-                        );
-                    });
-                }
+        egui::CollapsingHeader::new(t("reports.by_project_and_task"))
+            .id_salt("By project and task")
+            .show(ui, |ui| {
+                egui::Grid::new("task-totals").striped(true).show(ui, |ui| {
+                    ui.strong(t("reports.project"));
+                    ui.strong(t("reports.task"));
+                    ui.strong(t("reports.saved_time"));
+                    ui.end_row();
+                    for group in &report.groups {
+                        ui.label(group_project(group).as_ref());
+                        ui.label(group.task.as_deref().map_or_else(
+                            || t("main.no_task").to_owned(),
+                            |task| user(task).into_owned(),
+                        ));
+                        ui.label(duration(group.saved_ms));
+                        ui.end_row();
+                    }
+                    ui.strong(t("reports.total_saved"));
+                    ui.label("");
+                    ui.strong(duration(report.saved_ms));
+                    ui.end_row();
+                });
             });
-        });
+        egui::CollapsingHeader::new(t("reports.by_day"))
+            .id_salt("By day")
+            .show(ui, |ui| {
+                crate::ui_support::inner_area("daily-focus", 240.0).show(ui, |ui| {
+                    egui::Grid::new("daily-totals")
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.strong(t("reports.day"));
+                            ui.strong(t("reports.saved_time"));
+                            ui.end_row();
+                            for day in &report.range.days {
+                                ui.label(&day.date);
+                                ui.label(duration(day.saved_ms));
+                                ui.end_row();
+                            }
+                            ui.strong(t("reports.total_saved"));
+                            ui.strong(duration(report.saved_ms));
+                            ui.end_row();
+                        });
+                });
+            });
+        ui.collapsing(
+            tf(
+                "reports.sessions",
+                &[("count", &report.matching_sessions.to_string())],
+            ),
+            |ui| {
+                if report.matching_sessions > report.history.len() {
+                    paragraph(ui, &message("reports.showing_recent", &[]));
+                }
+                paragraph(ui, &message("reports.clipped_hint", &[]));
+                crate::ui_support::inner_area("session-history", 360.0).show(ui, |ui| {
+                    for row in &report.history {
+                        let record = &row.record;
+                        let status = match record.state {
+                            reports::State::Saved => message("reports.status_saved", &[]),
+                            reports::State::Running => message("reports.status_running", &[]),
+                            reports::State::Review => message("reports.status_interrupted", &[]),
+                        };
+                        ui.push_id(record.id, |ui| {
+                            ui.collapsing(
+                                tf(
+                                    "reports.session_row",
+                                    &[
+                                        ("start", &report.range.format_time(record.start_ms)),
+                                        ("duration", &duration(row.clipped_ms)),
+                                        ("status", &status),
+                                    ],
+                                ),
+                                |ui| {
+                                    ui.strong(record.activity.painted_label().as_ref());
+                                    if let Some(project) = &record.activity.project
+                                        && let Some(task) = &project.task
+                                    {
+                                        ui.label(user(task).as_ref());
+                                    }
+                                    if !record.activity.note.is_empty() {
+                                        ui.label(user(&record.activity.note).as_ref());
+                                    }
+                                    ui.label(tf(
+                                        "reports.start",
+                                        &[("time", &report.range.format_time(record.start_ms))],
+                                    ));
+                                    ui.label(tf(
+                                        "reports.end",
+                                        &[("time", &report.range.format_time(record.end_ms))],
+                                    ));
+                                    ui.label(tf(
+                                        "reports.full_time",
+                                        &[("duration", &duration(record.elapsed_ms))],
+                                    ));
+                                    let reason = match record.reason.as_str() {
+                                        "stop" => message("reports.reason.stop", &[]),
+                                        "switch" => message("reports.reason.switch", &[]),
+                                        "day_boundary" => {
+                                            message("reports.reason.day_boundary", &[])
+                                        }
+                                        "exit" => message("reports.reason.exit", &[]),
+                                        "lock" => message("reports.reason.lock", &[]),
+                                        "logoff" => message("reports.reason.logoff", &[]),
+                                        "shutdown" => message("reports.reason.shutdown", &[]),
+                                        "suspend" => message("reports.reason.suspend", &[]),
+                                        "controller_lost" => {
+                                            message("reports.reason.controller_lost", &[])
+                                        }
+                                        "crash" => message("reports.reason.crash", &[]),
+                                        "clock_or_heartbeat" => {
+                                            message("reports.reason.clock_or_heartbeat", &[])
+                                        }
+                                        _ => message("reports.reason.unknown", &[]),
+                                    };
+                                    if record.state != reports::State::Running {
+                                        ui.label(tf("reports.ended", &[("reason", &reason)]));
+                                    }
+                                },
+                            );
+                        });
+                    }
+                });
+            },
+        );
         if report.matching_sessions == 0 {
-            ui.label("No sessions in this period.");
+            ui.label(t("reports.no_sessions"));
         }
     }
 }
@@ -813,6 +926,97 @@ mod tests {
         assert_eq!(restored.chart_view, crate::charts::View::Timeline);
         assert_eq!(restored.project_colors, Default::default());
     }
+    #[test]
+    fn reports_fit_the_narrowest_window_in_every_language() {
+        let overflow = std::cell::RefCell::new(Vec::new());
+        for language in crate::i18n::Language::ALL {
+            crate::i18n::with_language(language, || {
+                let context = egui::Context::default();
+                crate::fonts::Fallbacks::new(language).apply(&context);
+                let mut panel = fixed();
+                let (begin, _) = panel.request.bounds().unwrap();
+                let record = |id, state| reports::Record {
+                    id,
+                    start_ms: begin + id * 3_600_000,
+                    end_ms: begin + (id + 1) * 3_600_000,
+                    elapsed_ms: 3_600_000,
+                    state,
+                    activity: tracking::Activity::default(),
+                    reason: "stop".into(),
+                };
+                panel.report = Some(reports::compute(
+                    reports::Range::new(&panel.request).unwrap(),
+                    vec![
+                        record(1, reports::State::Saved),
+                        record(2, reports::State::Review),
+                    ],
+                    begin,
+                ));
+                let (sender, _receiver) = mpsc::sync_channel(8);
+                let header = std::cell::Cell::new(egui::Rect::NOTHING);
+                let pass = |panel: &mut Panel, step: i32, events| {
+                    let mut output = context.run_ui(
+                        egui::RawInput {
+                            time: Some(f64::from(step) * 0.2),
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(380.0, 1600.0),
+                            )),
+                            events,
+                            ..Default::default()
+                        },
+                        |ui| {
+                            let right = ui.max_rect().right();
+                            panel.show(ui, &sender, true);
+                            // A failure inside a frame would abort the whole test process.
+                            if ui.max_rect().right() > right + 0.5 {
+                                let excess = ui.max_rect().right() - right;
+                                let mut list = overflow.borrow_mut();
+                                if !list.iter().any(|(known, _)| *known == language) {
+                                    list.push((language, excess));
+                                }
+                            }
+                        },
+                    );
+                    output.textures_delta.clear();
+                    for clipped in &output.shapes {
+                        if let egui::Shape::Text(text) = &clipped.shape
+                            && text.galley.job.text == crate::i18n::t("reports.title")
+                        {
+                            header.set(text.visual_bounding_rect());
+                        }
+                    }
+                };
+                pass(&mut panel, 0, vec![]);
+                pass(&mut panel, 1, vec![]);
+                let at = header.get().center();
+                pass(&mut panel, 2, vec![egui::Event::PointerMoved(at)]);
+                pass(
+                    &mut panel,
+                    3,
+                    vec![
+                        egui::Event::PointerButton {
+                            pos: at,
+                            button: egui::PointerButton::Primary,
+                            pressed: true,
+                            modifiers: egui::Modifiers::default(),
+                        },
+                        egui::Event::PointerButton {
+                            pos: at,
+                            button: egui::PointerButton::Primary,
+                            pressed: false,
+                            modifiers: egui::Modifiers::default(),
+                        },
+                    ],
+                );
+                for step in 4..12 {
+                    pass(&mut panel, step, vec![]);
+                }
+            });
+        }
+        assert!(overflow.borrow().is_empty(), "{:?}", overflow.borrow());
+    }
+
     #[test]
     fn reports_on_screen_include_the_charts_and_keep_refreshing_them() {
         let context = egui::Context::default();

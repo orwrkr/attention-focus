@@ -131,6 +131,9 @@ disposable synthetic projects:
 12. Switch Theme through all three choices and check the title bar. With Same as Windows, change
     the Windows app mode. Check scroll bars in the body, By day, Sessions, a long Timeline, and
     the project and time zone lists: each lies beside its content and never covers it.
+13. Switch Language through Russian, German, Chinese, Japanese, Korean and Arabic, and back to Same
+    as Windows. Check the header and report rows at the minimum width, the tray menu and tooltip,
+    and that Arabic reads from right to left, including a date and a wrapped sentence.
 
 Always use scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 

@@ -92,6 +92,15 @@ pub fn right_to_left(text: &str) -> String {
     reordered(text, Some(Level::rtl()))
 }
 
+/// Left-to-right interface text that may contain right-to-left user data.
+pub fn left_to_right(text: &str) -> Cow<'_, str> {
+    if text.chars().any(is_rtl_letter) {
+        Cow::Owned(reordered(text, Some(Level::ltr())))
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
 /// User data keeps its own direction, so a Latin project name is left alone in any language.
 pub fn user_text(text: &str) -> Cow<'_, str> {
     if text.chars().any(is_rtl_letter) {
@@ -182,6 +191,14 @@ mod tests {
             user_text(&format!("{HELLO} {WORLD}")),
             format!("{WORLD} {HELLO}")
         );
+    }
+    #[test]
+    fn a_name_inside_left_to_right_text_is_ordered_without_moving_that_text() {
+        assert_eq!(
+            left_to_right(&format!("{HELLO} {WORLD} (Archived)")),
+            format!("{WORLD} {HELLO} (Archived)")
+        );
+        assert!(matches!(left_to_right("Plain (text)"), Cow::Borrowed(_)));
     }
     #[test]
     fn wrapping_keeps_the_start_of_the_text_on_the_first_line() {

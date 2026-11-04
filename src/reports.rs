@@ -51,18 +51,21 @@ impl Request {
         let begin = parse_minute(&self.from_time, false)?;
         let end = parse_minute(&self.through_time, true)?;
         if (last, end) <= (first, begin) {
-            return Err(std::io::Error::other(
-                "Until must be later than From. The Until boundary is excluded.",
-            )
+            return Err(std::io::Error::other(crate::i18n::message(
+                "errors.until_after_from",
+                &[],
+            ))
             .into());
         }
         let zone = TimeZone::get(&self.timezone)?;
         let start_ms = minute_boundary(first, begin, &zone)?;
         let end_ms = minute_boundary(last, end, &zone)?;
         if end_ms < start_ms {
-            return Err(
-                std::io::Error::other("Until must follow From in the selected time zone.").into(),
-            );
+            return Err(std::io::Error::other(crate::i18n::message(
+                "errors.until_follows_from",
+                &[],
+            ))
+            .into());
         }
         Ok((start_ms, end_ms))
     }
@@ -93,18 +96,12 @@ fn parse_minute(text: &str, allow_end: bool) -> Result<u16> {
             .iter()
             .all(u8::is_ascii_digit)
     {
-        return Err(std::io::Error::other(
-            "Enter time as HH:MM (24:00 is allowed only for Until).",
-        )
-        .into());
+        return Err(std::io::Error::other(crate::i18n::message("errors.time_format", &[])).into());
     }
     let hour = (bytes[0] - b'0') as u16 * 10 + (bytes[1] - b'0') as u16;
     let minute = (bytes[3] - b'0') as u16 * 10 + (bytes[4] - b'0') as u16;
     if minute >= 60 || hour >= 24 && !(allow_end && hour == 24 && minute == 0) {
-        return Err(std::io::Error::other(
-            "Time must be 00:00-23:59; Until also accepts 24:00 for end of day.",
-        )
-        .into());
+        return Err(std::io::Error::other(crate::i18n::message("errors.time_range", &[])).into());
     }
     Ok(hour * 60 + minute)
 }
@@ -119,9 +116,12 @@ fn minute_boundary(mut date: Date, minute: u16, zone: &TimeZone) -> Result<i64> 
             .timestamp()
             .as_millisecond());
     }
-    zone.to_ambiguous_zoned(date.at((minute/60) as i8,(minute%60) as i8,0,0)).unambiguous()
-        .map(|zoned|zoned.timestamp().as_millisecond())
-        .map_err(|_|std::io::Error::other("This local time is repeated or skipped by a clock change. Choose an unambiguous time or use UTC.").into())
+    zone.to_ambiguous_zoned(date.at((minute / 60) as i8, (minute % 60) as i8, 0, 0))
+        .unambiguous()
+        .map(|zoned| zoned.timestamp().as_millisecond())
+        .map_err(|_| {
+            std::io::Error::other(crate::i18n::message("errors.time_ambiguous", &[])).into()
+        })
 }
 #[derive(Clone, Debug)]
 pub struct Day {
@@ -150,7 +150,11 @@ impl Range {
         let mut days = Vec::new();
         while date <= last {
             if days.len() == 3660 {
-                return Err(std::io::Error::other("Choose at most 3,660 days per report.").into());
+                return Err(std::io::Error::other(crate::i18n::message(
+                    "errors.too_many_days",
+                    &[],
+                ))
+                .into());
             }
             let next = date.tomorrow()?;
             let day_start = date
@@ -453,7 +457,10 @@ pub struct Report {
     pub projects: Vec<Group>,
     pub history: Vec<History>,
     pub matching_sessions: usize,
+    /// English text for exports, which never depend on the interface language.
     pub diagnostics: Vec<String>,
+    /// The sessions behind the diagnostics, so the interface can describe them in its language.
+    pub invalid_sessions: Vec<i64>,
     pub generated_ms: i64,
     /// Only the interface draws charts, so exports leave this out.
     pub chart: Option<Chart>,
@@ -530,6 +537,7 @@ fn compute_with_limit(
     let (mut saved_ms, mut running_ms, mut review_ms) = (0u64, 0u64, 0u64);
     let mut history = Vec::new();
     let mut diagnostics = Vec::new();
+    let mut invalid_sessions = Vec::new();
     for record in records {
         if range.start_ms == range.end_ms {
             continue;
@@ -539,6 +547,7 @@ fn compute_with_limit(
                 "Session {} has an invalid wall interval; its duration is excluded.",
                 record.id
             ));
+            invalid_sessions.push(record.id);
             continue;
         }
         if !counted(&record, &range) {
@@ -616,6 +625,7 @@ fn compute_with_limit(
         history,
         matching_sessions,
         diagnostics,
+        invalid_sessions,
         generated_ms,
         chart: None,
     }

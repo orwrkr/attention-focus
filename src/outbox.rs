@@ -28,7 +28,7 @@ impl Outbox {
 
     pub fn send(&mut self, command: Command) -> Result<(), String> {
         if self.waiting.len() == MAX_WAITING {
-            return Err("Too many tracking commands are waiting. Try again shortly.".into());
+            return Err(crate::i18n::message("errors.too_many_commands", &[]));
         }
         self.waiting.push_back(command);
         self.pump()
@@ -59,7 +59,7 @@ impl Outbox {
                 Ok(())
             }
             Err(TrySendError::Disconnected(_)) => {
-                Err("Tracking stopped responding. Restart the application.".into())
+                Err(crate::i18n::message("errors.tracking_stopped", &[]))
             }
         }
     }

@@ -1,4 +1,5 @@
 //! Minute-precision civil time picker; range validation remains in reports.
+use crate::i18n::t;
 use eframe::egui;
 
 #[derive(Default)]
@@ -19,7 +20,7 @@ impl TimePicker {
                 changed |= ui
                     .add(egui::TextEdit::singleline(text).desired_width(70.0))
                     .changed();
-                egui::containers::menu::MenuButton::new("Time")
+                egui::containers::menu::MenuButton::new(t("time.button"))
                     .config(
                         egui::containers::menu::MenuConfig::default()
                             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside),
@@ -30,26 +31,26 @@ impl TimePicker {
                             .draft
                             .get_or_insert_with(|| parse(text, end).unwrap_or((0, 0)));
                         ui.horizontal(|ui| {
-                            ui.label("Hour");
+                            ui.label(t("time.hour"));
                             ui.add(egui::DragValue::new(hour).range(0..=if end { 24 } else { 23 }));
-                            ui.label("Minute");
+                            ui.label(t("time.minute"));
                             if *hour == 24 {
                                 *minute = 0;
                             }
                             ui.add_enabled(*hour < 24, egui::DragValue::new(minute).range(0..=59));
                         });
-                        if end && ui.button("End of day (24:00)").clicked() {
+                        if end && ui.button(t("time.end_of_day")).clicked() {
                             *text = "24:00".into();
                             changed = true;
                             ui.close();
                         }
                         ui.horizontal(|ui| {
-                            if ui.button("Apply").clicked() {
+                            if ui.button(t("time.apply")).clicked() {
                                 *text = format!("{hour:02}:{minute:02}");
                                 changed = true;
                                 ui.close();
                             }
-                            if ui.button("Cancel").clicked() {
+                            if ui.button(t("time.cancel")).clicked() {
                                 ui.close();
                             }
                         });

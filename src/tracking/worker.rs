@@ -32,15 +32,19 @@ pub fn spawn(
         let store = match Store::open(&path) {
             Ok(store) => store,
             Err(error) => {
-                notify(Event::Error(format!("Cannot open focus history: {error}")));
+                notify(Event::Error(crate::i18n::message(
+                    "errors.history_open_failed",
+                    &[("error", &error.to_string())],
+                )));
                 while let Ok(command) = receiver.recv() {
                     if matches!(command, Command::Exit) {
                         notify(Event::ExitReady);
                         break;
                     }
-                    notify(Event::Rejected(
-                        "Tracking is unavailable. Resolve the storage error and restart.".into(),
-                    ));
+                    notify(Event::Rejected(crate::i18n::message(
+                        "errors.tracking_unavailable",
+                        &[],
+                    )));
                 }
                 return;
             }
@@ -106,13 +110,21 @@ pub fn spawn(
                                 engine.store.report(&request, at, state.elapsed_ms)
                             })
                             .map(Box::new)
-                            .map_err(|error| format!("Cannot load report: {error}"));
+                            .map_err(|error| {
+                                crate::i18n::message(
+                                    "errors.report_failed",
+                                    &[("error", &error.to_string())],
+                                )
+                            });
                         notify(Event::Report { id, result });
                     }
                     true
                 }
                 Err(error) => {
-                    let message = format!("History was not updated: {error}");
+                    let message = crate::i18n::message(
+                        "errors.history_not_updated",
+                        &[("error", &error.to_string())],
+                    );
                     if let Some((id, _)) = report_request {
                         notify(Event::Report {
                             id,

@@ -28,6 +28,9 @@ The examples show invented projects.
   follow the current day. Export to CSV or Markdown.
 - **Charts.** A timeline of when you worked, columns of how much per day, and your weekly rhythm.
 - **Light and dark themes** that follow Windows automatically, or the one you choose.
+- **Thirteen languages**, following Windows or your choice: English, Russian, German, French,
+  Spanish, Portuguese (Brazil), Italian, Polish, Turkish, Chinese (Simplified), Japanese, Korean
+  and Arabic. Translations are machine-made, and corrections are welcome.
 - **Starts with Windows** if you want it to, optionally hidden in the tray.
 
 ## Install

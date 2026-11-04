@@ -1,6 +1,11 @@
 //! Responsive focus counters with measured frame margins and one native egui hint.
-use crate::{presentation::duration, tracking::Snapshot};
+use crate::{
+    i18n::{self, t},
+    presentation::duration,
+    tracking::Snapshot,
+};
 use eframe::egui::{self, Rect};
+use std::borrow::Cow;
 
 pub struct Response {
     pub toggle: bool,
@@ -8,6 +13,24 @@ pub struct Response {
 }
 
 pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> Response {
+    if i18n::current().is_rtl() {
+        // Cards are placed by measure, so the row itself must run from left to right.
+        return ui
+            .with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                cards(ui, state, ready, enabled, true)
+            })
+            .inner;
+    }
+    cards(ui, state, ready, enabled, false)
+}
+
+fn cards(
+    ui: &mut egui::Ui,
+    state: &Snapshot,
+    ready: bool,
+    enabled: bool,
+    mirrored: bool,
+) -> Response {
     let available = ui.available_width();
     let gap = 12.0;
     let frame = egui::Frame::group(ui.style()).inner_margin(8.0);
@@ -33,14 +56,14 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
         };
         bounds[index] = card_frame
             .show(ui, |ui| {
-                ui.vertical(|ui| {
+                let body = |ui: &mut egui::Ui| {
                     ui.set_width(width);
                     ui.set_min_height(120.0);
                     ui.strong(
                         [
-                            "Current interval",
-                            "Today for project",
-                            "Today - all projects",
+                            t("counters.current_interval"),
+                            t("counters.today_project"),
+                            t("counters.today_all"),
                         ][index],
                     );
                     let value = [
@@ -51,7 +74,7 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
                     if let Some(value) = value {
                         ui.label(egui::RichText::new(duration(value)).size(32.0).monospace());
                     } else {
-                        ui.label("Unavailable");
+                        ui.label(t("counters.unavailable"));
                     }
                     if index == 0 {
                         // Reserve the same row and indicator space in every state.
@@ -60,23 +83,27 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
                                 .allocate_exact_size(egui::vec2(10.0, 16.0), egui::Sense::hover());
                             if active {
                                 ui.painter().circle_filled(rect.center(), 3.0, accent);
-                                ui.label(egui::RichText::new("Tracking").strong().color(accent));
+                                ui.label(
+                                    egui::RichText::new(t("counters.tracking"))
+                                        .strong()
+                                        .color(accent),
+                                );
                             } else {
                                 ui.label(if !ready {
-                                    "Opening history..."
+                                    t("counters.opening_history")
                                 } else if state.running {
-                                    "Tracking"
+                                    t("counters.tracking")
                                 } else {
-                                    "Stopped"
+                                    t("counters.stopped")
                                 });
                             }
                         });
                         toggle |= crate::ui_support::primary_action(
                             ui,
                             if state.running {
-                                "Stop tracking"
+                                t("tray.stop")
                             } else {
-                                "Start tracking"
+                                t("tray.start")
                             },
                             enabled,
                         )
@@ -84,15 +111,21 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
                     } else {
                         ui.add(
                             egui::Label::new(if index == 1 {
-                                state.activity.label()
+                                state.activity.painted_label()
                             } else {
-                                "Includes unassigned focus"
+                                Cow::Borrowed(t("counters.includes_unassigned"))
                             })
                             .truncate(),
                         );
-                        ui.weak("All tasks, local day");
+                        ui.weak(t("counters.all_tasks_local_day"));
                     }
-                });
+                };
+                if mirrored {
+                    let layout = egui::Layout::top_down(egui::Align::Max);
+                    ui.allocate_ui_with_layout(egui::vec2(width, 0.0), layout, body);
+                } else {
+                    ui.vertical(body);
+                }
             })
             .response
             .rect;
@@ -107,7 +140,8 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
     if wide {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
-            for index in 0..3 {
+            let order = if mirrored { [2, 1, 0] } else { [0, 1, 2] };
+            for index in order {
                 card(ui, index, width);
             }
         });
@@ -116,8 +150,10 @@ pub fn show(ui: &mut egui::Ui, state: &Snapshot, ready: bool, enabled: bool) -> 
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
-            card(ui, 1, width);
-            card(ui, 2, width);
+            let order = if mirrored { [2, 1] } else { [1, 2] };
+            for index in order {
+                card(ui, index, width);
+            }
         });
     }
     Response { toggle, bounds }
@@ -193,6 +229,52 @@ mod tests {
                 "status must not move the tracking action"
             );
         }
+    }
+    #[test]
+    fn counters_fit_the_narrowest_window_in_every_language() {
+        let overflow = std::cell::RefCell::new(Vec::new());
+        let overlap = std::cell::RefCell::new(Vec::new());
+        for language in crate::i18n::Language::ALL {
+            crate::i18n::with_language(language, || {
+                let context = egui::Context::default();
+                crate::fonts::Fallbacks::new(language).apply(&context);
+                for pass in 0..3 {
+                    let mut output = context.run_ui(
+                        egui::RawInput {
+                            time: Some(f64::from(pass)),
+                            screen_rect: Some(Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(380.0, 800.0),
+                            )),
+                            ..Default::default()
+                        },
+                        |ui| {
+                            let right = ui.max_rect().right();
+                            // The application mirrors its root layout in this case.
+                            let response = crate::i18n::mirrored(ui, |ui| {
+                                show(ui, &Snapshot::default(), true, false)
+                            });
+                            let [_, second, third] = response.bounds;
+                            if second.intersects(third) {
+                                overlap.borrow_mut().push(language);
+                            }
+                            // A failure inside a frame would abort the whole test process.
+                            let widest = response
+                                .bounds
+                                .iter()
+                                .map(|bounds| bounds.right())
+                                .fold(ui.max_rect().right(), f32::max);
+                            if widest > right + 0.5 {
+                                overflow.borrow_mut().push((language, widest - right));
+                            }
+                        },
+                    );
+                    output.textures_delta.clear();
+                }
+            });
+        }
+        assert!(overflow.borrow().is_empty(), "{:?}", overflow.borrow());
+        assert!(overlap.borrow().is_empty(), "{:?}", overlap.borrow());
     }
     #[test]
     fn reserved_scrollbar_and_mirrored_gutter_keep_window_edge_margins_equal() {

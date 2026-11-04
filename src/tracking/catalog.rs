@@ -1,6 +1,6 @@
 //! The application's own project and task list. Finished sessions keep the titles they
 //! recorded, so anything with recorded time can be archived or completed but not deleted.
-use super::{Activity, Result, Store, invalid};
+use super::{Activity, Result, Store, invalid, reject};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::{HashMap, HashSet};
 
@@ -32,10 +32,14 @@ fn clean_title(text: &str) -> Result<String> {
         .collect();
     let title = title.trim();
     if title.is_empty() {
-        return Err(invalid("Enter a name.").into());
+        return Err(reject("errors.enter_name").into());
     }
     if title.chars().count() > MAX_TITLE_CHARS {
-        return Err(invalid("Names can have at most 200 characters.").into());
+        return Err(invalid(&crate::i18n::message(
+            "errors.name_too_long",
+            &[("limit", &MAX_TITLE_CHARS.to_string())],
+        ))
+        .into());
     }
     Ok(title.to_owned())
 }
@@ -56,7 +60,7 @@ fn require_project(connection: &Connection, id: i64) -> Result<()> {
         .optional()?;
     found
         .map(|_| ())
-        .ok_or_else(|| invalid("This project no longer exists.").into())
+        .ok_or_else(|| reject("errors.project_missing").into())
 }
 /// Rewrite one stored activity when it belongs to the project.
 fn retitled(text: &str, id: i64, title: &str) -> Result<Option<String>> {
@@ -137,7 +141,7 @@ impl Store {
             )
             .optional()?;
         if archived == Some(true) {
-            return Err(invalid("This project is archived. Choose another activity.").into());
+            return Err(reject("errors.project_archived").into());
         }
         if let Some(task) = &project.task {
             let done: Option<bool> = self
@@ -149,7 +153,7 @@ impl Store {
                 )
                 .optional()?;
             if done == Some(true) {
-                return Err(invalid("This task is finished. Choose another activity.").into());
+                return Err(reject("errors.task_finished").into());
             }
         }
         Ok(())
@@ -178,10 +182,7 @@ impl Store {
             }
         }
         if added == 0 {
-            return Err(invalid(
-                "This project already exists. Archived projects can be restored from the list.",
-            )
-            .into());
+            return Err(reject("errors.project_exists").into());
         }
         tx.commit()?;
         Ok(())
@@ -195,7 +196,7 @@ impl Store {
             .iter()
             .any(|(other, name)| *other != id && same_title(name, &title))
         {
-            return Err(invalid("Another project already has this name.").into());
+            return Err(reject("errors.project_name_taken").into());
         }
         tx.execute(
             "UPDATE focus_projects SET title=?1 WHERE id=?2",
@@ -244,12 +245,12 @@ impl Store {
         let project = catalog
             .iter()
             .find(|project| project.id == id)
-            .ok_or_else(|| invalid("This project no longer exists."))?;
+            .ok_or_else(|| reject("errors.project_missing"))?;
         if project.used {
-            return Err(invalid("Projects with recorded time can only be archived.").into());
+            return Err(reject("errors.project_used").into());
         }
         if self.selected()?.project.is_some_and(|p| p.id == id) {
-            return Err(invalid("Choose another activity before deleting this project.").into());
+            return Err(reject("errors.project_selected").into());
         }
         // Tasks are removed with the project through their foreign key.
         self.connection
@@ -296,7 +297,7 @@ impl Store {
             }
         }
         if changed == 0 {
-            return Err(invalid("This task is already in the list.").into());
+            return Err(reject("errors.task_exists").into());
         }
         tx.commit()?;
         Ok(())
@@ -308,7 +309,7 @@ impl Store {
             params![done, project, title],
         )?;
         if changed != 1 {
-            return Err(invalid("This task no longer exists.").into());
+            return Err(reject("errors.task_missing").into());
         }
         Ok(())
     }
@@ -318,16 +319,16 @@ impl Store {
             .iter()
             .find(|entry| entry.id == project)
             .and_then(|entry| entry.tasks.iter().find(|task| task.title == title))
-            .ok_or_else(|| invalid("This task no longer exists."))?;
+            .ok_or_else(|| reject("errors.task_missing"))?;
         if task.used {
-            return Err(invalid("Tasks with recorded time can only be marked as done.").into());
+            return Err(reject("errors.task_used").into());
         }
         if self
             .selected()?
             .project
             .is_some_and(|p| p.id == project && p.task.as_deref() == Some(title))
         {
-            return Err(invalid("Choose another activity before deleting this task.").into());
+            return Err(reject("errors.task_selected").into());
         }
         self.connection.execute(
             "DELETE FROM focus_tasks WHERE project_id=?1 AND title=?2",

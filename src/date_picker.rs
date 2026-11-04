@@ -1,4 +1,5 @@
 //! Calendar selection backed by the same civil dates as report accounting.
+use crate::i18n::t;
 use eframe::egui;
 use jiff::{Span, Timestamp, civil::Date, tz::TimeZone};
 
@@ -44,7 +45,7 @@ impl Calendar {
                     self.month = None;
                     changed = true;
                 }
-                ui.menu_button("Calendar", |ui| {
+                ui.menu_button(t("calendar.button"), |ui| {
                     let selected = text.parse::<Date>().ok();
                     let month = self.month.get_or_insert_with(|| {
                         first(selected.unwrap_or_else(|| {
@@ -60,27 +61,27 @@ impl Calendar {
                             *month = shift(*month, -1).unwrap();
                         }
                         const MONTHS: [&str; 12] = [
-                            "January",
-                            "February",
-                            "March",
-                            "April",
-                            "May",
-                            "June",
-                            "July",
-                            "August",
-                            "September",
-                            "October",
-                            "November",
-                            "December",
+                            "calendar.month.january",
+                            "calendar.month.february",
+                            "calendar.month.march",
+                            "calendar.month.april",
+                            "calendar.month.may",
+                            "calendar.month.june",
+                            "calendar.month.july",
+                            "calendar.month.august",
+                            "calendar.month.september",
+                            "calendar.month.october",
+                            "calendar.month.november",
+                            "calendar.month.december",
                         ];
                         egui::ComboBox::from_id_salt("month")
-                            .selected_text(MONTHS[(month.month() - 1) as usize])
+                            .selected_text(t(MONTHS[(month.month() - 1) as usize]))
                             .show_ui(ui, |ui| {
-                                for (index, label) in MONTHS.iter().enumerate() {
+                                for (index, key) in MONTHS.iter().enumerate() {
                                     if ui
                                         .selectable_label(
                                             month.month() as usize == index + 1,
-                                            *label,
+                                            t(key),
                                         )
                                         .clicked()
                                     {
@@ -104,8 +105,16 @@ impl Calendar {
                         }
                     });
                     egui::Grid::new("days").spacing([6.0, 4.0]).show(ui, |ui| {
-                        for day in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] {
-                            ui.strong(day);
+                        for day in [
+                            "calendar.weekday.mo",
+                            "calendar.weekday.tu",
+                            "calendar.weekday.we",
+                            "calendar.weekday.th",
+                            "calendar.weekday.fr",
+                            "calendar.weekday.sa",
+                            "calendar.weekday.su",
+                        ] {
+                            ui.strong(t(day));
                         }
                         ui.end_row();
                         for (index, date) in cells(*month).into_iter().enumerate() {

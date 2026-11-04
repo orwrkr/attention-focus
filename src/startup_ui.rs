@@ -1,5 +1,9 @@
 //! Startup preferences backed by actual per-user registration, never an assumed flag.
-use crate::{profiles::Profile, startup};
+use crate::{
+    i18n::{checkbox_label, message, paragraph, paragraph_colored, paragraph_weak, t},
+    profiles::Profile,
+    startup,
+};
 use eframe::egui;
 
 pub struct Panel {
@@ -58,32 +62,32 @@ impl Panel {
     pub fn show(&mut self, ui: &mut egui::Ui) {
         let mut enabled = self.entry.is_some();
         if ui
-            .checkbox(&mut enabled, "Start at Windows sign-in")
+            .checkbox(&mut enabled, checkbox_label(ui, "startup.at_sign_in"))
             .changed()
         {
             self.apply(enabled);
         }
         let previous = self.tray;
         if ui
-            .checkbox(&mut self.tray, "Start in tray when launched at sign-in")
+            .checkbox(&mut self.tray, checkbox_label(ui, "startup.in_tray"))
             .changed()
             && self.entry.is_some()
             && !self.apply(true)
         {
             self.tray = previous;
         }
-        ui.weak("Manual launches show the window. Tracking always starts stopped.");
+        paragraph_weak(ui, &message("startup.manual_launch_hint", &[]));
         if self.entry.is_some() && self.expected().ok().as_ref() != self.entry.as_ref() {
-            ui.label("Startup points to another copy or different options.");
-            if ui.button("Use this EXE for startup").clicked() {
+            paragraph(ui, &message("startup.points_elsewhere", &[]));
+            if ui.button(t("startup.use_this_exe")).clicked() {
                 self.apply(true);
             }
         }
-        if ui.button("Refresh startup status").clicked() {
+        if ui.button(t("startup.refresh")).clicked() {
             self.refresh();
         }
         if let Some(error) = &self.error {
-            ui.colored_label(ui.visuals().error_fg_color, error);
+            paragraph_colored(ui, ui.visuals().error_fg_color, error);
         }
     }
 }

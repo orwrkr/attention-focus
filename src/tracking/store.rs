@@ -1,6 +1,6 @@
 //! Durable history: sessions, selection, preferences and recent use.
 use super::{
-    Activity, ChangeMode, Moment, RecentUse, Result, Snapshot, bounded, invalid, migrate, now_ms,
+    Activity, ChangeMode, Moment, RecentUse, Result, Snapshot, bounded, migrate, now_ms, reject,
 };
 use crate::reports;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -74,7 +74,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?
-            .ok_or_else(|| invalid("No active interval crosses this day start."))?;
+            .ok_or_else(|| reject("errors.no_interval_crosses_day"))?;
         tx.execute("UPDATE focus_sessions SET state='stopped', ended_ms=?1, checkpoint_ms=?1, elapsed_ms=?2, end_reason='day_boundary' WHERE state='running'", params![boundary, bounded(closed)])?;
         tx.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,elapsed_ms,state,activity) VALUES(?1,?2,?3,'running',?4)", params![boundary, now, bounded(running), activity])?;
         tx.commit()?;
@@ -91,7 +91,7 @@ impl Store {
         let tx = self.connection.transaction()?;
         let changed = tx.execute("UPDATE focus_sessions SET activity=?1,checkpoint_ms=?2,elapsed_ms=?3 WHERE state='running' AND started_ms<=?2", params![text, now, bounded(elapsed)])?;
         if changed != 1 {
-            return Err(invalid("No active interval can be edited at this time.").into());
+            return Err(reject("errors.no_interval_editable").into());
         }
         tx.execute(
             "UPDATE focus_selection SET activity=?1 WHERE singleton=1",
@@ -116,17 +116,17 @@ impl Store {
             |r| r.get(0),
         )?;
         if review {
-            return Err(invalid("Review interrupted time before starting.").into());
+            return Err(reject("errors.review_before_start").into());
         }
         let previous: Option<i64> =
             tx.query_row("SELECT MAX(ended_ms) FROM focus_sessions", [], |r| r.get(0))?;
         if previous.is_some_and(|end| now < end) {
-            return Err(invalid("The clock is earlier than saved history. Correct the system clock before starting.").into());
+            return Err(reject("errors.clock_earlier").into());
         }
         if let Some(elapsed) = switching {
             let changed = tx.execute("UPDATE focus_sessions SET state='stopped', ended_ms=?1, checkpoint_ms=?1, elapsed_ms=?2, end_reason='switch' WHERE state='running' AND started_ms<=?1", params![now, bounded(elapsed)])?;
             if changed != 1 {
-                return Err(invalid("No active session can be switched at this time.").into());
+                return Err(reject("errors.no_session_switch").into());
             }
         }
         tx.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,state,activity) VALUES(?1,?1,'running',?2)", params![now, text])?;
@@ -142,7 +142,7 @@ impl Store {
         let tx = self.connection.transaction()?;
         let changed = tx.execute("UPDATE focus_sessions SET state='stopped', ended_ms=?1, checkpoint_ms=?1, elapsed_ms=?2, end_reason=?3 WHERE state='running' AND started_ms<=?1", params![now, bounded(elapsed), reason])?;
         if changed != 1 {
-            return Err(invalid("No active session can be stopped at this time.").into());
+            return Err(reject("errors.no_session_stop").into());
         }
         tx.commit()?;
         Ok(())
@@ -255,7 +255,7 @@ impl Store {
                 "stopped" => reports::State::Saved,
                 "running" => reports::State::Running,
                 "interrupted" => reports::State::Review,
-                _ => return Err(invalid("Unknown history state.").into()),
+                _ => return Err(reject("errors.unknown_history_state").into()),
             };
             let activity: Activity = serde_json::from_str(&activity)?;
             activity.validate()?;
@@ -287,7 +287,7 @@ pub fn export_snapshot(path: &Path, request: &reports::Request) -> Result<report
     if connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?
         != migrate::SCHEMA_VERSION
     {
-        return Err(invalid("Unsupported history version for export.").into());
+        return Err(reject("errors.unsupported_history_export").into());
     }
     connection.execute_batch("BEGIN")?;
     let _: Option<i64> = connection

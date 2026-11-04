@@ -1,7 +1,10 @@
 //! Serialized, clock-injected tracking with durable activity snapshots.
 use crate::reports;
 use serde::{Deserialize, Serialize};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    borrow::Cow,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 mod catalog;
 mod engine;
@@ -18,6 +21,10 @@ pub use worker::spawn;
 pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 fn invalid(message: &str) -> std::io::Error {
     std::io::Error::other(message)
+}
+/// A rejection whose message comes from the interface text of the current language.
+fn reject(key: &'static str) -> std::io::Error {
+    invalid(&crate::i18n::message(key, &[]))
 }
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Activity {
@@ -39,10 +46,26 @@ impl Activity {
             task: self.project.as_ref().and_then(|p| p.task.clone()),
         }
     }
+    /// The English label that exports and stored data use; the interface uses the two below.
     pub fn label(&self) -> &str {
         self.project
             .as_ref()
             .map_or("Unassigned focus", |p| p.title.as_str())
+    }
+    /// The label as egui must receive it: a project name keeps its own direction, and the
+    /// unassigned case follows the interface language.
+    pub fn painted_label(&self) -> Cow<'_, str> {
+        match &self.project {
+            Some(project) => crate::i18n::user(&project.title),
+            None => Cow::Borrowed(crate::i18n::t("activity.unassigned")),
+        }
+    }
+    /// The label in logical order, for text that Windows draws or that is stored.
+    pub fn logical_label(&self) -> Cow<'_, str> {
+        match &self.project {
+            Some(project) => Cow::Borrowed(project.title.as_str()),
+            None => Cow::Owned(crate::i18n::message("activity.unassigned", &[])),
+        }
     }
     fn validate(&self) -> Result<()> {
         if self.note.len() > 16_384
@@ -51,7 +74,7 @@ impl Activity {
                 .as_ref()
                 .is_some_and(|p| p.id <= 0 || p.title.is_empty())
         {
-            return Err(invalid("Invalid activity snapshot.").into());
+            return Err(reject("errors.invalid_activity").into());
         }
         Ok(())
     }

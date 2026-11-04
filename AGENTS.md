@@ -10,11 +10,15 @@ if it exists. Check `git status --short`. Preserve unrelated and unfinished work
 
 English is the only permitted language for project-authored content: documentation,
 agent instructions, task cards, architectural decisions, code comments, identifiers,
-test descriptions, synthetic fixtures, commit messages, and application-owned UI
-text, errors, logs, and export headings. Write stored development reports in English.
-Conversational chat replies may use the user's language; this exception does not
-apply to artifacts or content created and stored as part of the project.
-Do not add translations or non-English copies without a new user instruction.
+test descriptions, synthetic fixtures, commit messages, and the source text of
+application-owned UI, errors, logs, and export headings. Write stored development reports
+in English. Conversational chat replies may use the user's language; this exception does
+not apply to artifacts or content created and stored as part of the project.
+
+The one exception is `locales/*.json`, which holds translations of the interface text, with
+`locales/en.json` as the source; see ADR-0035. Add user-visible text there, through `i18n`, and
+never directly in code. Do not add other translations or non-English copies without a new user
+instruction.
 
 This rule governs authored content, not user data. Preserve Unicode in project names,
 task text, notes, and filesystem paths. Never translate, reject, or modify user data
