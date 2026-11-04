@@ -1,92 +1,66 @@
-# Initial Architecture
+# Architecture
 
-Status: target design with desktop persistence, read-only source settings, and
-attributed sessions implemented. See [ADR-0008](decisions/0008-attributed-session-engine.md)
-for the clock-injected engine and Windows lifecycle integration. ADR-0009 adds date-range
-reports and timezone boundaries. Recovery adjustment remains target work. Recovery currently
-supports accepting the last durable checkpoint; editing and discarding time are deferred.
-Decision: [ADR-0004](decisions/0004-desktop-stack.md).
+A local Rust desktop application: egui/eframe for the window, tray-icon for the notification
+area, and bundled SQLite through rusqlite for history. Decisions and their reasons are in
+[docs/decisions](decisions/README.md). The stack was chosen in
+[ADR-0004](decisions/0004-desktop-stack.md).
 
-## Modules and ownership
+## Modules
 
 | Module | Responsibility | Boundary |
 | --- | --- | --- |
-| domain | Session states, commands, duration invariants | No filesystem, database, or UI imports |
-| metaplan | Read project/task snapshots and diagnostics | Read-only filesystem access; never follow task links |
-| storage | Schema migrations, settings, session transactions, queries | Only validated application storage |
-| controller | Serialize commands, coordinate reader and storage, publish snapshots | UI cannot bypass session invariants |
-| platform | Tray, single-instance lock, sleep/lock events, validated paths | Windows-specific code isolated here |
-| ui | Settings, project/task picker, timer, history | English labels; imported text unchanged |
-| reports | Date-range clipping and aggregation | Counts each interval once |
+| `tracking` | The timer, history, project list and the worker that owns the database | No UI; clocks are injected |
+| `tracking::engine` | Applies commands; detects clock and heartbeat problems; splits days | Takes wall and monotonic time as input |
+| `tracking::store` | Session transactions, selection, preferences, report queries | Only touches the validated database |
+| `tracking::catalog` | The application's project and task list | Finished history is never rewritten |
+| `tracking::migrate` | Explicit schema versions, backups and conversions | Older formats appear only here |
+| `tracking::worker` | One thread that serializes every command | The UI talks to it through messages |
+| `reports` | Calendar boundaries, clipping, totals | Pure; counts each interval once |
+| `export` | CSV and Markdown output with protected destinations | Reads a separate snapshot |
+| `paths`, `profiles` | Storage identity, link checks, Production and Development | Fixed locations only |
+| `platform`, `lifecycle`, `startup` | Windows APIs: windows, instance lock, session events, sign-in startup | Windows code stays here |
+| `main`, `counters`, `project_ui`, `report_ui`, `note_memory`, `motion` | Window, tray and interface | Change state only through commands |
 
-Use a fake clock and temporary storage in tests. OS events are converted into domain
-commands so timing policies can be tested without a desktop.
+Use a fake clock and temporary storage in tests. OS events become commands, so timing
+rules can be tested without a desktop.
 
-## Source identity and reading
+## Projects and tasks
 
-Assign each configured source a local ID. Store its canonical path in application
-settings. Changing source creates a separate identity by default; reattaching a moved
-source requires explicit selection of the existing identity. Do not guess from slugs.
-
-Project identity is source ID plus slug, independent of Active/Archive placement.
-A renamed slug is treated as a new project until an explicit remapping feature exists.
-Duplicate slugs across both directories produce a diagnostic and are not selectable.
-Store title snapshots in sessions so later renaming or deletion does not erase history.
-
-Read only project.md and tasks.md under direct project directories. Skip reparse-point
-project directories and linked files in the first implementation. The configured root
-itself may be resolved once, then validated. Ignore blank task items and completed
-checkboxes; restrict suggestions to the current cycle. Preserve section context to
-distinguish duplicate task text. Treat task references as snapshot text, not stable IDs.
-Do not follow external task paths or interpret Markdown as commands.
-
-Show parse diagnostics and allow other valid projects to load. A missing source does
-not prevent stopping an already running session or viewing saved history.
+The history database owns the list; see [ADR-0031](decisions/0031-application-projects.md). A
+project has a permanent numeric ID. Each session stores that ID with the title and task text
+as recorded, so renaming, archiving or finishing never rewrites finished history. Report
+totals show current names and session rows show recorded ones. Anything with recorded
+time can be archived or finished but not deleted.
 
 ## Storage boundary
 
-Use a fixed per-user local application directory, resolved through the Windows known
-folder API, with independent Production/Development subdirectories (ADR-0010). Each
-contains focus.sqlite3 and its own settings/window state. Source containment checks use
-the shared parent root. Debug builds cannot select Production. No arbitrary storage-directory
-setting is exposed. Journals, backups, and migrations stay within the selected profile.
+Each profile has a fixed directory under the Windows per-user LocalAppData known folder:
+`AttentionFocus/Production` or `AttentionFocus/Development`. It holds `focus.sqlite3`,
+`window.ron` and any schema backups. Debug builds cannot select Production. There is no
+setting for another location. Linked profile directories, and linked entries inside
+them, are rejected before anything writable opens. Older files directly under
+`AttentionFocus`, and `source.sqlite3` in a profile, remain unread and unchanged.
 
-Before creating directories or opening a writable database:
-- Resolve existing ancestors, junctions, symbolic links, and case-insensitive identities.
-- Reject source/storage equality or containment in either direction.
-- Validate the canonical destination, not a raw path prefix.
-- On first launch, choose and validate the source before persistent initialization.
-  ADR-0005 allows desktop geometry and unassigned sessions to initialize before any
-  source is configured; source selection must subsequently reject storage overlap.
-- On later launches, open an existing database read-only to read the source setting,
-  validate paths, then reopen for writes; do not run migrations before validation.
-- Reject unsafe source changes before saving them or switching a session.
-- Revalidate before writes after source configuration changes.
-
-Use resolved-path handles where practical. Untrusted concurrent junction replacement
-is outside the initial threat model; do not claim string checks eliminate that race.
-Tests must cover normal nesting, similarly prefixed sibling names, case variants,
-and junction aliases when the environment supports them.
-
-No export feature is included in the initial slice. Future export destinations must
-pass the same boundary checks, including temporary files.
+Exports go through the native Save dialog, may not overwrite a file or land inside application
+storage after resolving links, and are checked again before the finished file is published.
+Malicious replacement of directory links while the application runs is outside the threat
+model; see [SECURITY.md](../SECURITY.md).
 
 ## Persistence model
 
-- sources: local ID and canonical path.
-- settings: schema-versioned application options and selected source.
-- recent use: source/project/task identity and increasing committed-use order; updated
-  transactionally on start/switch/reassignment, never by browsing or stopped selection.
-- sessions: ID, source ID, project slug/title snapshot, optional task snapshot,
-  start/end UTC timestamps, start offset, elapsed milliseconds, end reason,
-  last checkpoint, and recovery status.
-- checkpoints: either fields on the active row or small segments, as determined by
-  the timing implementation; retain enough information to split clock discontinuities.
+- `focus_sessions`: start, end, last checkpoint, elapsed milliseconds, state (`running`,
+  `stopped`, `interrupted`), end reason and an activity snapshot. A unique partial index
+  allows only one running row.
+- `focus_selection`: the saved next activity. `focus_preferences`: tracking options.
+- `focus_recent`: recent-use order, updated with the history it belongs to.
+- `focus_projects`, `focus_tasks`: the list. `focus_project_aliases`: identities from before
+  schema four, kept only to convert older note preferences.
 
-Migration versions are explicit and transactional. Back up an existing database using
-the SQLite backup API before a schema upgrade; never copy an open database blindly.
-On storage failure, retain the last committed state, display an error, and allow retry.
-Do not claim a successful stop or switch until the transaction commits.
+Schema versions are explicit, in `PRAGMA user_version`, and currently four. An upgrade first
+copies the database with the SQLite backup API to `focus-before-vN-*.sqlite3`, then applies
+its changes in one transaction. Newer history is refused rather than guessed at. On a storage
+failure, the last committed state stays, an error appears and the action can be retried.
+Interface preferences live in `window.ron`, separate from history.
 
 ## Timer semantics
 
@@ -97,7 +71,7 @@ Do not claim a successful stop or switch until the transaction commits.
 | Running / Switch | Close old and open new at one boundary in one transaction |
 | Idle / project or task picker change | Save the next activity; remain stopped |
 | Running / picker change, default mode | Atomically switch at one boundary |
-| Running / picker change, EditCurrent mode | Reassign the entire active interval; preserve ID/start/timer and finalized history |
+| Running / picker change, EditCurrent mode | Reassign the entire active interval; preserve ID, start, timer and finalized history |
 | Running / Start | Reject duplicate start; never create a second active row |
 | Running / local day start, default | Close old and open new at one boundary in one transaction; same activity; elapsed time divided |
 | Running / local day start, split disabled | Continue the same interval; reports clip it by day |
@@ -108,56 +82,37 @@ Do not claim a successful stop or switch until the transaction commits.
 | Running / explicit Exit | Stop durably, then exit; stay open on save failure |
 | Any / window close | Hide only when the tray is available; never stop implicitly |
 | Startup / unfinished session | Enter recovery review before allowing another Start |
+| Second manual launch | Ask the running instance to show its window, then exit |
 
-No idle-input auto-stop: reading and thinking may involve no input. No automatic
-restart after unlock. Source priority and lifecycle statuses are never changed.
-The hidden listener agrees immediately to WM_QUERYENDSESSION and saves only for a
-confirmed WM_ENDSESSION. Force termination/power loss still use checkpoint recovery;
-see ADR-0015. ADR-0016 replaces native size clamps with normal Windows resizing and
-maximization, a bounded content column and persisted section/filter/search/draft state.
+There is no idle auto-stop, because reading and thinking may involve no input, and no automatic
+restart after unlock. See ADR-0008, ADR-0012, ADR-0015, ADR-0029 and ADR-0030.
 
-The upper UI caption shows the committed activity, distinct from pending note drafts.
-Persist the picker mode independently per profile. Schema two backs up schema one and
-seeds recent use from existing history once; failed backfill rolls back. See ADR-0012.
-Schema three backs up schema two and adds the day-split preference. See ADR-0029.
-Showing the window raises it natively and confirms the foreground. See ADR-0028.
+Monotonic time decides elapsed duration, and UTC places it on the timeline. Checkpoints are
+written about every ten seconds while running. A heartbeat gap over 30 seconds or a clock
+divergence over five seconds ends the interval at its last checkpoint for review. During a
+smaller backward correction, wall time continues by monotonic time until the interval ends,
+so intervals never overlap and always span their elapsed time.
 
-Use a monotonic clock for elapsed time and UTC for placement on the timeline.
-Persist checkpoints at most 15 seconds apart while running. On a missed heartbeat,
-sleep notification failure, or substantial wall/monotonic divergence, mark the
-unconfirmed interval for review rather than silently counting it. Exact thresholds
-are implementation constants documented and tested in T-0004.
-
-After a crash, propose ending at the last durable checkpoint, not at the next launch.
-The user may accept, adjust, or discard the uncertain tail; record the choice.
-Do not silently resume a persisted running session.
+The UI sends one command at a time and queues later ones. Each gets one answer, Committed or
+Rejected, while interruptions, reports and ticks report separately. The worker publishes a snapshot once per second while tracking and every
+30 seconds otherwise, reusing stored state until a command, day split or interruption changes it.
+Showing the window raises it natively and confirms the foreground; see ADR-0028.
 
 ## Reporting
 
-Visible expanded reports poll periodically only while active time grows inside the
-filter, with one query in flight. Refresh affected historical classifications
-once on stop/edit/recovery, not on unrelated commits. Minute filters are half-open;
-24:00 denotes end of day. Debounce edits, reject superseded parameters, retain the last
-good snapshot on error, and pause queries while collapsed/hidden. See ADR-0014.
-Rolling periods move to the new date before debounce and in-flight gating; Custom stays fixed.
-Calendar pickers share Jiff civil-date arithmetic with accounting; timezone choices
-come from the bundled database. Stay on top is a window.ron option, not a history schema
-change. See ADR-0013.
+Report ranges are half-open minute ranges resolved in a selected time zone with bundled rules,
+so a day is not assumed to last 24 hours. Recorded elapsed time is allocated over each session's
+wall-clock span with cumulative rounding, which makes adjacent ranges add up exactly. Saved,
+Running and Needs review stay separate, and Needs review is never counted as finished.
 
-Use half-open intervals [start, end), and clip to the selected range before summing.
-Resolve local calendar boundaries to UTC using the selected reporting time zone;
-a day is not assumed to last 24 hours. Split intervals at midnight for daily totals.
-Store UTC plus offsets and retain enough timing information to avoid recalculating
-elapsed duration from a changed wall clock. Clock discontinuities require segmented
-intervals or recovery review, not invented continuity.
+Visible expanded reports poll only while active time grows inside the filter, with one query
+in flight. Edits are debounced, superseded replies are rejected and the last good result stays
+on error. Rolling periods move to the new date before that gating; Custom stays fixed. See
+ADR-0009, ADR-0013, ADR-0014 and ADR-0017. Exports read an independent read-only snapshot.
 
-Group by source/project identity and optional task snapshot. Show unfinished or
-unreviewed records separately; do not silently include uncertain time in finalized
-totals. Project relationships never recursively add the same time again.
+## Validation
 
-## First release checks
-
-Verify ordinary start/stop, rapid switching, process restart, sleep/lock, source
-unavailability, read-only source integrity, database failure, Unicode titles, and
-cross-midnight reports. Verify hidden-window wakeup and idle CPU behavior on Windows.
-Do not claim packaging, timing, or tray acceptance from unit tests alone.
+Automated tests cover timing with injected clocks, upgrades from each older schema, totals
+across calendar boundaries, and interface behavior through headless pointer events. They do
+not prove real tray behavior, power events, or multi-monitor geometry. Those remain manual
+checks; see [DEVELOPMENT.md](DEVELOPMENT.md).

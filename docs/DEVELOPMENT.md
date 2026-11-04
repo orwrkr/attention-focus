@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Windows x64 with the Rust MSVC toolchain (verified toolchain: Rust/Cargo 1.98.0).
+- Windows x64 and `rustup`, which installs the toolchain pinned in `rust-toolchain.toml`.
 - MSVC C++ build tools and Windows SDK for native linking and bundled SQLite.
 - Access to crates.io for the first dependency download.
 - Python 3.11+ and pinned PDF dependencies for production packaging. Run
@@ -44,7 +44,7 @@ Other files under target are internal build/test artifacts, not releases. A lock
 current or obsolete EXE fails before compilation; a publication race also returns an
 error. No alternate EXE, fallback directory, or automatic process termination is allowed.
 If an agent launched a blocking app, it must offer to exit it and wait for approval.
-Build output is ignored by Git. No installer, automatic startup, or updater is added.
+Build output is ignored by Git. No installer or updater is added.
 Runtime requirements on a clean Windows machine have not yet been verified; do not
 describe this build as universally portable.
 
@@ -77,132 +77,64 @@ The Windows LocalAppData known folder supplies fixed, independent profile direct
 
 - `%LOCALAPPDATA%/AttentionFocus/Production/`: packaged release data.
 - `%LOCALAPPDATA%/AttentionFocus/Development/`: debug/development data.
-- Each contains `window.ron` (geometry), `focus.sqlite3` (history/checkpoints/activity),
-  and `source.sqlite3` (source identities and selected path).
-- Schema upgrades create `focus-before-v1-*.sqlite3`, `focus-before-v2-*.sqlite3` or
-  `focus-before-v3-*.sqlite3` backups using SQLite, according to the prior schema.
-- SQLite creates any journals/backups in the same profile directory.
+- Each contains `window.ron` (geometry and interface preferences) and `focus.sqlite3`
+  (history, checkpoints, activity, projects and tasks).
+- Schema upgrades create `focus-before-vN-*.sqlite3` backups using SQLite, where N is the
+  first version being upgraded to.
+- SQLite creates any journals in the same profile directory.
 
-Legacy files directly under AttentionFocus are retained unchanged. New Production does
-not inherit old history, active selection, or geometry. Only a valid legacy MetaPlan path
-is seeded into each new profile's independent settings. Production is not reset again
-on later launches. Development tests never create records in Production.
+Legacy files directly under AttentionFocus, and `source.sqlite3` files left in a profile by
+older versions, are retained unchanged and unread. Development tests never create records
+in Production.
 
 Debug/cargo run defaults to Development; explicit `--profile production` is rejected
 by debug builds. The packaged release defaults to Production. A release may explicitly
 run `--profile development` for an optimized development session. Fixed data paths cannot
 be overridden. Mutexes/window identities are per profile; each permits one instance.
+A repeated manual launch asks that instance to show its window, then exits.
 Development has a distinct title, visible profile label, app ID, and tray menu/tooltip.
-Both profiles may read the same external MetaPlan instance without modifying it.
 
 Development builds stay under target/debug and do not replace the production EXE.
 Use scripts/dev.ps1 while Production is running. Updating the production EXE still
 requires exiting Production; locked-file rules apply. Exit a running Development
 instance before rebuilding its executable. Never create fallback release copies.
 
-Moving the EXE does not reset history. Back up the data directory after exiting.
-Source selection rejects equality or containment with the shared AttentionFocus root after resolving
-existing ancestors and junctions. Startup reads settings read-only before any persistent
-initialization. Linked entries inside app storage are rejected. Nothing is stored beside
-the EXE or in MetaPlan. Concurrent hostile link replacement is outside the threat model.
+Moving the EXE does not reset history. Back up the data directory after exiting. Startup
+checks for linked entries in app storage before any persistent initialization. Nothing is
+stored beside the EXE. Concurrent hostile link replacement is outside the threat model.
 
-## Current behavior
-
-- Startup restores the selected profile's window geometry and shows an English window.
-- Hide to tray and Exit are pinned above the scrolling content, including expanded reports.
-- A worker owns durable SQLite history. Project/task picker changes immediately save
-  the next selection while stopped, or begin a new interval by default while running.
-  The per-profile checkbox can instead reassign the entire active interval without
-  resetting its start/timer. Finalized history stays unchanged. Notes alone remain draft
-  until applied or included in another picker change. The upper caption identifies
-  confirmed state; controls pause during saves and failures expose retry actions.
-- Projects/tasks sort by durable tracking-use order, then deterministic alphabetical
-  ties. Unassigned and No task participate. Browsing and stopped selection do not
-  update recency. Source identity/path/slug isolates projects; task text distinguishes
-  tasks. Schema two backs up schema one to focus-before-v2-*.sqlite3, adds preferences
-  and recent-use tables, and seeds recency from existing session IDs. See ADR-0012.
-- Start/Stop in the window and tray use the same controller; the tray state changes
-  only after the session update commits.
-- Closing the window or using Hide to tray keeps the process running.
-- A single left click shows the window after the Windows double-click interval and raises
-  it above ordinary windows, confirming the foreground with bounded retries (ADR-0028).
-- A native double left click toggles tracking once and cancels single-click opening.
-- By default, tracking across a local day start closes the old interval and continues a
-  new one at the same boundary. An application setting disables this per profile (ADR-0029).
-- Hover shows session time and Today for the selected project across all its tasks,
-  using the Windows local day and including active time once. Report filters do not
-  change this value; saved-day totals are cached and idle rollover checks run every
-  30 seconds. Unavailable daily data does not prevent successful state publication.
-  It updates once per second while running, including when the window is hidden.
-  Unreviewed interrupted time is excluded and flagged. Windows controls tooltip delay.
-- Right click opens Show Focus, Start/Stop, and Exit.
-- Permanent file/window/taskbar/Task Manager icons are neutral blue diamonds, purple
-  for debug Development. Running tray states use a filled green status light; stopped
-  states use a hollow gray ring. Development retains a D badge. No transport-button symbols.
-- Exit saves the running session before terminating. Restart never resumes silently.
-- Checkpoints are saved every ten seconds. Interrupted records require review before
-  starting again; accepting recovery keeps only the last checkpoint and excludes downtime.
-- Windows lock/suspend notifications stop tracking at the captured event boundary.
-  Unlock and resume leave it stopped. The listener waits up to 1.5 seconds for a durable
-  confirmation and reports failures. New starts are disabled if listener setup fails.
-- A scheduling gap over 30 seconds, wall-clock divergence over five seconds, or backward
-  wall clock interrupts tracking at the last durable checkpoint for review. New starts
-  are rejected while the wall clock precedes the latest recorded end.
-- A per-profile mutex rejects a second instance in the same Windows session.
-- Tray setup failure leaves the window usable, disables hiding, and lets window
-  close exit. The UI displays the failure instead of hiding silently.
-- Tray callbacks wake the event loop. Stopped tracking has no periodic timer updates;
-  running tracking updates once per second. Geometry autosaves after movement and on exit.
-- Expand MetaPlan source and projects, enter an absolute Instance path, and choose
-  Save and refresh. The selected path is restored and loaded in the background at startup.
-- Preview project names, statuses, priorities, archive placement, and unfinished tasks
-  from the current cycle. Duplicate slugs are excluded; malformed/missing files produce
-  diagnostics. Linked source files/directories are skipped; task paths are never followed.
-- MetaPlan is read only. Finalized project/task snapshots retain recorded titles;
-  EditCurrent only reassigns the active interval. Reports preserve history independently
-  of current source availability or archival.
-- Search projects by imported title or slug. Search does not change active focus.
-- Expand Focus history and reports, choose minute-precise From/Until boundaries and an IANA
-  timezone, then refresh. Today/Last 7 days/Last 30 days use the chosen timezone.
-- Reports show saved totals by project, project/task, and local calendar day. Live and
-  unreviewed checkpoint time are separate. Visible expanded reports refresh every two
-  seconds only while current active time grows inside the filter. Relevant committed
-  changes refresh affected history once; unrelated changes and collapsed/hidden views
-  do not query. From is included; Until is excluded, with 24:00 as end of day. Only one
-  query is in flight. Debounced editable filters reject superseded replies and retain
-  the last good snapshot on error. All matches contribute; details show the newest 200.
-- Dates support editable text and calendar popups; timezones use a searchable bundled
-  list. Period buttons show the active mode: Today and the rolling periods move at midnight
-  in the selected zone, and Custom stays fixed. Stay on top uses native viewport level and
-  is saved in existing window.ron storage, not SQLite. Tooltip names the current project
-  within Windows' UTF-16 limit.
-  Normal headers omit Production; secondary explanations use theme-aware blue text.
-- Calendar boundaries use bundled historical timezone rules and respect DST. Recorded
-  monotonic time is allocated proportionally across the wall interval when clipped,
-  using cumulative rounding so adjacent periods add exactly. See ADR-0009 for limits.
+Application behavior is described in the [user guide](user-guide.md), and its design in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Manual verification checklist
+
+Automated tests do not exercise real desktop behavior. Check these in Development, using
+disposable synthetic projects:
 
 1. Move/resize the window, wait three seconds, hide it, and exit through the tray.
 2. Relaunch; verify geometry restoration, including maximized/multi-monitor cases.
 3. Check the EXE, taskbar, Alt-Tab, Task Manager, and both tray state icons.
 4. Double-click the tray to start, then stop. Verify one change per double click and
    no unwanted window opening on surrounding single-click events.
-5. Use Show Focus and Exit both visible and hidden; restart and check saved totals.
-6. Verify interrupted recovery using disposable test history, never real history.
-7. Check tray failure, unwritable storage, and a clean Windows machine.
-8. Configure a disposable synthetic Instance folder; verify preview, refresh, invalid-path
-   diagnostics, startup restoration, Unicode rendering, and continued Start/Stop on failure.
-9. Check report presets/custom dates, invalid timezone/date errors, daily/project/task
-   totals, details, and separation of running/review time. Do not create fake sessions
-   in real history. Complete synthetic session flows using temporary test databases.
+5. Single-click the tray with the window hidden, minimized and behind another application.
+   Launch the EXE again while it runs. Both must bring the window to the front.
+6. Use Show Focus and Exit both visible and hidden; restart and check saved totals.
+7. Verify interrupted recovery using disposable test history, never real history.
+8. Check tray failure, unwritable storage, and a clean Windows machine.
+9. Add several projects, rename while tracking, archive and restore, finish a task, and
+   delete a never-tracked project. Check Unicode rendering.
+10. Check report periods, custom dates, invalid timezone/date errors, daily/project/task
+    totals, details, and separation of running/review time. Leave tracking across midnight
+    and check the two sessions and the current-day period.
 
-The current build includes attributed tracking, project search, and date-range reports.
-Export, manual corrections, shortcuts, autostart, and installer support are deferred.
-The obsolete AttentionFocus-Update distribution was removed by T-0009. Always use
-scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
+Always use scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 
-## Verification record (2026-10-27)
+## Verification history
+
+Records from earlier versions, which describe the application as it was at the time. Newer
+records are in the task cards.
+
+### Verification record (2026-10-27)
 
 T-0013: 45 Rust tests, five package tests, formatting, and Clippy pass. Both 0.4.0 EXEs
 and the automatic ZIP verified (versions, eight icon sizes each, source/build stamp,
@@ -264,7 +196,7 @@ The Windows Computer Use helper again timed out on window discovery three times,
 including after a reset. No interactive geometry, tray-click, or taskbar verification
 is claimed. Release build and import inspection results are recorded in T-0006.
 
-## Verification record (2026-10-26)
+### Verification record (2026-10-26)
 
 Formatting, the SQLite reopen test, Clippy, and a Windows x64 release build passed.
 The final test/Clippy run reported only an environment-related incremental-cache

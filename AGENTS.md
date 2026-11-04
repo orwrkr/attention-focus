@@ -16,22 +16,20 @@ Conversational chat replies may use the user's language; this exception does not
 apply to artifacts or content created and stored as part of the project.
 Do not add translations or non-English copies without a new user instruction.
 
-This rule governs authored content, not external data. Preserve Unicode in imported
-MetaPlan names, task text, user notes, and filesystem paths. Never translate, reject,
-or modify external data merely because it is not English. Do not copy that data into
-the repository. Document external format labels in English; if exact non-English
-protocol tokens are necessary in code, represent them using Unicode escapes and
-explain their meaning in English. Do not use escapes to disguise non-English prose.
+This rule governs authored content, not user data. Preserve Unicode in project names,
+task text, notes, and filesystem paths. Never translate, reject, or modify user data
+merely because it is not English. Do not copy that data into the repository. If a test
+needs non-English text, use Unicode escapes with an English explanation. Do not use
+escapes to disguise non-English prose.
 
 ## Boundaries
 
 - Build a local Rust application with a Windows system tray as its primary workflow.
-- MetaPlan is an external, read-only source; the path to `Instance` is configurable.
-- Never modify the source through the application, migrations, tests, scripts, or exports.
-- Keep settings and history outside the source. Validate storage paths using path
+- The application owns its project and task list. It does not depend on external sources.
+- Keep settings and history in the profile directory. Validate storage paths using path
   normalization and directory link resolution, not just string comparisons.
-- Do not commit personal projects, user-specific absolute paths, or session history.
-  Use synthetic examples.
+- This repository is public. Do not commit personal projects, user-specific absolute paths,
+  session history, or exports. Use synthetic examples.
 - Accepted requirements and proposals are separated in `docs/PRODUCT.md`.
 - Research UI, database, and major dependency choices and record the rationale in
   an ADR. Make routine implementation decisions independently within task scope.
@@ -40,10 +38,10 @@ explain their meaning in English. Do not use escapes to disguise non-English pro
 
 - Work on one explicitly selected task; track status and acceptance criteria.
 - Make the minimum changes needed to complete it.
-- Separate session logic and MetaPlan reading from UI and OS integrations.
-- Use temporary directories and synthetic fixtures in tests, never live MetaPlan data.
+- Separate session logic from UI and OS integrations.
+- Use temporary directories and synthetic fixtures in tests, never live user data.
 - Verify meaningful invariants: no overlapping active sessions, durable history,
-  and no writes to the source.
+  and totals that add up across interval and calendar boundaries.
 - Do not introduce cloud services, telemetry, window-content monitoring, or
   productivity scoring without a specific user request.
 - Use UTF-8 without BOM and LF line endings. Use English file names and identifiers.
@@ -54,8 +52,8 @@ explain their meaning in English. Do not use escapes to disguise non-English pro
 - Use Development for agent work and manual test sessions. scripts/dev.ps1 and debug
   builds use LocalAppData/AttentionFocus/Development; the packaged release uses Production.
   Never reset, seed synthetic sessions into, or copy development history into Production.
-  Legacy root history is retained untouched. Keep profile instance locks and source
-  containment checks independent. Development builds must not replace the production EXE.
+  Legacy root history is retained untouched. Keep profile instance locks independent.
+  Development builds must not replace the production EXE.
 - Cargo.toml owns the release version. Bump it before publishing changed production
   inputs for an already archived version. Keep Windows resources, header, guide, manifest,
   and versioned ZIP/PDF names consistent. Never version only the ZIP around a stale EXE.
@@ -66,6 +64,8 @@ explain their meaning in English. Do not use escapes to disguise non-English pro
   Development-only iterations may use scripts/dev.ps1 without touching production.
 - Permanent app icons are neutral identity marks, not running-state indicators. Only
   tray icons encode running/stopped; development tray states retain their D badge.
+- Treat history conversions as the highest-risk changes: back up first, use one transaction,
+  and test upgrades from databases built with each older schema.
 
 ## End of session
 
@@ -73,10 +73,11 @@ Update the task card, `tasks/INDEX.md`, and `docs/CONTEXT.md` with completed wor
 checks performed, unverified behavior, limitations, and the exact next step.
 Store architectural decisions in ADRs. Never claim an unexecuted check passed.
 
-Ordinary local commits of completed work are authorized. Do not stage unrelated
-files automatically; inspect the staged diff before committing. Pushing, rewriting
-history, deleting unrelated work, and publishing require explicit user instructions.
-Execution environment permissions apply independently of these rules.
+Ordinary local commits of completed work are authorized. Commits are signed; do not bypass
+signing. Do not stage unrelated files automatically; inspect the staged diff before
+committing. Pushing, rewriting history, deleting unrelated work, and publishing require
+explicit user instructions. Execution environment permissions apply independently of
+these rules.
 
 Report the outcome, checks, limitations, and any new commit hash. Chat language may
 follow the user; saved reports must be in English.

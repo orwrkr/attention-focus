@@ -1,76 +1,87 @@
 # T-0034: Public GitHub Release Readiness
 
-Status: backlog.
-Dependencies: owner decisions marked below.
+Status: in_progress.
+Dependencies: T-0035.
 
 ## Goal
 
-Prepare the repository to become public on GitHub. This card records the first full
-project review from 2026-11-04. Nothing here has been published, and no history was changed.
+Prepare the repository to become public on GitHub. This card records the first full project
+review from 2026-11-04 and what was done about it. Nothing has been pushed, and no history
+was rewritten.
 
 ## Review scope
 
 Read all application modules, the main documents, relevant ADRs and the release entry
 scripts. Scanned tracked files and all history for personal paths, names, secrets and
-committed binaries. Baseline before changes: 81 tests, formatting and Clippy passed.
-
-## What is already in good shape
-
-- History scan found no personal paths, secrets, databases, exports or binaries.
-- `.gitignore` covers build output, local data, databases and environment files.
-- MetaPlan access is read-only, with tests for links, junctions and storage overlap.
-- Timing logic uses injected clocks; tests use temporary synthetic data.
-- Third-party notices are generated, and packaging fails if a license input is missing.
-- No telemetry, network access or cloud dependency in the application.
+committed binaries; the scan found none. The author address in commit metadata is public
+by the owner's decision.
 
 ## Must resolve before publishing
 
-- [ ] **License (owner decision).** No LICENSE file exists and Cargo.toml has no `license`
-  field. A public repository without a license grants others no right to use the code.
-- [ ] **Commit author email (owner decision).** All 31 existing commits show the author's
-  personal address. Rewriting history is only practical before the first push, and needs
-  explicit approval. Otherwise accept it, or use a GitHub no-reply address from now on.
-- [ ] **MetaPlan dependency.** Project selection only works with one private directory
-  format whose literal headings are non-English (`src/source.rs:11-15`). README never says
-  what MetaPlan is. Without it, users only get Unassigned focus. At minimum document the
-  format with a synthetic example, and state that the app works without a source.
-- [ ] **README.** It reads as accumulated release notes. It needs a short description,
-  a screenshot, Windows-only support, download and build steps, and links to the guide.
-- [ ] **Continuous integration.** There is no `.github/workflows`. Run formatting, Clippy
-  and tests on a Windows runner. Tests create junctions, HKCU test keys and real windows.
-- [ ] **Agent process files (owner decision).** `AGENTS.md`, `docs/CONTEXT.md`, the task
-  cards and verification logs narrate agent sessions. They contain no secrets found by the
-  scan, but decide whether to keep, trim or move them before publishing.
+- [x] **License.** MIT, decided by the owner. `LICENSE`, the Cargo manifest and the top of the
+  notices file in every release archive carry it.
+- [x] **Commit author email.** Kept, decided by the owner.
+- [x] **Commit signing.** Earlier commits are unsigned and stay that way, as rewriting history
+  was not requested. New commits are signed with the owner's existing SSH signing key, through
+  the same `includeIf` mechanism as the owner's other projects. Local verification shows `G`.
+- [x] **MetaPlan dependency.** Removed; see T-0035 and ADR-0031.
+- [x] **README.** Rewritten for new readers.
+- [ ] **README screenshot.** Needs a desktop capture of Development with synthetic data.
+- [x] **Continuous integration.** Added on a Windows runner, with the action pinned by commit.
+  It has never run, because nothing has been pushed.
+- [x] **Agent process files.** The owner chose to publish them. Trimming proposals are below.
 
 ## Should fix
 
-- [ ] Add Cargo.toml `description`, `repository` and `rust-version`, and pin the toolchain.
-  `docs/DEVELOPMENT.md:5` states 1.98.0 while the local toolchain is 1.99.1.
-- [ ] Correct stale documents: the module table in `docs/ARCHITECTURE.md:12` names modules
-  that do not exist, `docs/ARCHITECTURE.md:71` says there is no export, and
-  `docs/DEVELOPMENT.md` still lists export and autostart as deferred.
-- [ ] Add SECURITY and contribution notes, and issue templates if contributions are wanted.
-- [ ] Decide on code signing: an unsigned EXE triggers Windows SmartScreen warnings.
-- [ ] A second launch shows an error box instead of activating the running instance.
-- [ ] `Desktop::command` silently drops commands while another is pending, including tray
-  Exit. The user gets no feedback, and the action must be repeated.
-- [ ] Report end reasons have no labels for `logoff`, `shutdown` and `controller_lost`,
-  so they all read as Tracking interrupted (`src/report_ui.rs`).
-- [ ] Any backward wall-clock step, even one millisecond, interrupts tracking for review,
-  although forward drift tolerates five seconds. Decide whether this strictness is intended.
+- [x] Cargo manifest `description`, `license` and `rust-version`; toolchain pinned.
+- [ ] Cargo manifest `repository`, once the repository name is chosen.
+- [x] Corrected stale documents: `docs/ARCHITECTURE.md`, `docs/DEVELOPMENT.md`,
+  `docs/PRODUCT.md`, `docs/CONTEXT.md` and the ADR index.
+- [x] `SECURITY.md`, `CONTRIBUTING.md`, issue and pull request templates.
+- [ ] Code signing (owner decision). Releases are unsigned, so SmartScreen warns. README and
+  `SECURITY.md` state this. Free signing for open source projects exists, such as SignPath.
+- [x] A second launch activates the running instance; see ADR-0030.
+- [x] Commands wait in a queue instead of being dropped; see ADR-0030.
+- [x] End reasons for `logoff`, `shutdown` and `controller_lost` have labels.
+- [x] Small backward clock corrections no longer interrupt tracking; see ADR-0030.
 
 ## Maintainability notes
 
-- `duration` is implemented three times: `src/main.rs`, `src/report_ui.rs` and
-  `src/presentation.rs`.
-- `src/tracking.rs` combines migrations, storage, engine and worker. `src/main.rs` holds a
-  large `Desktop` state and direct Win32 calls. Consider splitting along documented boundaries.
-- The worker reruns aggregate queries every second while tracking, and report queries scan
-  the whole table. Consider an index at the next schema change, likely T-0019.
-- The Calendar fallback month uses the UTC date, not the selected time zone
-  (`src/date_picker.rs:52`). It only applies when the date field is invalid.
+- [x] `duration` has one implementation.
+- [x] `src/tracking.rs` split into storage, migrations, catalog, engine and worker.
+- [x] Direct Win32 calls moved from `src/main.rs` to `src/platform.rs`.
+- [x] The worker reuses stored state between ticks, and history has an index on `ended_ms`.
+- [x] The Calendar fallback month uses the selected time zone.
+- [ ] `Desktop` in `src/main.rs` is still large. It has no automated tests to protect a
+  restructuring and it would change no behavior, so it is left for when that code next changes.
+
+## Remaining steps to publish
+
+These need the owner, in this order:
+
+1. Choose the repository name, then add `repository` to `Cargo.toml`.
+2. Add the SSH signing key to the GitHub account as a signing key, if it is not there yet,
+   so signed commits show as Verified. The local token cannot read this setting.
+3. Capture the README screenshot.
+4. Create the repository, enable private vulnerability reporting, push, and confirm CI passes.
+   The tests create real windows and junctions, which has not been tried on a hosted runner.
+5. Attach the release archive to a first GitHub release.
+
+## Trimming proposals
+
+For the owner to accept or reject. All content stays available in Git history.
+
+1. **Remove "Verification history" from `docs/DEVELOPMENT.md`** (about 70 lines). These dated
+   logs describe old versions and tool failures, and newer records are in task cards.
+2. **Condense finished task cards into one `tasks/HISTORY.md`.** The 30 older cards are mostly
+   implementation logs. One summary line per task would be easier to read and lose little.
+3. **Shorten "Confirmed by the owner" in `docs/PRODUCT.md`.** Much of it repeats the user guide.
+4. **Merge ADR-0003 into ADR-0002.** Both cover the language rule.
+
+`docs/CONTEXT.md` was already cut from about 210 lines to about 50, because most of it had to
+change for T-0035 and `docs/WORKFLOW.md` requires it to stay concise.
+ADRs should stay: they are the most useful of these records for new readers.
 
 ## Handoff
 
-Get the three owner decisions first, then do the rest as separate small tasks. Do not push
-or change visibility without an explicit user instruction.
+Do not push or change visibility without an explicit user instruction.

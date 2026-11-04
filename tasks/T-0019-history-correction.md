@@ -7,8 +7,8 @@ Depends on: T-0018.
 
 Implement the next deferred product capability: explicit correction of finalized
 sessions and manual addition of missed intervals. First define the edit, overlap,
-recovery and audit rules in an ADR. Keep active/review sessions protected, preserve
-original imported activity snapshots and never edit MetaPlan. Do not migrate Production
+recovery and audit rules in an ADR. Keep active/review sessions protected and preserve
+original recorded activity snapshots. Do not migrate Production
 as part of development or use its history as fixtures. Review compatibility with an
 older running Production EXE before choosing any schema change.
 
@@ -20,7 +20,7 @@ older running Production EXE before choosing any schema change.
 - [ ] Apply changes transactionally with durable audit information and clear errors.
   Refresh affected reports and both daily totals after successful saves.
 - [ ] Verify invalid/DST boundaries, conflicts with active intervals, restart durability,
-  failure rollback, Unicode, source integrity and profile isolation using synthetic data.
+  failure rollback, Unicode and profile isolation using synthetic data.
 - [ ] Document user behavior and compatibility limits, build both versioned EXEs and
   refresh/review/verify the guide and production ZIP. Perform Development UI acceptance.
 

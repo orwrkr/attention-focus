@@ -1,21 +1,20 @@
 # Product Scope
 
-## Confirmed by the user
+## Confirmed by the owner
 
 - A desktop focus-switching tool that stays in the system tray.
 - Project and task selection, with timer start and stop.
+- A project and task list kept in the application, without any external source.
 - Reports showing how much focus time was spent on each activity.
-- Rust implementation.
-- Project data from `MetaPlan/Instance`, with the path configured in settings.
-- No modifications to the source.
+- Rust implementation, under the MIT License.
 - English-only project-authored content and application UI.
 - Remember window placement between launches.
 - Use a shared application logo for the executable, window, taskbar, and tray.
 - Distinguish running/stopped tracking in the tray; double click toggles tracking.
-- Single-click the tray to show the window; hover to see session and total tracked time.
+- Single-click the tray to show the window and bring it to the front; hover to see session
+  and total tracked time.
 - Keep Hide to tray and Exit visible above scrolling content.
 - Separate production/development data and allow simultaneous independent instances.
-- Start new production with empty history while retaining the previous development history.
 - Permanent icons must be neutral or state-correct; never imply running while stopped.
 - Main builds must also produce the development EXE for testing.
 - Provide an English user guide and a PDF export script.
@@ -24,8 +23,11 @@
 - Clearly label the confirmed activity above the draft controls.
 - Project/task changes start a new interval by default, with a persistent opt-out to
   edit the entire current interval without resetting its start.
+- A tracked interval crossing local midnight ends with the old day and continues as a new
+  interval at the same boundary, by default, with a persistent opt-out.
 - Sort project/task choices by last tracking use, newest first.
 - Automatically refresh open reports; offer calendar date selection and timezone lists.
+  Report periods can follow the current day, and the active mode is visible.
 - Offer Stay on top, include the active project in tray tooltips, improve secondary-text
   distinction, and omit Production from the normal header.
 - Use status lights without action-like play/pause symbols. Allow minute boundaries
@@ -37,82 +39,36 @@
 - Show all-project Today in both window and tray, including unassigned focus; make
   Start/Stop the visually prominent action. Keep frame margins and name hints consistent.
 - Keep scrolling correct after section reflow and expose a visible maximized boundary.
-  Give Start/Stop hover/pressed feedback, search within the project dropdown, distinguish
-  Unassigned focus and provide an existing-folder browser beside the source path.
+  Give Start/Stop hover/pressed feedback, search within the project dropdown and
+  distinguish Unassigned focus.
 - Make running tracking clear with calm window/tray motion that does not distract.
   Preserve unambiguous stopped status and neutral permanent application icons.
 - Allow dragging from the app header above scrolling content and center default placement.
 - Offer Windows sign-in startup and optional tray-only startup for that invocation.
-
-Windows is the initial target based on the current environment and tray scenario.
-Other operating systems are not currently required.
-
-## Proposed first working slice
-
-1. Configure and validate the source directory.
-2. Read names, statuses, and focus priorities from `project.md`.
-3. Select a project and optional task, with a free-form session description.
-4. Start, stop, and switch, ending the previous session exactly when the next begins.
-5. Persist history locally outside the source.
-6. Show history and total time by project for a selected period.
-7. Provide tray controls and an explicit application exit action.
-
-This is an implementation proposal, not a claim that these features already exist.
-
-## MetaPlan format observations
-
-- Projects live in `PROJECTS/Active/<slug>/` and `PROJECTS/Archive/<slug>/`.
-- Being in `Active/` does not guarantee an `Active` status; read `project.md`.
-- The human-readable name is in the heading of `project.md`; the directory name is the slug.
-- Statuses are `Active`, `Paused`, `Completed`, and `Suspended`.
-- A source focus field distinguishes primary and background projects. It describes
-  project priority, not timer state. Starting a session must not change it.
-- Source labels can be non-English. English descriptions here explain their meaning,
-  not literal parser tokens; verify the actual format when implementing the reader.
-- Tasks in `tasks.md` use Markdown checkboxes. Empty items, completed cycles, and
-  references to external workspaces are possible.
-- Do not automatically follow external filesystem paths mentioned in task text.
-- Stable task IDs are not guaranteed. Matching edited tasks needs a separate decision;
-  session history must preserve the original task title.
-- Archiving a project must not delete its accumulated history.
-- Imported names and user-authored notes retain their language and Unicode content;
-  application-owned controls, messages, and report headings are English.
-
-## Implementation decisions
-
-The initial architecture selects egui/eframe, tray-icon, and bundled SQLite; see
-[ADR-0004](decisions/0004-desktop-stack.md) and [the architecture](ARCHITECTURE.md).
-These are implementation choices, not claims of completed functionality.
-
-CSV/Markdown export is available in T-0016, including every matching session and
-protected destinations; see ADR-0017.
-
-## Deferred features and remaining validation
-
-- Validate tray wakeup, packaging requirements, and Windows lifecycle behavior.
-- Complete real Windows validation of the implemented storage, backup, and recovery design.
-- Session correction/manual entry and shortcuts.
-- Project identity when slugs change or the source directory is replaced.
-- Complete interactive validation of implemented time zones, midnight boundaries, and clock changes.
-
-## Accounting principles
-
-Only one session is active at a time; switching must not double-count time.
-Time represents user-declared attention, not automatically measured concentration.
-Project dependency relationships must not inflate the total by counting time twice.
-The source must remain independently usable without the application.
-
-## Accepted report and note improvements (T-0030)
-
 - Combined saved/running report total, saved table footers and matching export totals.
 - Per-project last confirmed note and eight distinct recent nonblank suggestions.
 - Minute picker dialogs alongside manual time entry, preserving range validation.
 - No border geometry/repaint loop for clipped, hidden or OS-reported invisible areas.
+- Prepare the project for a public GitHub repository.
 
-## Accepted activation and day-boundary behavior (T-0031 to T-0033)
+Windows is the only target. Other operating systems are not currently required.
 
-- A tray click brings the main window to the front.
-- Report periods can follow the current day; the active mode is visible.
-- Totals stay correct across interval, day and calendar boundaries.
-- A tracked interval crossing local midnight ends with the old day and continues as a new
-  interval at the same boundary. This is the default and can be disabled per profile.
+## Under consideration
+
+- Graphical views of activity over a day, several days or a week. See T-0036.
+
+## Deferred
+
+- Correcting recorded sessions and adding missed intervals by hand (T-0019).
+- Global shortcuts, an installer, and an automatic updater.
+- Renaming tasks with their history.
+- Real Windows validation of sleep, multi-monitor geometry and clean machines (T-0002).
+
+## Accounting principles
+
+Only one session is active at a time; switching must not double-count time. Time represents
+user-declared attention, not automatically measured concentration. The application adds no
+cloud services, telemetry, window-content monitoring or productivity scoring.
+
+Project names and notes keep their language and characters; application-owned controls,
+messages, and report headings are English.

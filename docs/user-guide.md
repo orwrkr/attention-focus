@@ -5,19 +5,27 @@ Version {{VERSION}} | Windows x64 | English interface
 
 Attention Focus records time that you choose to spend on a project or task. It stays
 in the Windows notification area (system tray) when its window is hidden. It does not
-watch your screen or keyboard, score productivity, or edit your MetaPlan files.
+watch your screen or keyboard, score productivity, or use the network.
 
 ## Start in three steps
 
 1. Extract the production ZIP to a folder and run `attention-focus.exe`.
-2. Open **MetaPlan source and projects**, type/paste the `Instance` path or use
-   **Browse...**, then click **Save and refresh**. Choosing a folder only fills the
-   field; cancel leaves it unchanged. Source/storage validation runs when saving.
-3. Choose a project and optional task, then click **Start tracking**.
+2. Open **Projects**, type a project name, and click **Add projects**.
+3. Choose the project and optionally a task, then click **Start tracking**.
 
-The folder must contain `PROJECTS/Active`. Data in `Archive` can be previewed but is
-not offered for new focus sessions. Valid projects still load if another project has
-a missing or malformed Markdown file; read the diagnostic shown in the source section.
+You can also track **Unassigned focus** at any time, without adding a project.
+
+## Manage projects and tasks
+
+Open **Projects**. Paste several names at once, one per line, then click **Add projects**.
+Names can use any language; names already in the list are skipped. Expand a project to:
+
+- **Rename** it. Earlier sessions keep the name they recorded, and totals show the new one.
+- Add tasks, or tick a task when it is finished. Adding its name again reopens it.
+- **Archive** it, so it leaves the pickers. Its history stays in reports. Use **Show archived
+  projects** to find it and **Restore** it.
+- **Delete** a project or task that was never tracked. Anything with recorded time can only
+  be archived or finished, so history always knows what it belongs to.
 
 ## Recognize the icons
 
@@ -31,14 +39,6 @@ Development tray icons have a purple **D** badge. Hover over an icon to confirm 
 profile and status before using it. A purple application logo identifies the debug
 development build and is also independent of tracking state.
 
-## What to keep in the extracted folder
-
-The package contains the EXE, this PDF, third-party notices, and a release manifest.
-Only the EXE is needed to run. Icons, fonts, SQLite, and the C runtime are embedded.
-Keep the notices when redistributing the package. No Rust, Python, .NET, Node, or
-WebView2 installation is needed to run the app. Windows system components and a
-working graphics driver are required. Clean-machine compatibility is still being verified.
-
 <!-- pagebreak -->
 
 # Record and switch focus
@@ -46,10 +46,10 @@ working graphics driver are required. Clean-machine compatibility is still being
 ## Choose an activity
 
 - Open the Project dropdown and type in its **Search projects** field to filter by
-  project title or directory slug. The search stays inside the open list.
+  project name. The search stays inside the open list.
 - Search ignores case, filters projects
   rather than tasks/history, and does not change the current tracked activity.
-- Select a project and optionally an unfinished task from its current cycle.
+- Select a project and optionally one of its unfinished tasks.
 - Choose the colored, bold italic **Unassigned focus (no project)** entry when no
   project is appropriate. Its position still follows recent-use ordering.
 - Add an optional note to describe the session. Each project remembers its last applied
@@ -58,9 +58,9 @@ working graphics driver are required. Clean-machine compatibility is still being
   Unassigned focus has its own notes. A blank applied note clears the default but keeps
   suggestions. Notes are profile-local preferences, remembered from this version onward.
 
-The selected project must be available in the loaded source. Completed or archived
-projects and unavailable tasks cannot start a new session. Refresh MetaPlan or choose
-another activity if the window reports that a selection is unavailable.
+Archived projects and finished tasks cannot start a new interval. An interval already
+running finishes normally. Choose another activity if the window reports that a selection
+is unavailable.
 
 ## Change projects and tasks
 
@@ -90,8 +90,7 @@ Notes alone stay draft. Apply them with **Start new interval with changes** or
 Both project and task lists put the most recently tracked choice first, including
 Unassigned focus and No task. Unused choices follow alphabetically. Simply opening,
 searching, or choosing a next activity while stopped does not count as tracking use.
-Order survives restart and is seeded from existing history after updating. Separate
-sources and Production/Development keep independent usage.
+Order survives restart. Production and Development keep independent usage.
 
 <!-- pagebreak -->
 
@@ -112,7 +111,7 @@ history only. The window and tray share both daily values.
 - Hover shows status, project, **Session**, **Today/project** and **Today/all**.
   Today combines all its tasks and saved plus current time inside the Windows local
   calendar day, excluding unreviewed time. Report filters do not affect this value.
-  All-project Today also includes unassigned focus and saved history from other sources.
+  All-project Today also includes unassigned focus.
   Long names are shortened; the project's window label shows its full name in one hint.
   While stopped, project Today refers to the saved next project.
 - A right click opens the menu with Show Focus, Start/Stop, and Exit.
@@ -248,9 +247,8 @@ to reclassify time. Unrelated tracking changes do not reload historical results.
 changing filters, or manual Refresh still loads a result. Failures retain the last valid
 snapshot. Hidden/collapsed reports pause queries; typed filters remain debounced/editable.
 
-Expand **By project**, **By project and task**, or **By day** for breakdowns. Sources
-with the same project slug are kept separate; hover on a project total to see its source.
-Project relationships never add the same interval again. Notes do not create duplicate totals.
+Expand **By project**, **By project and task**, or **By day** for breakdowns. Totals show
+each project's current name. Notes do not create duplicate totals.
 
 ## Inspect sessions
 
@@ -259,8 +257,8 @@ full recorded duration, and why it ended. The time in the list is clipped to the
 period. Start/end labels show the selected time zone's UTC offset, including DST changes.
 
 Details show up to 200 recent matching sessions. Totals include every matching session,
-including older ones not shown in that list. Renamed, deleted, or archived projects do
-not erase existing history; sessions keep snapshots of the titles they recorded.
+including older ones not shown in that list. Renamed or archived projects do not erase
+existing history; sessions keep the names they recorded.
 
 <!-- pagebreak -->
 
@@ -268,14 +266,14 @@ not erase existing history; sessions keep snapshots of the titles they recorded.
 
 Open **Focus history and reports**, set the period/timezone, then choose **Export CSV**
 or **Export Markdown**. Choose a new filename in the Windows Save dialog. Canceling
-creates no export; existing files are never overwritten. Export outside MetaPlan and
-the application's data folders. Source files do not need to be currently available.
+creates no export; existing files are never overwritten. Export outside the application's
+data folders.
 
 ## What is exported
 
 The export is a snapshot of every matching session, including entries beyond the
 window's 200-row preview. It includes version, snapshot time, timezone, exact filter
-boundaries, integer millisecond durations, source identities, activity names and notes.
+boundaries, integer millisecond durations, project IDs, activity names and notes.
 Saved, Running checkpoint and Needs review totals remain separate. The combined total
 adds Saved and Running checkpoint, excluding Needs review. Markdown grouping tables
 end with Total saved; CSV adds Total saved plus running checkpoint ms.
@@ -290,11 +288,11 @@ CSV has a header, one **Summary** row and **Session** rows. Metadata and report 
 repeat on each row. Sum **Clipped ms** of Saved Session rows for the finalized total;
 do not sum the repeated total columns. Formula-like text is prefixed with an apostrophe
 for text import. This guard is not guaranteed after editing/re-saving in spreadsheet
-software. UTF-8 text and quoted multiline cells preserve imported Unicode.
+software. UTF-8 text and quoted multiline cells preserve Unicode.
 
 Markdown includes totals by project, project/task and day, plus all session details.
-Imported formatting is escaped. A failed export shows an error, keeps tracking usable
-and does not replace an existing file.
+Formatting characters in names and notes are escaped. A failed export shows an error,
+keeps tracking usable and does not replace an existing file.
 
 <!-- pagebreak -->
 
@@ -351,7 +349,7 @@ Use the packaged EXE for normal **Production** use. For development, run
 Debug builds always default to Development and reject selecting Production.
 
 Both profiles can run together. Each permits one instance and has its own history,
-selected source, applied activity, window placement, and backups. Development is
+project list, applied activity, window placement, and backups. Development is
 identified in the header and has a distinct window title and tray badge. Building
 development does not replace a running production EXE.
 
@@ -360,30 +358,29 @@ The fixed data directories are:
 - Production: `%LOCALAPPDATA%/AttentionFocus/Production`
 - Development: `%LOCALAPPDATA%/AttentionFocus/Development`
 
-Each contains `focus.sqlite3` for history, `source.sqlite3` for source settings, and
-`window.ron` for placement and Stay on top. SQLite may create journal files in the same folder.
-Moving the EXE does not move or reset this data.
+Each contains `focus.sqlite3` for history and projects, and `window.ron` for placement and
+Stay on top. SQLite may create journal files in the same folder. Moving the EXE does not
+move or reset this data. Development history is never copied into Production automatically.
 
-Older files directly under `%LOCALAPPDATA%/AttentionFocus` remain unchanged. The new
-Production profile starts with empty history; only a valid old MetaPlan path is imported.
-Later launches keep the new production history normally. Development history is never
-copied into Production automatically.
+## What to keep in the extracted folder
+
+The package contains the EXE, this PDF, license notices, and a release manifest.
+Only the EXE is needed to run. Icons, fonts, SQLite, and the C runtime are embedded.
+Keep the notices when redistributing the package. No Rust, Python, .NET, Node, or
+WebView2 installation is needed to run the app. Windows system components and a
+working graphics driver are required. Clean-machine compatibility is still being verified.
 
 ## Protect and back up your data
-
-MetaPlan is a read-only source. The app never changes project statuses, priorities,
-tasks, or source files. Application data cannot be stored inside the configured source,
-nor can the source contain application data. Linked source files/projects are skipped.
 
 To back up history and settings, exit the relevant profile first and copy that entire
 profile's data directory to a safe location. Do not copy only an open SQLite database
 while it may have a journal. Schema upgrades make a local backup before migrating old
 history. These backups complement, rather than replace, your own backups.
 
-Version 0.3 upgrades history to schema two and creates a `focus-before-v2-*.sqlite3`
-backup for schema-one databases. Version 0.18 upgrades history to schema three and creates
-a `focus-before-v3-*.sqlite3` backup for schema-two databases. Earlier EXEs cannot open the
-upgraded history. To return to one, restore that backup while the app is closed; sessions
+Version 0.18 upgrades history to schema three, with a `focus-before-v3-*.sqlite3` backup.
+Version 0.19 upgrades it to schema four, with a `focus-before-v4-*.sqlite3` backup. It lists
+every project you have tracked, with its tasks; add any others yourself. Earlier EXEs cannot
+open upgraded history. To return to one, restore its backup while the app is closed; sessions
 recorded after the upgrade are not in it.
 
 ## Install an update
@@ -403,21 +400,11 @@ No asset files or third-party runtime DLLs need to be copied beside the EXE.
 
 ## The app is already running
 
-Use that profile's tray icon to show its window, or choose Exit there before launching
-another copy of the same profile. Production and Development are independent, so one
-of each is allowed. An app hidden in the tray is still running. Its tray icon raises the
-window above ordinary windows; Windows can keep keyboard focus in an administrator program.
-
-## The source does not load
-
-Check that the selected folder is `Instance`, not its parent, and contains
-`PROJECTS/Active`. Check the per-project diagnostics. Missing task files, duplicate
-slugs across Active/Archive, linked entries, or malformed metadata can exclude entries.
-Imported names retain their original Unicode text. Filesystem paths written inside
-task descriptions are never opened automatically.
-
-A missing source does not prevent stopping a session or reading existing history.
-Choose an available activity or Unassigned focus before starting a new session.
+Launching the EXE again shows the window of the copy already running. An app hidden in the
+tray is still running; choose Exit from its tray menu to end it. Production and Development
+are independent, so one of each is allowed. The tray icon and a second launch raise the
+window above ordinary windows, but Windows can keep keyboard focus in a program running as
+administrator.
 
 ## A save, clock, or recovery error appears
 

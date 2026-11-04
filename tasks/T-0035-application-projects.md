@@ -30,8 +30,17 @@ removal of the reader, source settings and folder picker. See ADR-0031.
 ## Checks
 
 `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings` and
-`cargo test --locked` (127 tests) passed. Upgrade tests build older databases from their
-original table definitions and activity format, rather than from today's schema.
+`cargo test --locked` (136 tests in total) passed. Upgrade tests build older databases from
+their original table definitions and activity format, rather than from today's schema.
+
+An independent read of the first version found no conversion or data-loss defect, but ten
+smaller ones, all fixed and tested where that is possible without a window. A converted
+selection-only project could not be deleted. Failing to open history could orphan saved notes.
+A report on screen kept the old name after a rename while stopped. A rename could send the old
+name back, and refused text was lost. A queued tray toggle could start on an archived project.
+Commands could be released early by unrelated events. Two more came from the small clock
+correction in ADR-0030: intervals inside one could be excluded from reports, and running
+time could drop until the clock caught up.
 
 The upgrade was also run once on temporary copies of the real Production backup (schema
 two) and the Development database, through a throwaway test that printed only counts and was
