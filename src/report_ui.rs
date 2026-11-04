@@ -406,7 +406,7 @@ impl Panel {
                 "Auto-refresh paused: no tracking time is growing in this range"
             });
             if let Some(error) = &self.error {
-                ui.colored_label(egui::Color32::LIGHT_RED, error);
+                ui.colored_label(ui.visuals().error_fg_color, error);
             }
             if let Some(report) = &self.report {
                 Self::results(ui, report, &mut self.chart_view, &self.project_colors);
@@ -455,7 +455,7 @@ impl Panel {
         ui.label(format!("Running (not finalized): {}",duration(report.running_ms))).on_hover_text("Elapsed time from the active interval clipped to this filter. It is not included in Saved focus until the interval ends.");
         ui.label(format!("Needs review (excluded): {}",duration(report.review_ms))).on_hover_text("Saved checkpoint time from interrupted intervals within this filter. It is excluded from Saved focus until you accept recovery.");
         for diagnostic in &report.diagnostics {
-            ui.colored_label(egui::Color32::YELLOW, diagnostic);
+            ui.colored_label(ui.visuals().warn_fg_color, diagnostic);
         }
         if let Some(chart) = &report.chart {
             egui::CollapsingHeader::new("Charts")
@@ -500,26 +500,23 @@ impl Panel {
             });
         });
         ui.collapsing("By day", |ui| {
-            egui::ScrollArea::vertical()
-                .id_salt("daily-focus")
-                .max_height(200.0)
-                .show(ui, |ui| {
-                    egui::Grid::new("daily-totals")
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.strong("Day");
-                            ui.strong("Saved time");
+            crate::ui_support::inner_area("daily-focus", 240.0).show(ui, |ui| {
+                egui::Grid::new("daily-totals")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.strong("Day");
+                        ui.strong("Saved time");
+                        ui.end_row();
+                        for day in &report.range.days {
+                            ui.label(&day.date);
+                            ui.label(duration(day.saved_ms));
                             ui.end_row();
-                            for day in &report.range.days {
-                                ui.label(&day.date);
-                                ui.label(duration(day.saved_ms));
-                                ui.end_row();
-                            }
-                            ui.strong("Total saved");
-                            ui.strong(duration(report.saved_ms));
-                            ui.end_row();
-                        });
-                });
+                        }
+                        ui.strong("Total saved");
+                        ui.strong(duration(report.saved_ms));
+                        ui.end_row();
+                    });
+            });
         });
         ui.collapsing(format!("Sessions ({})", report.matching_sessions), |ui| {
             if report.matching_sessions > report.history.len() {
@@ -528,69 +525,66 @@ impl Panel {
                 );
             }
             ui.label("Session time below is clipped to the selected period.");
-            egui::ScrollArea::vertical()
-                .id_salt("session-history")
-                .max_height(320.0)
-                .show(ui, |ui| {
-                    for row in &report.history {
-                        let record = &row.record;
-                        let status = match record.state {
-                            reports::State::Saved => "Saved",
-                            reports::State::Running => "Running",
-                            reports::State::Review => "Needs review",
-                        };
-                        ui.push_id(record.id, |ui| {
-                            ui.collapsing(
-                                format!(
-                                    "{} | {} | {}",
-                                    report.range.format_time(record.start_ms),
-                                    duration(row.clipped_ms),
-                                    status
-                                ),
-                                |ui| {
-                                    ui.strong(record.activity.label());
-                                    if let Some(project) = &record.activity.project
-                                        && let Some(task) = &project.task
-                                    {
-                                        ui.label(task);
-                                    }
-                                    if !record.activity.note.is_empty() {
-                                        ui.label(&record.activity.note);
-                                    }
-                                    ui.label(format!(
-                                        "Start: {}",
-                                        report.range.format_time(record.start_ms)
-                                    ));
-                                    ui.label(format!(
-                                        "End / snapshot: {}",
-                                        report.range.format_time(record.end_ms)
-                                    ));
-                                    ui.label(format!(
-                                        "Full recorded time: {}",
-                                        duration(record.elapsed_ms)
-                                    ));
-                                    let reason = match record.reason.as_str() {
-                                        "stop" => "Stopped",
-                                        "switch" => "Focus changed",
-                                        "day_boundary" => "New day started",
-                                        "exit" => "Application exit",
-                                        "lock" => "Windows locked",
-                                        "logoff" => "Windows sign-out",
-                                        "shutdown" => "Windows shutdown",
-                                        "suspend" => "Sleep",
-                                        "controller_lost" => "Application window closed",
-                                        "crash" => "Interrupted before restart",
-                                        "clock_or_heartbeat" => "Clock change or missed heartbeat",
-                                        _ => "Tracking interrupted",
-                                    };
-                                    if record.state != reports::State::Running {
-                                        ui.label(format!("Ended: {reason}"));
-                                    }
-                                },
-                            );
-                        });
-                    }
-                });
+            crate::ui_support::inner_area("session-history", 360.0).show(ui, |ui| {
+                for row in &report.history {
+                    let record = &row.record;
+                    let status = match record.state {
+                        reports::State::Saved => "Saved",
+                        reports::State::Running => "Running",
+                        reports::State::Review => "Needs review",
+                    };
+                    ui.push_id(record.id, |ui| {
+                        ui.collapsing(
+                            format!(
+                                "{} | {} | {}",
+                                report.range.format_time(record.start_ms),
+                                duration(row.clipped_ms),
+                                status
+                            ),
+                            |ui| {
+                                ui.strong(record.activity.label());
+                                if let Some(project) = &record.activity.project
+                                    && let Some(task) = &project.task
+                                {
+                                    ui.label(task);
+                                }
+                                if !record.activity.note.is_empty() {
+                                    ui.label(&record.activity.note);
+                                }
+                                ui.label(format!(
+                                    "Start: {}",
+                                    report.range.format_time(record.start_ms)
+                                ));
+                                ui.label(format!(
+                                    "End / snapshot: {}",
+                                    report.range.format_time(record.end_ms)
+                                ));
+                                ui.label(format!(
+                                    "Full recorded time: {}",
+                                    duration(record.elapsed_ms)
+                                ));
+                                let reason = match record.reason.as_str() {
+                                    "stop" => "Stopped",
+                                    "switch" => "Focus changed",
+                                    "day_boundary" => "New day started",
+                                    "exit" => "Application exit",
+                                    "lock" => "Windows locked",
+                                    "logoff" => "Windows sign-out",
+                                    "shutdown" => "Windows shutdown",
+                                    "suspend" => "Sleep",
+                                    "controller_lost" => "Application window closed",
+                                    "crash" => "Interrupted before restart",
+                                    "clock_or_heartbeat" => "Clock change or missed heartbeat",
+                                    _ => "Tracking interrupted",
+                                };
+                                if record.state != reports::State::Running {
+                                    ui.label(format!("Ended: {reason}"));
+                                }
+                            },
+                        );
+                    });
+                }
+            });
         });
         if report.matching_sessions == 0 {
             ui.label("No sessions in this period.");

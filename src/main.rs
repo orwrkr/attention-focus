@@ -58,6 +58,7 @@ struct Desktop {
     profile: Profile,
     storage_root: std::path::PathBuf,
     stay_on_top: bool,
+    theme: egui::ThemePreference,
     motion_epoch: Instant,
     tray_level: Option<(bool, u8)>,
     running_icons: Vec<Icon>,
@@ -237,6 +238,12 @@ impl Desktop {
             ctx.request_repaint();
         })
         .ok();
+        attention_focus::ui_support::apply_style(&context.egui_ctx);
+        let theme = context
+            .storage
+            .and_then(|storage| eframe::get_value(storage, "theme"))
+            .unwrap_or(egui::ThemePreference::System);
+        context.egui_ctx.set_theme(theme);
         // Notes saved by older versions are converted when the first state names their projects.
         let storage = context.storage;
         let note_memory = storage.and_then(|s| eframe::get_value::<NoteMemory>(s, STORAGE_KEY));
@@ -292,6 +299,7 @@ impl Desktop {
             profile,
             storage_root: paths.root,
             stay_on_top,
+            theme,
         }
     }
 
@@ -310,22 +318,12 @@ impl Desktop {
 
     fn activity_picker(&mut self, ui: &mut egui::Ui) {
         let before = self.activity.project.clone();
-        let mut split = self.state.change_mode == tracking::ChangeMode::NewInterval;
-        if ui
-            .checkbox(
-                &mut split,
-                "Start a new interval when project or task changes",
-            )
-            .changed()
-        {
-            self.command(tracking::Command::SetChangeMode(if split {
-                tracking::ChangeMode::NewInterval
-            } else {
-                tracking::ChangeMode::EditCurrent
-            }));
-        }
+        let split = self.state.change_mode == tracking::ChangeMode::NewInterval;
+        // The option lives in Settings, but this mode rewrites time, so it stays visible here.
         if !split {
-            ui.label("Changes reassign the entire current interval, including its elapsed time.");
+            ui.label(
+                "Changes reassign the entire current interval, including its elapsed time. You can change this in Settings.",
+            );
         }
         egui::ComboBox::from_id_salt("project")
             .width(ui.available_width().min(320.0))
@@ -484,6 +482,7 @@ impl eframe::App for Desktop {
             eframe::set_value(storage, STORAGE_KEY, &self.note_memory);
         }
         eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
+        eframe::set_value(storage, "theme", &self.theme);
         eframe::set_value(storage, "startup_tray", &self.startup.tray);
         eframe::set_value(storage, "project_search", &self.project_search);
         let draft =
@@ -695,74 +694,120 @@ impl eframe::App for Desktop {
             .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
         let mut drag_regions = Vec::new();
         let mut reveal_settings = false;
-        egui::Frame::central_panel(ui.style()).show(ui, |ui| {
-            ui.set_max_width(ui.available_width().min(744.0));
+        attention_focus::ui_support::window_frame(ui.style()).show(ui, |ui| {
+            // The widest window, less the left margin of the frame.
+            ui.set_max_width(ui.available_width().min(752.0));
             // These actions stay outside the scrolling body at every content height.
-            let heading = ui.horizontal(|ui| {
-                ui.set_min_width(ui.available_width());
-                ui.heading("Attention Focus");
-                ui.weak(format!(
-                    "{}v{}",
-                    if self.profile == Profile::Development {
-                        "Development "
-                    } else {
-                        ""
-                    },
-                    env!("CARGO_PKG_VERSION")
-                ));
-            });
-            drag_regions.push(heading.response.rect);
-            ui.horizontal(|ui| {
-                if ui.checkbox(&mut self.stay_on_top, "Stay on top").changed() {
-                    if let Some(storage) = frame.storage_mut() {
-                        eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
-                        storage.flush();
-                    }
-                    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-                        if self.stay_on_top {
-                            egui::WindowLevel::AlwaysOnTop
-                        } else {
-                            egui::WindowLevel::Normal
-                        },
-                    ));
-                }
-                if ui
-                    .add(egui::Button::new("Settings").selected(self.settings_open))
-                    .clicked()
-                {
-                    self.settings_open = !self.settings_open;
-                    reveal_settings = self.settings_open;
-                }
-                if ui
-                    .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
-                    .clicked()
-                {
-                    Self::hide(&ctx);
-                }
-                if ui
-                    .add_enabled(!self.outbox.busy(), egui::Button::new("Exit"))
-                    .clicked()
-                {
-                    self.command(tracking::Command::Exit);
-                }
-                let free = ui.available_rect_before_wrap();
-                let rect = egui::Rect::from_min_size(
-                    free.min,
-                    egui::vec2(free.width().max(0.0), ui.spacing().interact_size.y),
-                );
-                drag_regions.push(rect);
-            });
-            ui.separator();
+            attention_focus::ui_support::header_frame()
+                .show(ui, |ui| {
+                    let heading = ui.horizontal(|ui| {
+                        ui.set_min_width(ui.available_width());
+                        ui.heading("Attention Focus");
+                        ui.weak(format!(
+                            "{}v{}",
+                            if self.profile == Profile::Development {
+                                "Development "
+                            } else {
+                                ""
+                            },
+                            env!("CARGO_PKG_VERSION")
+                        ));
+                    });
+                    drag_regions.push(heading.response.rect);
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut self.stay_on_top, "Stay on top").changed() {
+                            if let Some(storage) = frame.storage_mut() {
+                                eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
+                                storage.flush();
+                            }
+                            ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                                if self.stay_on_top {
+                                    egui::WindowLevel::AlwaysOnTop
+                                } else {
+                                    egui::WindowLevel::Normal
+                                },
+                            ));
+                        }
+                        if ui
+                            .add(egui::Button::new("Settings").selected(self.settings_open))
+                            .clicked()
+                        {
+                            self.settings_open = !self.settings_open;
+                            reveal_settings = self.settings_open;
+                        }
+                        if ui
+                            .add_enabled(self.tray.is_some(), egui::Button::new("Hide to tray"))
+                            .clicked()
+                        {
+                            Self::hide(&ctx);
+                        }
+                        if ui
+                            .add_enabled(!self.outbox.busy(), egui::Button::new("Exit"))
+                            .clicked()
+                        {
+                            self.command(tracking::Command::Exit);
+                        }
+                        let free = ui.available_rect_before_wrap();
+                        let rect = egui::Rect::from_min_size(
+                            free.min,
+                            egui::vec2(free.width().max(0.0), ui.spacing().interact_size.y),
+                        );
+                        drag_regions.push(rect);
+                    });
+                    ui.separator();
+                });
             attention_focus::ui_support::body(ui, |ui| {
                 if self.settings_open {
                     let settings = ui.group(|ui| {
                         ui.heading("Application settings");
-                        self.startup.show(ui);
+                        ui.strong("Appearance");
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label("Theme");
+                            for (theme, label) in [
+                                (egui::ThemePreference::System, "Same as Windows"),
+                                (egui::ThemePreference::Light, "Light"),
+                                (egui::ThemePreference::Dark, "Dark"),
+                            ] {
+                                if ui
+                                    .selectable_value(&mut self.theme, theme, label)
+                                    .changed()
+                                {
+                                    ctx.set_theme(self.theme);
+                                    if let Some(storage) = frame.storage_mut() {
+                                        eframe::set_value(storage, "theme", &self.theme);
+                                        storage.flush();
+                                    }
+                                }
+                            }
+                        });
                         ui.separator();
+                        ui.strong("Intervals");
+                        let enabled = self.ready && !self.outbox.busy();
+                        let mut split_on_change =
+                            self.state.change_mode == tracking::ChangeMode::NewInterval;
+                        if ui
+                            .add_enabled(
+                                enabled,
+                                egui::Checkbox::new(
+                                    &mut split_on_change,
+                                    "Start a new interval when project or task changes",
+                                ),
+                            )
+                            .changed()
+                        {
+                            self.command(tracking::Command::SetChangeMode(if split_on_change {
+                                tracking::ChangeMode::NewInterval
+                            } else {
+                                tracking::ChangeMode::EditCurrent
+                            }));
+                        }
+                        ui.weak(
+                            "When off, a change corrects the current interval instead: all its time moves to the new project or task.",
+                        );
                         let mut split = self.state.split_on_day;
                         if ui
                             .add_enabled(
-                                self.ready && !self.outbox.busy(),
+                                enabled,
                                 egui::Checkbox::new(&mut split, "Start a new interval at midnight"),
                             )
                             .changed()
@@ -772,6 +817,9 @@ impl eframe::App for Desktop {
                         ui.weak(
                             "Ends a running interval when the local day changes and continues it as a new one. Time totals stay the same.",
                         );
+                        ui.separator();
+                        ui.strong("Startup");
+                        self.startup.show(ui);
                     });
                     if reveal_settings {
                         settings.response.scroll_to_me(Some(egui::Align::Min));
@@ -832,7 +880,7 @@ impl eframe::App for Desktop {
                     }
                 }
                 if let Some(error) = &self.error {
-                    ui.colored_label(egui::Color32::LIGHT_RED, error);
+                    ui.colored_label(ui.visuals().error_fg_color, error);
                 }
                 ui.add_space(12.0);
                 ui.label("Double-click the tray icon to start or stop.");

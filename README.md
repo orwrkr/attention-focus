@@ -7,6 +7,12 @@ It stays on your computer. There are no accounts, network access or telemetry, a
 not watch your screen or keyboard or score your productivity. Time is what you declare, not
 what a program guesses.
 
+![The main window in the dark theme, with the current interval and today's time](docs/images/tracking.png)
+
+![A week of tracked sessions on the timeline chart, in the light theme](docs/images/charts.png)
+
+The examples show invented projects.
+
 ## Features
 
 - **Tray first.** Double-click the tray icon to start or stop, click to open the window, and
@@ -21,6 +27,7 @@ what a program guesses.
 - **Reports.** See totals by project, task and day for any period, in any time zone. Periods can
   follow the current day. Export to CSV or Markdown.
 - **Charts.** A timeline of when you worked, columns of how much per day, and your weekly rhythm.
+- **Light and dark themes** that follow Windows automatically, or the one you choose.
 - **Starts with Windows** if you want it to, optionally hidden in the tray.
 
 ## Install

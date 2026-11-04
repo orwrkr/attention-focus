@@ -1,7 +1,8 @@
 # ADR-0019: Stable Scroll Reflow and Explicit Interaction Feedback
 
 Date: 2026-10-28.
-Status: accepted.
+Status: superseded in part by [ADR-0034](0034-scroll-bars-and-themes.md), for the appearance and
+position of scroll bars. Stable content width in the window body remains.
 
 The user reported unnecessary/invisible scrollbars, stale duplicated painting after
 collapse, missing maximized edges, no primary-button feedback and inconvenient pickers.

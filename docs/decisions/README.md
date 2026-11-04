@@ -24,7 +24,7 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0016](0016-ui-state-and-daily-tray.md) | accepted | UI restoration, native sizing and project-day tray totals |
 | [0017](0017-report-export.md) | accepted | Read-only background snapshots and protected CSV/Markdown output |
 | [0018](0018-window-counters-and-width.md) | accepted | Explicit window counters and a static native width limit |
-| [0019](0019-scroll-and-selection-controls.md) | accepted | Stable scroll reflow, visible window edges and selection controls |
+| [0019](0019-scroll-and-selection-controls.md) | superseded in part | Stable scroll reflow, visible window edges and selection controls |
 | [0020](0020-calm-tracking-motion.md) | accepted | Restrained running indicators and Windows motion preferences |
 | [0021](0021-startup-window-recovery.md) | accepted | Safe startup maximization and collapsed-size recovery |
 | [0022](0022-header-drag-and-centering.md) | accepted | Native header dragging and centered default placement |
@@ -39,5 +39,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0031](0031-application-projects.md) | accepted | Application-owned projects and tasks |
 | [0032](0032-activity-charts.md) | accepted | Activity charts in reports |
 | [0033](0033-release-workflow-and-signing.md) | accepted | Release workflow and free code signing |
+| [0034](0034-scroll-bars-and-themes.md) | accepted | One scroll bar style and selectable themes |
 
-Next number: `0034`. Template: `templates/ADR.md` from the repository root.
+Next number: `0035`. Template: `templates/ADR.md` from the repository root.

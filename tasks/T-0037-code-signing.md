@@ -23,7 +23,7 @@ applying, and then the owner's application and SignPath's approval.
 
 ## Owner steps
 
-1. Create the public repository and push. Confirm that CI passes.
+1. Make the repository public. It exists as a private repository, and CI passes there.
 2. Push tag `vVERSION`, check the draft release and publish it. This is the first, unsigned release.
 3. Turn on multi-factor authentication on GitHub, and on SignPath when the account exists.
 4. Apply at <https://signpath.org/apply>.
@@ -50,8 +50,9 @@ With an empty `CARGO_HOME`, the workflow's `cargo fetch` followed by the offline
 that notices use also passed. An independent read of the workflow and scripts, checked against
 the SignPath documentation, found no verified defect.
 
-Unverified, because they need a public repository: the workflow itself, hosted-runner assumptions
-such as Python and PDF dependencies, a real signing request, the successful path through
+Unverified, because no tag has been pushed: the release workflow itself and hosted-runner
+assumptions such as the PDF dependencies. The CI workflow does run on the same kind of runner.
+Unverified, because signing needs a public project: a real signing request, the successful path through
 `scripts/use-signed-exe.ps1` with a truly signed file, and the artifact configuration, which
 follows the SignPath documentation but has not been accepted by SignPath.
 

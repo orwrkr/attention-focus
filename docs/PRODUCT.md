@@ -13,12 +13,15 @@
   refresh on their own, and export to CSV and Markdown.
 - **Calm interface.** Window placement, sections, filters and note drafts are restored without
   restarting tracking. Stay on top and sign-in startup are optional. Motion is restrained and
-  follows Windows settings. Hide to tray and Exit stay visible above scrolling content.
+  follows Windows settings. Hide to tray and Exit stay visible above scrolling content. Light
+  and dark themes follow Windows or a choice in Settings, and scroll bars never cover content.
 - **Honest icons.** A neutral logo identifies the application everywhere. Only the tray icon and
   the window's status show whether tracking is running.
 - **Separate profiles.** Production and Development have independent data and can run together.
-- **Releases.** A Rust implementation under the MIT License. English-only project content and
-  interface. Consistent version metadata, and a versioned ZIP holding the EXE, an English guide
+- **Interface languages.** Selectable, following the Windows language by default and falling back
+  to English. The owner has not chosen the set yet (T-0039), so the interface is English for now.
+- **Releases.** A Rust implementation under the MIT License. English-only project content.
+  Consistent version metadata, and a versioned ZIP holding the EXE, an English guide
   PDF and the required notices. Main builds also produce the development EXE.
 - **Public project.** A public GitHub repository named `attention-focus`, and free code signing
   through SignPath Foundation once the project qualifies (T-0037).

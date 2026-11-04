@@ -24,7 +24,7 @@ recommended, since the owner changed only the choice of views. See ADR-0032.
 - [x] A project keeps its color across periods and as other projects come and go.
 - [x] Hovering a mark shows its details; long or empty periods explain themselves.
 - [x] The selected view and the colors survive a restart.
-- [ ] Native check in the running application, see Handoff.
+- [x] Native check in the running application.
 
 ## Checks
 
@@ -46,11 +46,10 @@ daylight-saving days, By day labels overlapping at the default width, tiny share
 the split bar, a legend naming review time By day does not draw, and damaged durations overflowing
 or producing an unbounded grid.
 
-Unverified: the charts in the real window, including hover at real sizes and scrolling inside
-the long timeline. An interactive mock with invented data was published privately for the
-choice of views; it is not part of the repository.
+On 2026-11-04 all three views were checked in the real Development window with synthetic data, for
+7 and 30 days, including hover details, in both themes. See T-0038 for two layout defects this
+found. An interactive mock with invented data was published privately for the choice of views; it is
+not part of the repository.
 
-## Handoff
-
-Check in Development: open Focus history and reports, switch the three views and periods,
-hover over marks, and track across a report refresh to see the running interval.
+Unverified: the running interval and review outlines in the real window, and more than 31 days on
+the Timeline, which is when it gets its own scroll bar.

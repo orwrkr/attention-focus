@@ -126,8 +126,11 @@ disposable synthetic projects:
 10. Check report periods, custom dates, invalid timezone/date errors, daily/project/task
     totals, details, and separation of running/review time. Leave tracking across midnight
     and check the two sessions and the current-day period.
-11. Check the three chart views in both Windows themes, with one day, a week and a period over
-    92 days. Hover over marks, narrow the window, and track across a report refresh.
+11. Check the three chart views in both themes, with one day, a week and a period over 92 days.
+    Hover over marks, narrow the window, and track across a report refresh.
+12. Switch Theme through all three choices and check the title bar. With Same as Windows, change
+    the Windows app mode. Check scroll bars in the body, By day, Sessions, a long Timeline, and
+    the project and time zone lists: each lies beside its content and never covers it.
 
 Always use scripts/build.ps1 and the canonical dist/AttentionFocus/attention-focus.exe path.
 

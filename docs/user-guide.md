@@ -69,10 +69,11 @@ is unavailable.
   starts. It does not start tracking.
 - While tracking, choosing another project or task immediately saves the old interval
   and begins a new one at the same boundary. This is the default behavior.
-- Disable **Start a new interval when project or task changes** to correct the entire
-  current interval instead. All its elapsed time moves to the new project/task; its
-  original start stays unchanged. Saved earlier intervals are never changed. The option
-  is remembered separately for Production and Development.
+- Disable **Start a new interval when project or task changes** in **Settings** to correct
+  the entire current interval instead. All its elapsed time moves to the new project/task;
+  its original start stays unchanged. Saved earlier intervals are never changed. A line above
+  the pickers reminds you while this mode is on. The option is remembered separately for
+  Production and Development.
 - Choosing the already selected project keeps its task and does not create an interval.
 - **Stop tracking** saves elapsed time and leaves the saved activity selected.
 
@@ -133,10 +134,8 @@ New windows open centered; ordinary saved positions are restored. Inaccessible o
 top-left positions are recentered. A constrained maximized window is centered horizontally.
 Resize or maximize the window normally. Width stops at a readable limit; vertical
 resizing remains independent. A visible edge marks the constrained maximized window.
-The scrollbar appears only on overflow; reserved margins keep content width stable
-as sections open or close. Long reports scroll, and header
-actions remain accessible. Expanded/collapsed sections, scroll positions, project and
-timezone searches, report filters and unapplied note drafts are restored on restart.
+Scroll bars appear only on overflow, beside the content and never over it.
+Expanded/collapsed sections, scroll positions, project and timezone searches, report filters and unapplied note drafts are restored on restart.
 Today/Last 7/Last 30 presets roll forward; custom dates and minutes stay as entered.
 Preferences are saved per profile. Restoring the UI never restarts tracking.
 
@@ -156,10 +155,16 @@ power can lose the unsaved tail. Reading or thinking without input does not stop
 
 <!-- pagebreak -->
 
-# Startup and animation settings
+# Settings
 
 Click **Settings**, the first button in the fixed top toolbar. Application settings open above the
 counters and scroll into view. Click **Settings** again to close the panel.
+
+## Choose a theme
+
+**Theme** offers **Same as Windows**, **Light** and **Dark**. **Same as Windows** is the default
+and switches by itself when Windows changes between its light and dark app modes. The title bar
+follows the choice, which is remembered separately for Production and Development.
 
 ## Start with Windows
 

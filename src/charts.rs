@@ -321,98 +321,95 @@ fn outline_hovered(painter: &egui::Painter, rect: Rect, ink: Ink) {
 
 fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
     let rows = chart.days.len();
-    egui::ScrollArea::vertical()
-        .id_salt("chart-timeline")
-        .max_height(420.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            let size = vec2(ui.available_width(), Timeline::height(rows));
-            let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
-            let layout = Timeline::new(rect, rows);
-            let painter = ui.painter_at(rect);
-            for hour in (0..=24).step_by(6) {
-                let x = layout.x(hour as f32 * 60.0);
-                painter.vline(
-                    x,
-                    (layout.top - 4.0)..=rect.bottom(),
-                    Stroke::new(1.0, ink.grid),
-                );
-                let anchor = match hour {
-                    0 => Align2::LEFT_TOP,
-                    24 => Align2::RIGHT_TOP,
-                    _ => Align2::CENTER_TOP,
-                };
-                painter.text(
-                    egui::pos2(x, rect.top()),
-                    anchor,
-                    hour_label(hour),
-                    small(),
-                    ink.muted,
+    // Tall enough for a whole month without a second scroll bar.
+    crate::ui_support::inner_area("chart-timeline", 490.0).show(ui, |ui| {
+        let size = vec2(ui.available_width(), Timeline::height(rows));
+        let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+        let layout = Timeline::new(rect, rows);
+        let painter = ui.painter_at(rect);
+        for hour in (0..=24).step_by(6) {
+            let x = layout.x(hour as f32 * 60.0);
+            painter.vline(
+                x,
+                (layout.top - 4.0)..=rect.bottom(),
+                Stroke::new(1.0, ink.grid),
+            );
+            let anchor = match hour {
+                0 => Align2::LEFT_TOP,
+                24 => Align2::RIGHT_TOP,
+                _ => Align2::CENTER_TOP,
+            };
+            painter.text(
+                egui::pos2(x, rect.top()),
+                anchor,
+                hour_label(hour),
+                small(),
+                ink.muted,
+            );
+        }
+        let visible = ui.clip_rect();
+        for (row, day) in chart.days.iter().enumerate() {
+            let top = layout.row_top(row);
+            if top > visible.bottom() || top + layout.row < visible.top() {
+                continue;
+            }
+            let middle = top + layout.bar / 2.0;
+            let label = if rows > Timeline::COMPACT_ROWS {
+                &day.short_label
+            } else {
+                &day.long_label
+            };
+            painter.text(
+                egui::pos2(rect.left(), middle),
+                Align2::LEFT_CENTER,
+                label,
+                small(),
+                ink.muted,
+            );
+            painter.text(
+                egui::pos2(rect.right(), middle),
+                Align2::RIGHT_CENTER,
+                hours_minutes(day.total_ms()),
+                small(),
+                ink.text,
+            );
+        }
+        for segment in &chart.segments {
+            let mark = layout.mark(segment);
+            if mark.intersects(visible) {
+                let round = CornerRadius::same(if mark.width() >= 6.0 { 3 } else { 1 });
+                paint_mark(
+                    &painter,
+                    mark,
+                    styles.color(segment.project),
+                    segment.state,
+                    round,
                 );
             }
-            let visible = ui.clip_rect();
-            for (row, day) in chart.days.iter().enumerate() {
-                let top = layout.row_top(row);
-                if top > visible.bottom() || top + layout.row < visible.top() {
-                    continue;
+        }
+        if let Some(pointer) = response.hover_pos()
+            && let Some(segment) = layout.at(pointer, &chart.segments)
+        {
+            outline_hovered(&painter, layout.mark(segment), ink);
+            let day = &chart.days[segment.day];
+            response.on_hover_ui_at_pointer(|ui| {
+                ui.strong(hours_minutes(segment.elapsed_ms));
+                ui.label(styles.title(segment.project));
+                if let Some(task) = &segment.task {
+                    ui.label(task);
                 }
-                let middle = top + layout.bar / 2.0;
-                let label = if rows > Timeline::COMPACT_ROWS {
-                    &day.short_label
-                } else {
-                    &day.long_label
-                };
-                painter.text(
-                    egui::pos2(rect.left(), middle),
-                    Align2::LEFT_CENTER,
-                    label,
-                    small(),
-                    ink.muted,
-                );
-                painter.text(
-                    egui::pos2(rect.right(), middle),
-                    Align2::RIGHT_CENTER,
-                    hours_minutes(day.total_ms()),
-                    small(),
-                    ink.text,
-                );
-            }
-            for segment in &chart.segments {
-                let mark = layout.mark(segment);
-                if mark.intersects(visible) {
-                    let round = CornerRadius::same(if mark.width() >= 6.0 { 3 } else { 1 });
-                    paint_mark(
-                        &painter,
-                        mark,
-                        styles.color(segment.project),
-                        segment.state,
-                        round,
-                    );
+                ui.label(format!(
+                    "{}, {} to {}",
+                    day.long_label,
+                    clock(segment.start_minute),
+                    clock(segment.end_clock)
+                ));
+                if let Some(note) = state_note(segment.state) {
+                    ui.label(note);
                 }
-            }
-            if let Some(pointer) = response.hover_pos()
-                && let Some(segment) = layout.at(pointer, &chart.segments)
-            {
-                outline_hovered(&painter, layout.mark(segment), ink);
-                let day = &chart.days[segment.day];
-                response.on_hover_ui_at_pointer(|ui| {
-                    ui.strong(hours_minutes(segment.elapsed_ms));
-                    ui.label(styles.title(segment.project));
-                    if let Some(task) = &segment.task {
-                        ui.label(task);
-                    }
-                    ui.label(format!(
-                        "{}, {} to {}",
-                        day.long_label,
-                        clock(segment.start_minute),
-                        clock(segment.end_clock)
-                    ));
-                    if let Some(note) = state_note(segment.state) {
-                        ui.label(note);
-                    }
-                });
-            }
-        });
+            });
+        }
+    });
 }
 
 /// Pure geometry of the columns by day.
@@ -821,30 +818,45 @@ fn rhythm(ui: &mut egui::Ui, chart: &Chart, ink: Ink) {
     });
 }
 
+/// One legend entry as a single widget. Its swatch cannot wrap away from its name, and neither
+/// a gap nor a long name can widen the layout, which would push the chart past the margin.
+fn legend_item(
+    ui: &mut egui::Ui,
+    label: &str,
+    ink: Ink,
+    swatch: impl FnOnce(&egui::Painter, Rect),
+) {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let mut job = egui::text::LayoutJob::simple_singleline(label.to_owned(), font, ink.muted);
+    job.wrap = egui::text::TextWrapping::truncate_at_width((ui.max_rect().width() - 15.0).max(1.0));
+    let text = ui.painter().layout_job(job);
+    let size = vec2(15.0 + text.size().x, text.size().y.max(10.0));
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let mark = Rect::from_center_size(
+        egui::pos2(rect.left() + 5.0, rect.center().y),
+        vec2(10.0, 10.0),
+    );
+    swatch(ui.painter(), mark);
+    let at = egui::pos2(rect.left() + 15.0, rect.center().y - text.size().y / 2.0);
+    ui.painter().galley(at, text, ink.muted);
+}
+
 fn legend(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink, view: View) {
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 5.0;
+        ui.spacing_mut().item_spacing.x = 12.0;
         for (color, title) in &styles.legend {
-            let (swatch, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
-            ui.painter().rect_filled(swatch, 2, *color);
-            ui.small(title);
-            ui.add_space(7.0);
+            legend_item(ui, title, ink, |painter, mark| {
+                painter.rect_filled(mark, 2, *color);
+            });
         }
         let states = [(State::Running, "Running"), (State::Review, "Needs review")];
         for (state, label) in states {
             // By day leaves out review time, so it has no such mark to explain.
             let drawn = state != State::Review || view != View::Days;
             if drawn && chart.segments.iter().any(|segment| segment.state == state) {
-                let (swatch, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
-                paint_mark(
-                    ui.painter(),
-                    swatch,
-                    ink.muted,
-                    state,
-                    CornerRadius::same(2),
-                );
-                ui.small(label);
-                ui.add_space(7.0);
+                legend_item(ui, label, ink, |painter, mark| {
+                    paint_mark(painter, mark, ink.muted, state, CornerRadius::same(2));
+                });
             }
         }
     });
@@ -1476,6 +1488,62 @@ mod tests {
                 .iter()
                 .any(|t| t == "Needs review, not in totals: 30m")
         );
+    }
+
+    #[test]
+    fn the_legend_never_widens_the_chart_below_it() {
+        let names = [
+            "Website redesign",
+            "Client reports",
+            "Reading and research",
+            "Team planning",
+            "A project with a very long name that does not fit on one line of the legend at all, whatever the width of the window happens to be",
+        ];
+        let mut chart = sample_chart();
+        chart.series = names
+            .iter()
+            .enumerate()
+            .map(|(index, title)| ChartSeries {
+                project: Some(index as i64 + 1),
+                title: (*title).into(),
+                total_ms: 1000,
+            })
+            .collect();
+        chart.segments[0].state = State::Running;
+        chart.segments[1].state = State::Review;
+        let mut colors = ProjectColors::default();
+        colors.update(&catalog(&[
+            (1, false),
+            (2, false),
+            (3, false),
+            (4, false),
+            (5, false),
+        ]));
+        // The overflow only happened where an entry ended right at the margin.
+        let context = egui::Context::default();
+        for width in (300..=760).step_by(3) {
+            for mut view in [View::Timeline, View::Days] {
+                let mut output = context.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            Pos2::ZERO,
+                            vec2(width as f32, 700.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        let right = ui.max_rect().right();
+                        show(ui, &chart, &mut view, &colors);
+                        assert!(
+                            ui.max_rect().right() <= right + 0.01,
+                            "{width}: {right} became {}",
+                            ui.max_rect().right()
+                        );
+                    },
+                );
+                output.textures_delta.clear();
+            }
+        }
     }
 
     #[test]

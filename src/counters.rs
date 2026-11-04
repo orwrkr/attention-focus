@@ -207,7 +207,7 @@ mod tests {
                     ..Default::default()
                 },
                 |ui| {
-                    egui::Frame::central_panel(ui.style()).show(ui, |ui| {
+                    crate::ui_support::window_frame(ui.style()).show(ui, |ui| {
                         crate::ui_support::body(ui, |ui| {
                             let response = show(ui, &Snapshot::default(), true, false);
                             let left = response.bounds[0].left();

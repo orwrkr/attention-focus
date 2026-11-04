@@ -26,9 +26,9 @@ by the owner's decision.
   the same `includeIf` mechanism as the owner's other projects. Local verification shows `G`.
 - [x] **MetaPlan dependency.** Removed; see T-0035 and ADR-0031.
 - [x] **README.** Rewritten for new readers.
-- [ ] **README screenshot.** Needs a desktop capture of Development with synthetic data.
-- [x] **Continuous integration.** Added on a Windows runner, with the action pinned by commit.
-  It has never run, because nothing has been pushed.
+- [x] **README screenshot.** Two captures of Development with synthetic data, in `docs/images`.
+- [x] **Continuous integration.** Added on a Windows runner, with the action pinned by commit. The
+  first run on GitHub, on 2026-11-04, passed, including the tests with real windows and junctions.
 - [x] **Agent process files.** The owner chose to publish them. Trimming proposals are below.
 
 ## Should fix
@@ -59,14 +59,15 @@ by the owner's decision.
 
 These need the owner, in this order:
 
+The repository `orwrkr/attention-focus` exists and is private for now, by the owner's decision. A
+scan of all history for personal paths and addresses before the first push found nothing.
+
 1. Add the SSH signing key to the GitHub account as a signing key, if it is not there yet,
    so signed commits show as Verified. The local token cannot read this setting.
-2. Capture the README screenshot.
-3. Create the repository `orwrkr/attention-focus`, enable private vulnerability reporting, push,
-   and confirm CI passes. The tests create real windows and junctions, which has not been tried
-   on a hosted runner.
-4. Push a version tag, check the draft release from the release workflow and publish it.
-5. Continue with the code signing steps in T-0037.
+2. Make the repository public, and enable private vulnerability reporting, which `SECURITY.md`
+   relies on and which needs a public repository.
+3. Push a version tag, check the draft release from the release workflow and publish it.
+4. Continue with the code signing steps in T-0037.
 
 ## Trimming
 

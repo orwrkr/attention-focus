@@ -20,7 +20,7 @@ area, and bundled SQLite through rusqlite for history. Decisions and their reaso
 | `export` | CSV and Markdown output with protected destinations | Reads a separate snapshot |
 | `paths`, `profiles` | Storage identity, link checks, Production and Development | Fixed locations only |
 | `platform`, `lifecycle`, `startup` | Windows APIs: windows, instance lock, session events, sign-in startup | Windows code stays here |
-| `main`, `counters`, `project_ui`, `report_ui`, `note_memory`, `motion` | Window, tray and interface | Change state only through commands |
+| `main`, `counters`, `project_ui`, `report_ui`, `note_memory`, `motion`, `ui_support` | Window, tray, interface and shared style | Change state only through commands |
 
 Use a fake clock and temporary storage in tests. OS events become commands, so timing
 rules can be tested without a desktop.
