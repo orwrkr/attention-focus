@@ -1,5 +1,5 @@
 //! Report controls; database access remains on the tracking worker.
-use crate::{date_picker::Calendar, reports, tracking};
+use crate::{date_picker::Calendar, presentation::duration, reports, tracking};
 use eframe::egui;
 use std::{
     sync::mpsc::SyncSender,
@@ -69,15 +69,6 @@ impl Default for Panel {
             export_message: None,
         }
     }
-}
-fn duration(ms: u64) -> String {
-    let seconds = ms / 1000;
-    format!(
-        "{:02}:{:02}:{:02}",
-        seconds / 3600,
-        seconds / 60 % 60,
-        seconds % 60
-    )
 }
 fn period_hint(preset: Option<usize>, timezone: &str) -> String {
     match preset {
@@ -262,8 +253,12 @@ impl Panel {
                     .num_columns(2)
                     .show(ui, |ui| {
                         ui.label("From (included)");
-                        dates_changed |=
-                            self.from_calendar.show(ui, &mut self.request.from, "from");
+                        dates_changed |= self.from_calendar.show(
+                            ui,
+                            &mut self.request.from,
+                            "from",
+                            &self.request.timezone,
+                        );
                         ui.end_row();
                         ui.label("From time (HH:MM)");
                         dates_changed |= self.from_time_picker.show(
@@ -274,9 +269,12 @@ impl Panel {
                         );
                         ui.end_row();
                         ui.label("Until (excluded)");
-                        dates_changed |=
-                            self.through_calendar
-                                .show(ui, &mut self.request.through, "through");
+                        dates_changed |= self.through_calendar.show(
+                            ui,
+                            &mut self.request.through,
+                            "through",
+                            &self.request.timezone,
+                        );
                         ui.end_row();
                         ui.label("Until time (HH:MM)");
                         dates_changed |= self.through_time_picker.show(
@@ -549,7 +547,10 @@ impl Panel {
                                         "day_boundary" => "New day started",
                                         "exit" => "Application exit",
                                         "lock" => "Windows locked",
+                                        "logoff" => "Windows sign-out",
+                                        "shutdown" => "Windows shutdown",
                                         "suspend" => "Sleep",
+                                        "controller_lost" => "Application window closed",
                                         "crash" => "Interrupted before restart",
                                         "clock_or_heartbeat" => "Clock change or missed heartbeat",
                                         _ => "Tracking interrupted",

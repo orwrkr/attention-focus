@@ -9,6 +9,7 @@ pub mod icons;
 pub mod lifecycle;
 pub mod motion;
 pub mod note_memory;
+pub mod outbox;
 #[cfg(windows)]
 pub mod platform;
 pub mod profiles;

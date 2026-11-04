@@ -43,17 +43,109 @@ pub fn data_root() -> io::Result<PathBuf> {
 
 pub struct Instance(HANDLE);
 
+/// Named object within this Windows session, unique to the user and runtime profile.
+fn profile_object(kind: &str, directory: &Path) -> io::Result<Vec<u16>> {
+    // The resolved directory distinguishes both the Windows user and runtime profile.
+    let identity = crate::source::resolve(directory)?
+        .to_string_lossy()
+        .to_lowercase()
+        .replace(['\\', '/'], "_");
+    Ok(format!("Local\\AttentionFocus{kind}-{identity}")
+        .encode_utf16()
+        .chain(Some(0))
+        .collect())
+}
+
+/// Ask this profile's running instance to show its window. False if none is listening,
+/// which also covers an instance that is still starting up.
+pub fn request_show(directory: &Path) -> bool {
+    use windows_sys::Win32::{
+        System::Threading::{EVENT_MODIFY_STATE, OpenEventW, SetEvent},
+        UI::WindowsAndMessaging::{ASFW_ANY, AllowSetForegroundWindow},
+    };
+    let Ok(name) = profile_object("Show", directory) else {
+        return false;
+    };
+    unsafe {
+        let event = OpenEventW(EVENT_MODIFY_STATE, 0, name.as_ptr());
+        if event.is_null() {
+            return false;
+        }
+        // The user just launched this process, so it may pass on the right to come forward.
+        AllowSetForegroundWindow(ASFW_ANY);
+        let signaled = SetEvent(event) != 0;
+        CloseHandle(event);
+        signaled
+    }
+}
+
+/// Receives requests from later launches of the same profile until dropped.
+pub struct ShowRequests {
+    stop: HANDLE,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ShowRequests {
+    pub fn start(directory: &Path, notify: impl Fn() + Send + 'static) -> io::Result<Self> {
+        use windows_sys::Win32::{
+            Foundation::WAIT_OBJECT_0,
+            System::Threading::{CreateEventW, INFINITE, WaitForMultipleObjects},
+        };
+        let name = profile_object("Show", directory)?;
+        let (show, stop) = unsafe {
+            (
+                CreateEventW(std::ptr::null(), 0, 0, name.as_ptr()),
+                CreateEventW(std::ptr::null(), 0, 0, std::ptr::null()),
+            )
+        };
+        if show.is_null() || stop.is_null() {
+            let error = io::Error::last_os_error();
+            unsafe {
+                if !show.is_null() {
+                    CloseHandle(show);
+                }
+                if !stop.is_null() {
+                    CloseHandle(stop);
+                }
+            }
+            return Err(error);
+        }
+        // Kernel handles are safe to wait on from another thread; pass them as integers.
+        let handles = [show as usize, stop as usize];
+        let thread = std::thread::spawn(move || {
+            let waits = handles.map(|handle| handle as HANDLE);
+            while unsafe { WaitForMultipleObjects(2, waits.as_ptr(), 0, INFINITE) } == WAIT_OBJECT_0
+            {
+                notify();
+            }
+            unsafe {
+                CloseHandle(waits[0]);
+            }
+        });
+        Ok(Self {
+            stop,
+            thread: Some(thread),
+        })
+    }
+}
+
+impl Drop for ShowRequests {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::System::Threading::SetEvent(self.stop);
+        }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+        unsafe {
+            CloseHandle(self.stop);
+        }
+    }
+}
+
 impl Instance {
     pub fn acquire(directory: &Path, title: &str) -> io::Result<Self> {
-        // The resolved directory distinguishes both the Windows user and runtime profile.
-        let identity = crate::source::resolve(directory)?
-            .to_string_lossy()
-            .to_lowercase()
-            .replace(['\\', '/'], "_");
-        let name: Vec<u16> = format!("Local\\AttentionFocus-{identity}")
-            .encode_utf16()
-            .chain(Some(0))
-            .collect();
+        let name = profile_object("", directory)?;
         let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
         if handle.is_null() {
             return Err(io::Error::last_os_error());
@@ -488,6 +580,25 @@ unsafe fn monitor_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_second_launch_reaches_only_the_listening_instance_of_its_profile() {
+        let root = tempfile::tempdir().unwrap();
+        let (profile, other) = (root.path().join("Production"), root.path().join("Other"));
+        assert!(!request_show(&profile), "nothing is listening yet");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let requests = ShowRequests::start(&profile, move || {
+            let _ = sender.send(());
+        })
+        .unwrap();
+        assert!(!request_show(&other), "profiles stay independent");
+        assert!(request_show(&profile));
+        let timeout = std::time::Duration::from_secs(5);
+        receiver.recv_timeout(timeout).unwrap();
+        assert!(request_show(&profile));
+        receiver.recv_timeout(timeout).unwrap();
+        drop(requests);
+        assert!(!request_show(&profile), "stopping removes the named event");
+    }
     #[test]
     fn raising_orders_above_ordinary_windows_and_preserves_stay_on_top() {
         use windows_sys::Win32::{

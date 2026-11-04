@@ -547,6 +547,8 @@ pub struct Engine {
     observed: Moment,
     checkpoint_mono: u64,
     daily_cache: std::cell::RefCell<Option<DailyTotals>>,
+    /// Stored state reused between commands, so idle ticks do not repeat every query.
+    stored: std::cell::RefCell<Option<Snapshot>>,
     /// Calendar override for tests; otherwise the current system zone is read when needed.
     zone: Option<jiff::tz::TimeZone>,
 }
@@ -565,6 +567,7 @@ impl Engine {
             observed: now,
             checkpoint_mono: now.mono_ms,
             daily_cache: std::cell::RefCell::new(None),
+            stored: std::cell::RefCell::new(None),
             zone: None,
         }
     }
@@ -575,7 +578,13 @@ impl Engine {
         self.snapshot_in_zone(now, self.zone())
     }
     fn snapshot_in_zone(&self, now: Moment, zone: jiff::tz::TimeZone) -> Result<Snapshot> {
-        let mut snapshot = self.store.snapshot()?;
+        let mut snapshot = match self.stored.borrow().as_ref() {
+            Some(stored) => stored.clone(),
+            None => self.store.snapshot()?,
+        };
+        self.stored
+            .borrow_mut()
+            .get_or_insert_with(|| snapshot.clone());
         if let Some(start) = self.started {
             snapshot.elapsed_ms = now.mono_ms.saturating_sub(start.mono_ms);
         }
@@ -677,19 +686,29 @@ impl Engine {
             .is_some_and(|c| !matches!(c, Command::Report { .. }))
         {
             self.daily_cache.borrow_mut().take();
+            self.stored.borrow_mut().take();
         }
         // A queued lifecycle boundary can predate the last observation, moving both clocks
-        // back together. Only a wall clock falling behind monotonic time is a clock change.
+        // back together, so only divergence between them counts as a clock change.
         let mono_delta = i128::from(now.mono_ms) - i128::from(self.observed.mono_ms);
         let wall_delta = i128::from(now.wall_ms) - i128::from(self.observed.wall_ms);
         if self.started.is_some()
-            && (mono_delta > 30_000
-                || (wall_delta - mono_delta).abs() > 5_000
-                || (mono_delta >= 0 && wall_delta < 0))
+            && (mono_delta > 30_000 || (wall_delta - mono_delta).abs() > 5_000)
         {
             self.store.interrupt("clock_or_heartbeat")?;
             self.started = None;
+            self.stored.borrow_mut().take();
         }
+        // Windows can step a clock back slightly when it synchronizes. Hold the timeline at
+        // its latest point until the clock catches up, so saved intervals never overlap.
+        let now = if self.started.is_some() && mono_delta >= 0 && wall_delta < 0 {
+            Moment {
+                wall_ms: self.observed.wall_ms,
+                ..now
+            }
+        } else {
+            now
+        };
         if mono_delta >= 0 {
             self.observed = now;
         }
@@ -826,6 +845,7 @@ impl Engine {
             self.started = Some(start);
             self.checkpoint_mono = now.mono_ms;
             self.daily_cache.borrow_mut().take();
+            self.stored.borrow_mut().take();
         }
         Ok(())
     }
@@ -1720,23 +1740,6 @@ mod tests {
         let state = engine.snapshot(at(5_500)).unwrap();
         assert!(!state.running && !state.needs_review);
         assert_eq!(state.total_ms, 4_500);
-        // A real wall-clock rewind while monotonic time advances is still detected.
-        let dir = tempfile::tempdir().unwrap();
-        let mut engine = self::engine(dir.path());
-        engine
-            .apply(Some(Command::Start(activity("A"))), at(0))
-            .unwrap();
-        engine.apply(None, at(2_000)).unwrap();
-        engine
-            .apply(
-                None,
-                Moment {
-                    wall_ms: at(2_000).wall_ms - 1,
-                    mono_ms: 3_000,
-                },
-            )
-            .unwrap();
-        assert!(engine.snapshot(at(3_000)).unwrap().needs_review);
         // A boundary captured just before a queued start still stops that interval.
         let dir = tempfile::tempdir().unwrap();
         let mut engine = self::engine(dir.path());
@@ -1756,6 +1759,118 @@ mod tests {
         let state = engine.snapshot(at(1_100)).unwrap();
         assert!(!state.running && !state.needs_review);
         assert_eq!(state.total_ms, 0);
+    }
+
+    #[test]
+    fn small_backward_clock_corrections_keep_tracking_and_the_timeline_monotonic() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("A"))), at(0))
+            .unwrap();
+        engine.apply(None, at(10_000)).unwrap();
+        // Windows synchronizes and steps the wall clock back three seconds.
+        let corrected = |mono_ms: u64| Moment {
+            wall_ms: 1_000_000 + mono_ms as i64 - 3_000,
+            mono_ms,
+        };
+        engine.apply(None, corrected(11_000)).unwrap();
+        let state = engine.snapshot(corrected(11_000)).unwrap();
+        assert!(state.running && !state.needs_review);
+        assert_eq!(
+            state.elapsed_ms, 11_000,
+            "monotonic time stays authoritative"
+        );
+        // Saved times never move backward, so the next interval cannot overlap this one.
+        engine
+            .apply(Some(Command::Switch(activity("B"))), corrected(12_000))
+            .unwrap();
+        let stored = rows(&engine);
+        assert_eq!(stored[0].end, Some(at(10_000).wall_ms));
+        assert_eq!(stored[0].elapsed, 12_000);
+        assert_eq!(stored[1].start, at(10_000).wall_ms);
+        engine.apply(None, corrected(14_000)).unwrap();
+        engine
+            .apply(Some(Command::Stop), corrected(15_000))
+            .unwrap();
+        let stored = rows(&engine);
+        assert_eq!(stored[1].end, Some(corrected(15_000).wall_ms));
+        assert_eq!(stored[1].elapsed, 3_000);
+        let overlaps: i64 = engine.store.connection.query_row("SELECT COUNT(*) FROM focus_sessions a JOIN focus_sessions b ON a.id<b.id AND a.started_ms<b.ended_ms AND b.started_ms<a.ended_ms", [], |r| r.get(0)).unwrap();
+        assert_eq!(overlaps, 0);
+        // Beyond the five-second allowance, it is still a clock change that needs review.
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = self::engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("A"))), at(0))
+            .unwrap();
+        engine.apply(None, at(10_000)).unwrap();
+        let changed = Moment {
+            wall_ms: at(11_000).wall_ms - 6_000,
+            mono_ms: 11_000,
+        };
+        engine.apply(None, changed).unwrap();
+        assert!(engine.snapshot(changed).unwrap().needs_review);
+    }
+
+    #[test]
+    fn repeated_snapshots_reuse_stored_state_until_something_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        engine
+            .apply(Some(Command::Start(activity("A"))), at(0))
+            .unwrap();
+        assert_eq!(engine.snapshot(at(100)).unwrap().elapsed_ms, 100);
+        // A direct change is not noticed, which proves that the cached state is in use.
+        engine
+            .store
+            .connection
+            .execute("UPDATE focus_preferences SET split_on_change=0", [])
+            .unwrap();
+        let state = engine.snapshot(at(200)).unwrap();
+        assert_eq!(state.change_mode, ChangeMode::NewInterval);
+        assert_eq!(state.elapsed_ms, 200, "live time is still current");
+        engine
+            .apply(
+                Some(Command::Report {
+                    id: 1,
+                    request: whole_day("1970-01-01", "UTC"),
+                }),
+                at(300),
+            )
+            .unwrap();
+        assert_eq!(
+            engine.snapshot(at(300)).unwrap().change_mode,
+            ChangeMode::NewInterval,
+            "reports do not change stored state"
+        );
+        // Every command that can change stored state refreshes it.
+        engine.apply(Some(Command::Stop), at(400)).unwrap();
+        let state = engine.snapshot(at(400)).unwrap();
+        assert_eq!(state.change_mode, ChangeMode::EditCurrent);
+        assert_eq!(
+            (state.running, state.total_ms, state.completed),
+            (false, 400, 1)
+        );
+        // So does a split, which happens on a tick without any command.
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let start = midnight - 5_000;
+        let clock = Clock { anchor_ms: start };
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(Some(Command::Start(activity("A"))), clock.moment(start))
+            .unwrap();
+        engine.snapshot(clock.moment(start)).unwrap();
+        engine.apply(None, clock.moment(midnight + 1_000)).unwrap();
+        let state = engine.snapshot(clock.moment(midnight + 1_000)).unwrap();
+        assert_eq!((state.total_ms, state.completed), (5_000, 1));
+        assert_eq!(state.active_start_ms, Some(midnight));
+        // And an interruption after a long gap.
+        engine.snapshot(clock.moment(midnight + 1_000)).unwrap();
+        engine.apply(None, clock.moment(midnight + 60_000)).unwrap();
+        let state = engine.snapshot(clock.moment(midnight + 60_000)).unwrap();
+        assert!(state.needs_review && !state.running);
     }
 
     #[test]

@@ -35,9 +35,10 @@ struct Desktop {
     toggle_item: MenuItem,
     actions: Receiver<Action>,
     commands: SyncSender<tracking::Command>,
+    outbox: attention_focus::outbox::Outbox,
+    _show_requests: Option<platform::ShowRequests>,
     state: tracking::Snapshot,
     ready: bool,
-    pending: bool,
     error: Option<String>,
     exiting: bool,
     last_geometry: Option<egui::Rect>,
@@ -88,16 +89,6 @@ fn tray_icon_level(running: bool, profile: Profile, level: u8) -> Icon {
         32,
     )
     .expect("Generated icon dimensions are valid")
-}
-
-fn duration(ms: u64) -> String {
-    let seconds = ms / 1000;
-    format!(
-        "{:02}:{:02}:{:02}",
-        seconds / 3600,
-        seconds / 60 % 60,
-        seconds % 60
-    )
 }
 
 impl Desktop {
@@ -243,6 +234,14 @@ impl Desktop {
                 None
             }
         };
+        let show_sender = sender.clone();
+        let ctx = context.egui_ctx.clone();
+        // Without this, a second launch can still fall back to its error message.
+        let show_requests = platform::ShowRequests::start(&directory, move || {
+            let _ = show_sender.send(Action::Show);
+            ctx.request_repaint();
+        })
+        .ok();
         let mut desktop = Self {
             settings_open: false,
             startup: attention_focus::startup_ui::Panel::new(
@@ -261,10 +260,11 @@ impl Desktop {
             tray,
             toggle_item: toggle,
             actions,
+            outbox: attention_focus::outbox::Outbox::new(commands.clone()),
+            _show_requests: show_requests,
             commands,
             state: tracking::Snapshot::default(),
             ready: false,
-            pending: false,
             error: error.or(width_error),
             exiting: false,
             last_geometry: None,
@@ -333,15 +333,15 @@ impl Desktop {
     }
 
     fn command(&mut self, command: tracking::Command) {
-        if self.pending {
-            return;
+        match self.outbox.send(command) {
+            Ok(()) => self.error = None,
+            Err(error) => self.error = Some(error),
         }
-        match self.commands.try_send(command) {
-            Ok(()) => {
-                self.pending = true;
-                self.error = None;
-            }
-            Err(error) => self.error = Some(format!("Cannot send tracking command: {error}")),
+    }
+
+    fn command_finished(&mut self) {
+        if let Err(error) = self.outbox.finished() {
+            self.error = Some(error);
         }
     }
 
@@ -468,7 +468,7 @@ impl Desktop {
             self.command(tracking::Command::ChangeActivity(self.activity.clone()));
         }
         if self.activity != self.state.activity {
-            ui.label(if self.pending {
+            ui.label(if self.outbox.busy() {
                 "Saving selection..."
             } else {
                 "Changes have not been saved."
@@ -476,7 +476,7 @@ impl Desktop {
             if ui
                 .add_enabled(
                     self.ready
-                        && !self.pending
+                        && !self.outbox.busy()
                         && !self.state.needs_review
                         && self.available(&self.activity),
                     egui::Button::new(if self.state.running && split {
@@ -687,11 +687,11 @@ impl eframe::App for Desktop {
                     self.state = state;
                     self.ready = true;
                     if completed {
-                        self.pending = false;
+                        self.command_finished();
                     }
                 }
                 Action::Tracking(tracking::Event::Error(error)) => {
-                    self.pending = false;
+                    self.command_finished();
                     self.show_error(ctx, error);
                 }
                 Action::Tracking(tracking::Event::ExitReady) => {
@@ -736,7 +736,7 @@ impl eframe::App for Desktop {
         }
         self.toggle_item.set_enabled(
             self.ready
-                && !self.pending
+                && !self.outbox.busy()
                 && !self.state.needs_review
                 && (self.state.running
                     || (self.lifecycle.is_some() && self.available(&self.state.activity))),
@@ -815,7 +815,7 @@ impl eframe::App for Desktop {
                     Self::hide(&ctx);
                 }
                 if ui
-                    .add_enabled(!self.pending, egui::Button::new("Exit"))
+                    .add_enabled(!self.outbox.busy(), egui::Button::new("Exit"))
                     .clicked()
                 {
                     self.command(tracking::Command::Exit);
@@ -837,7 +837,7 @@ impl eframe::App for Desktop {
                         let mut split = self.state.split_on_day;
                         if ui
                             .add_enabled(
-                                self.ready && !self.pending,
+                                self.ready && !self.outbox.busy(),
                                 egui::Checkbox::new(&mut split, "Start a new interval at midnight"),
                             )
                             .changed()
@@ -873,12 +873,12 @@ impl eframe::App for Desktop {
                     ui.label(task);
                 }
                 ui.add_enabled_ui(
-                    self.ready && !self.pending && !self.state.needs_review,
+                    self.ready && !self.outbox.busy() && !self.state.needs_review,
                     |ui| self.activity_picker(ui),
                 );
                 ui.add_space(12.0);
                 let enabled = self.ready
-                    && !self.pending
+                    && !self.outbox.busy()
                     && !self.state.needs_review
                     && (self.state.running
                         || (self.lifecycle.is_some() && self.available(&self.activity)));
@@ -893,14 +893,14 @@ impl eframe::App for Desktop {
                 ui.separator();
                 ui.label(format!(
                     "All projects, all time (saved): {} in {} sessions",
-                    duration(self.state.total_ms),
+                    presentation::duration(self.state.total_ms),
                     self.state.completed
                 ));
                 if self.state.needs_review {
                     ui.label("An interrupted session was saved up to its last checkpoint.");
                     ui.label("Time after that checkpoint is excluded. Tracking has not resumed.");
                     if ui
-                        .add_enabled(!self.pending, egui::Button::new("Accept saved time"))
+                        .add_enabled(!self.outbox.busy(), egui::Button::new("Accept saved time"))
                         .clicked()
                     {
                         self.command(tracking::Command::AcceptRecovery);
@@ -1040,8 +1040,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let paths = Paths::new(&platform::data_root()?, profile)?;
     let _instance = match platform::Instance::acquire(&paths.directory, profile.title()) {
         Ok(instance) => instance,
-        Err(error) if launch.autostart && error.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Ok(());
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            // A repeated manual launch shows the running window; sign-in startup stays quiet.
+            if launch.autostart || platform::request_show(&paths.directory) {
+                return Ok(());
+            }
+            return Err(error.into());
         }
         Err(error) => return Err(error.into()),
     };

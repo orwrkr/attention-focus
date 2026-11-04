@@ -29,7 +29,7 @@ fn cells(month: Date) -> Vec<Option<Date>> {
         .collect()
 }
 impl Calendar {
-    pub fn show(&mut self, ui: &mut egui::Ui, text: &mut String, id: &str) -> bool {
+    pub fn show(&mut self, ui: &mut egui::Ui, text: &mut String, id: &str, timezone: &str) -> bool {
         if self.selected_text != *text {
             self.month = None;
             self.selected_text = text.clone();
@@ -47,10 +47,10 @@ impl Calendar {
                 ui.menu_button("Calendar", |ui| {
                     let selected = text.parse::<Date>().ok();
                     let month = self.month.get_or_insert_with(|| {
-                        first(
-                            selected
-                                .unwrap_or_else(|| Timestamp::now().to_zoned(TimeZone::UTC).date()),
-                        )
+                        first(selected.unwrap_or_else(|| {
+                            let zone = TimeZone::get(timezone).unwrap_or(TimeZone::UTC);
+                            Timestamp::now().to_zoned(zone).date()
+                        }))
                     });
                     ui.horizontal(|ui| {
                         if ui
