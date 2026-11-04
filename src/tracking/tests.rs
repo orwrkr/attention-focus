@@ -92,7 +92,7 @@ fn daily_totals_clip_midnight_combine_tasks_isolate_sources_and_exclude_review()
     assert_eq!(saved.daily_all_ms, Some(15_000));
     assert_eq!(saved.total_ms, 25_000);
     let mut other = first.clone();
-    other.project.as_mut().unwrap().source_id = 2;
+    other.project.as_mut().unwrap().id += 1;
     engine
         .apply(Some(Command::Select(other)), moment(26_000))
         .unwrap();
@@ -157,9 +157,10 @@ fn at(ms: u64) -> Moment {
 fn activity(title: &str) -> Activity {
     Activity {
         project: Some(Project {
-            source_id: 1,
-            source_path: "synthetic-source".into(),
-            slug: title.into(),
+            // Stable per title, so tests can compare activities without a project list.
+            id: title.bytes().fold(7_i64, |id, byte| {
+                (id * 31 + i64::from(byte)) % 1_000_000_007
+            }) + 1,
             title: title.into(),
             task: Some("Draft \u{1f331}".into()),
         }),
@@ -951,29 +952,72 @@ fn today_counters_match_reports_in_the_same_zone_across_midnight() {
     assert_eq!(alpha, Some(5_000));
 }
 
-fn schema_two_database(path: &Path) {
-    let mut engine = Engine::new(
-        Store::open(path).unwrap(),
-        Moment {
-            wall_ms: 1_000_000,
-            mono_ms: 0,
+/// One stored session: start, end, elapsed time, state and raw activity text.
+type LegacySession = (i64, Option<i64>, i64, &'static str, String);
+
+/// Activity text exactly as versions before schema four stored it.
+fn legacy_activity(source: i64, slug: &str, title: &str, task: Option<&str>) -> String {
+    serde_json::json!({
+        "project": {
+            "source_id": source,
+            "source_path": format!("synthetic-source-{source}"),
+            "slug": slug,
+            "title": title,
+            "task": task,
         },
-    );
-    engine.zone = Some(jiff::tz::TimeZone::UTC);
-    engine
-        .apply(Some(Command::Start(activity("Saved"))), at(0))
+        "note": "Example note",
+    })
+    .to_string()
+}
+fn unassigned_activity() -> String {
+    r#"{"project":null,"note":""}"#.to_owned()
+}
+/// A database exactly as an older version created it, not derived from today's schema.
+fn legacy_database(path: &Path, version: i64, sessions: &[LegacySession]) {
+    let connection = Connection::open(path).unwrap();
+    connection.execute_batch("CREATE TABLE focus_sessions (id INTEGER PRIMARY KEY, started_ms INTEGER NOT NULL, checkpoint_ms INTEGER NOT NULL, ended_ms INTEGER, elapsed_ms INTEGER NOT NULL DEFAULT 0 CHECK(elapsed_ms>=0), state TEXT NOT NULL CHECK(state IN ('running','stopped','interrupted')), activity TEXT NOT NULL, end_reason TEXT);
+        CREATE UNIQUE INDEX one_running ON focus_sessions((1)) WHERE state='running';
+        CREATE TABLE focus_selection(singleton INTEGER PRIMARY KEY CHECK(singleton=1), activity TEXT NOT NULL);
+        INSERT INTO focus_selection VALUES(1, '{\"project\":null,\"note\":\"\"}');").unwrap();
+    if version >= 2 {
+        connection.execute_batch("CREATE TABLE focus_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1), split_on_change INTEGER NOT NULL CHECK(split_on_change IN (0,1)));
+            INSERT INTO focus_preferences VALUES(1,1);
+            CREATE TABLE focus_recent(activity_key TEXT PRIMARY KEY, used_order INTEGER NOT NULL);
+            CREATE INDEX focus_recent_order ON focus_recent(used_order);").unwrap();
+    }
+    if version >= 3 {
+        connection.execute_batch("ALTER TABLE focus_preferences ADD COLUMN split_on_day INTEGER NOT NULL DEFAULT 1 CHECK(split_on_day IN (0,1));").unwrap();
+    }
+    for (start, end, elapsed, state, activity) in sessions {
+        connection.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,ended_ms,elapsed_ms,state,activity,end_reason) VALUES(?1,?2,?3,?4,?5,?6,'stop')", rusqlite::params![start, end.unwrap_or(start + elapsed), end, elapsed, state, activity]).unwrap();
+    }
+    connection
+        .execute_batch(&format!("PRAGMA user_version={version};"))
         .unwrap();
-    engine.apply(Some(Command::Stop), at(1_000)).unwrap();
-    drop(engine);
+}
+fn schema_two_database(path: &Path) {
+    legacy_database(
+        path,
+        2,
+        &[(
+            1_000_000,
+            Some(1_001_000),
+            1_000,
+            "stopped",
+            legacy_activity(1, "saved", "Saved", None),
+        )],
+    );
     Connection::open(path)
         .unwrap()
-        .execute_batch(
-            "DROP TABLE focus_preferences;
-            CREATE TABLE focus_preferences(singleton INTEGER PRIMARY KEY CHECK(singleton=1), split_on_change INTEGER NOT NULL CHECK(split_on_change IN (0,1)));
-            INSERT INTO focus_preferences VALUES(1,0);
-            PRAGMA user_version=2;",
-        )
+        .execute("UPDATE focus_preferences SET split_on_change=0", [])
         .unwrap();
+}
+fn backup_files(dir: &Path, prefix: &str) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with(prefix))
+        .collect()
 }
 
 #[test]
@@ -1001,21 +1045,13 @@ fn schema_two_upgrade_backs_up_and_enables_the_split_once() {
         SCHEMA_VERSION
     );
     drop(store);
-    let backups = || {
-        std::fs::read_dir(dir.path())
-            .unwrap()
-            .map(|e| e.unwrap().path())
-            .filter(|p| {
-                p.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .starts_with("focus-before-v3-")
-            })
-            .collect::<Vec<_>>()
-    };
     Store::open(&path).unwrap();
-    let found = backups();
+    let found = backup_files(dir.path(), "focus-before-v3-");
     assert_eq!(found.len(), 1, "reopening must not back up again");
+    assert!(
+        backup_files(dir.path(), "focus-before-v4-").is_empty(),
+        "the first backup already holds the original"
+    );
     let backup = Connection::open(&found[0]).unwrap();
     assert_eq!(
         backup
@@ -1221,7 +1257,7 @@ fn editing_current_interval_preserves_its_start_elapsed_and_finalized_history() 
 }
 
 #[test]
-fn recency_is_durable_source_scoped_and_drives_project_and_task_ordering() {
+fn recency_is_durable_per_project_and_drives_project_and_task_ordering() {
     let dir = tempfile::tempdir().unwrap();
     let mut engine = engine(dir.path());
     let mut first = activity("Alpha");
@@ -1267,12 +1303,9 @@ fn recency_is_durable_source_scoped_and_drives_project_and_task_ordering() {
     state.sort_tasks(&mut tasks);
     assert_eq!(tasks[0], second);
     assert_eq!(tasks[1], first);
-    let mut other_source = first.clone();
-    other_source.project.as_mut().unwrap().source_id = 2;
-    assert_eq!(state.project_rank(&other_source), 0);
-    other_source.project.as_mut().unwrap().source_id = 1;
-    other_source.project.as_mut().unwrap().source_path = "another-source".into();
-    assert_eq!(state.project_rank(&other_source), 0);
+    let mut other_project = first.clone();
+    other_project.project.as_mut().unwrap().id += 1;
+    assert_eq!(state.project_rank(&other_project), 0);
     let mut renamed = first.clone();
     renamed.project.as_mut().unwrap().title = "New display title".into();
     renamed.note = "Different note".into();
@@ -1349,27 +1382,43 @@ fn failed_activity_updates_keep_history_selection_recency_and_timer_unchanged() 
 fn schema_one_upgrade_backs_up_rows_and_seeds_recent_use_once() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("focus.sqlite3");
-    let mut engine = engine(dir.path());
-    engine
-        .apply(Some(Command::Start(activity("Older"))), at(0))
-        .unwrap();
-    engine
-        .apply(Some(Command::Switch(activity("Newest"))), at(100))
-        .unwrap();
-    engine.apply(Some(Command::Stop), at(200)).unwrap();
-    engine
-        .store
-        .connection
-        .execute_batch(
-            "DROP TABLE focus_preferences; DROP TABLE focus_recent; PRAGMA user_version=1;",
-        )
-        .unwrap();
-    drop(engine);
+    legacy_database(
+        &path,
+        1,
+        &[
+            (
+                1_000_000,
+                Some(1_000_100),
+                100,
+                "stopped",
+                legacy_activity(1, "older", "Older", None),
+            ),
+            (
+                1_000_100,
+                Some(1_000_200),
+                100,
+                "stopped",
+                legacy_activity(1, "newest", "Newest", None),
+            ),
+        ],
+    );
     let store = Store::open(&path).unwrap();
     let state = store.snapshot().unwrap();
     assert_eq!((state.total_ms, state.completed), (200, 2));
     assert_eq!(state.change_mode, ChangeMode::NewInterval);
-    assert!(state.project_rank(&activity("Newest")) > state.project_rank(&activity("Older")));
+    let pick = |title: &str| Activity {
+        project: state
+            .projects
+            .iter()
+            .find(|p| p.title == title)
+            .map(|p| Project {
+                id: p.id,
+                title: p.title.clone(),
+                task: None,
+            }),
+        note: String::new(),
+    };
+    assert!(state.project_rank(&pick("Newest")) > state.project_rank(&pick("Older")));
     let backups: Vec<_> = std::fs::read_dir(dir.path())
         .unwrap()
         .map(|e| e.unwrap().path())
@@ -1443,13 +1492,17 @@ fn activity_change_after_interruption_cannot_resume_or_reassign_checkpoint() {
 fn failed_recency_backfill_keeps_schema_one_and_original_history() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("focus.sqlite3");
-    let mut engine = engine(dir.path());
-    engine
-        .apply(Some(Command::Start(activity("Original"))), at(0))
-        .unwrap();
-    engine.apply(Some(Command::Stop), at(100)).unwrap();
-    engine.store.connection.execute_batch("DROP TABLE focus_preferences; DROP TABLE focus_recent; UPDATE focus_sessions SET activity='invalid synthetic JSON'; PRAGMA user_version=1;").unwrap();
-    drop(engine);
+    legacy_database(
+        &path,
+        1,
+        &[(
+            1_000_000,
+            Some(1_000_100),
+            100,
+            "stopped",
+            "invalid synthetic JSON".to_owned(),
+        )],
+    );
     assert!(Store::open(&path).is_err());
     let original = Connection::open(&path).unwrap();
     assert_eq!(
@@ -1875,4 +1928,779 @@ fn invalid_report_does_not_block_stop_or_acknowledge_a_tracking_command() {
         receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
         Event::ExitReady
     ));
+}
+
+fn stored_text(connection: &Connection, sql: &str) -> Vec<String> {
+    connection
+        .prepare(sql)
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect()
+}
+
+#[test]
+fn fresh_history_starts_at_the_current_schema_without_backups_or_projects() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+    assert_eq!(
+        store
+            .connection
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        SCHEMA_VERSION
+    );
+    let state = store.snapshot().unwrap();
+    assert!(state.projects.is_empty() && state.legacy_projects.is_empty());
+    assert!(state.available(&Activity::default()));
+    assert!(backup_files(dir.path(), "focus-before-").is_empty());
+}
+
+#[test]
+fn schema_three_upgrade_turns_recorded_activities_into_projects_and_keeps_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("focus.sqlite3");
+    let original_row = legacy_activity(1, "alpha", "Old alpha", None);
+    legacy_database(
+        &path,
+        3,
+        &[
+            (
+                1_000_000,
+                Some(1_001_000),
+                1_000,
+                "stopped",
+                original_row.clone(),
+            ),
+            (
+                1_001_000,
+                Some(1_002_000),
+                1_000,
+                "stopped",
+                legacy_activity(1, "alpha", "Alpha \u{1f331}", Some("Task one")),
+            ),
+            // The same folder name in another source was a separate project.
+            (
+                1_002_000,
+                Some(1_003_000),
+                1_000,
+                "stopped",
+                legacy_activity(2, "alpha", "Other source", None),
+            ),
+            (
+                1_003_000,
+                Some(1_004_000),
+                1_000,
+                "stopped",
+                unassigned_activity(),
+            ),
+            (
+                1_004_000,
+                Some(1_004_500),
+                500,
+                "interrupted",
+                legacy_activity(1, "alpha", "Alpha \u{1f331}", None),
+            ),
+            (
+                1_005_000,
+                None,
+                200,
+                "running",
+                legacy_activity(1, "alpha", "Alpha \u{1f331}", None),
+            ),
+        ],
+    );
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "UPDATE focus_selection SET activity=?1",
+            [legacy_activity(
+                1,
+                "chosen",
+                "Chosen only",
+                Some("Later task"),
+            )],
+        )
+        .unwrap();
+    connection
+        .execute("UPDATE focus_preferences SET split_on_day=0", [])
+        .unwrap();
+    for (key, order) in [
+        (
+            r#"{"project":[1,"synthetic-source-1","alpha"],"task":null}"#,
+            1,
+        ),
+        (
+            r#"{"project":[1,"synthetic-source-1","alpha"],"task":"Task one"}"#,
+            2,
+        ),
+        (
+            r#"{"project":[2,"synthetic-source-2","alpha"],"task":null}"#,
+            3,
+        ),
+        (r#"{"project":null,"task":null}"#, 4),
+        (
+            r#"{"project":[1,"synthetic-source-1","gone"],"task":null}"#,
+            5,
+        ),
+    ] {
+        connection
+            .execute(
+                "INSERT INTO focus_recent VALUES(?1,?2)",
+                rusqlite::params![key, order],
+            )
+            .unwrap();
+    }
+    drop(connection);
+
+    let store = Store::open(&path).unwrap();
+    assert_eq!(
+        store
+            .connection
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        4
+    );
+    let state = store.snapshot().unwrap();
+    let project = |title: &str| {
+        state
+            .projects
+            .iter()
+            .find(|p| p.title == title)
+            .unwrap_or_else(|| panic!("Missing project {title}"))
+    };
+    assert_eq!(
+        state.projects.len(),
+        3,
+        "the newest title names each project"
+    );
+    let alpha = project("Alpha \u{1f331}");
+    let other = project("Other source");
+    let chosen = project("Chosen only");
+    assert!(alpha.used && other.used && !chosen.used);
+    assert!(state.projects.iter().all(|p| !p.archived));
+    assert_eq!(alpha.tasks.len(), 1);
+    assert_eq!(
+        (
+            alpha.tasks[0].title.as_str(),
+            alpha.tasks[0].done,
+            alpha.tasks[0].used
+        ),
+        ("Task one", false, true)
+    );
+    assert_eq!(
+        (chosen.tasks[0].title.as_str(), chosen.tasks[0].used),
+        ("Later task", false)
+    );
+    // Saved totals and preferences are unchanged, and recovery still applies.
+    assert_eq!((state.total_ms, state.completed), (4_000, 4));
+    assert!(state.needs_review && !state.running);
+    assert!(!state.split_on_day);
+    // The selection points at its project and keeps its task and note.
+    let selected = state.activity.project.as_ref().unwrap();
+    assert_eq!(selected.id, chosen.id);
+    assert_eq!(selected.task.as_deref(), Some("Later task"));
+    assert_eq!(state.activity.note, "Example note");
+    assert!(state.available(&state.activity));
+    // Finished sessions keep the title they recorded, under the shared project ID.
+    let sessions = stored_text(
+        &store.connection,
+        "SELECT activity FROM focus_sessions ORDER BY id",
+    );
+    let session = |index: usize| serde_json::from_str::<Activity>(&sessions[index]).unwrap();
+    assert_eq!(session(0).project.as_ref().unwrap().title, "Old alpha");
+    assert_eq!(session(0).project.as_ref().unwrap().id, alpha.id);
+    assert_eq!(session(1).project.as_ref().unwrap().id, alpha.id);
+    assert_eq!(session(2).project.as_ref().unwrap().id, other.id);
+    assert_eq!(session(3), Activity::default());
+    // Recent-use order carries over; a name with no session cannot become a project.
+    assert_eq!(state.recent.len(), 4);
+    let by_id = |id: i64| Activity {
+        project: Some(Project {
+            id,
+            title: "Any".into(),
+            task: None,
+        }),
+        note: String::new(),
+    };
+    assert!(state.project_rank(&Activity::default()) > state.project_rank(&by_id(other.id)));
+    assert!(state.project_rank(&by_id(other.id)) > state.project_rank(&by_id(alpha.id)));
+    assert_eq!(state.project_rank(&by_id(chosen.id)), 0);
+    // Nothing from the former source stays in history, except the conversion aliases.
+    for sql in [
+        "SELECT activity FROM focus_sessions",
+        "SELECT activity FROM focus_selection",
+        "SELECT activity_key FROM focus_recent",
+    ] {
+        assert!(
+            stored_text(&store.connection, sql)
+                .iter()
+                .all(|text| !text.contains("synthetic-source") && !text.contains("slug")),
+            "{sql}"
+        );
+    }
+    let identity = |source: i64, slug: &str| {
+        (
+            source,
+            format!("synthetic-source-{source}"),
+            slug.to_owned(),
+        )
+    };
+    assert_eq!(state.legacy_projects.len(), 3);
+    assert!(
+        state
+            .legacy_projects
+            .contains(&(identity(1, "alpha"), alpha.id))
+    );
+    assert!(
+        state
+            .legacy_projects
+            .contains(&(identity(2, "alpha"), other.id))
+    );
+    assert!(
+        state
+            .legacy_projects
+            .contains(&(identity(1, "chosen"), chosen.id))
+    );
+    // Reports total the same time per project, under current names.
+    let request = whole_day("1970-01-01", "UTC");
+    let now = Moment {
+        wall_ms: 2_000_000,
+        mono_ms: 0,
+    };
+    let report = store.report(&request, now, 0).unwrap();
+    assert_eq!((report.saved_ms, report.review_ms), (4_000, 700));
+    let totals: Vec<(&str, u64)> = report
+        .projects
+        .iter()
+        .map(|g| (g.project.as_str(), g.saved_ms))
+        .collect();
+    assert_eq!(
+        totals,
+        [
+            ("Alpha \u{1f331}", 2_000),
+            ("Other source", 1_000),
+            ("Unassigned focus", 1_000)
+        ]
+    );
+    drop(store);
+    assert_eq!(
+        export_snapshot(&path, &request).unwrap().saved_ms,
+        4_000,
+        "exports read the upgraded history"
+    );
+    // The backup is the unchanged schema-three database, made once.
+    Store::open(&path).unwrap();
+    let backups = backup_files(dir.path(), "focus-before-v4-");
+    assert_eq!(backups.len(), 1, "reopening must not back up again");
+    let backup = Connection::open(&backups[0]).unwrap();
+    assert_eq!(
+        backup
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        3
+    );
+    assert_eq!(
+        stored_text(
+            &backup,
+            "SELECT activity FROM focus_sessions ORDER BY id LIMIT 1"
+        ),
+        [original_row]
+    );
+    assert!(backup.prepare("SELECT id FROM focus_projects").is_err());
+}
+
+#[test]
+fn upgraded_projects_keep_working_for_tracking_and_merge_in_reports() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("focus.sqlite3");
+    legacy_database(
+        &path,
+        3,
+        &[(
+            1_000_000,
+            Some(1_001_000),
+            1_000,
+            "stopped",
+            legacy_activity(1, "alpha", "Alpha", None),
+        )],
+    );
+    let moment = |mono_ms: u64| Moment {
+        wall_ms: 1_002_000 + mono_ms as i64,
+        mono_ms,
+    };
+    let mut engine = Engine::new(Store::open(&path).unwrap(), moment(0));
+    engine.zone = Some(jiff::tz::TimeZone::UTC);
+    let state = engine.snapshot(moment(0)).unwrap();
+    let activity = Activity {
+        project: Some(Project {
+            id: state.projects[0].id,
+            title: "Alpha".into(),
+            task: None,
+        }),
+        note: String::new(),
+    };
+    assert!(state.available(&activity));
+    engine
+        .apply(Some(Command::Start(activity)), moment(0))
+        .unwrap();
+    engine.apply(Some(Command::Stop), moment(500)).unwrap();
+    let report = engine
+        .store
+        .report(&whole_day("1970-01-01", "UTC"), moment(500), 0)
+        .unwrap();
+    assert_eq!(
+        report.projects.len(),
+        1,
+        "old and new sessions are one project"
+    );
+    assert_eq!(report.projects[0].saved_ms, 1_500);
+}
+
+#[test]
+fn failed_schema_four_upgrade_leaves_schema_three_history_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("focus.sqlite3");
+    let first = legacy_activity(1, "alpha", "Alpha", Some("Task"));
+    legacy_database(
+        &path,
+        3,
+        &[
+            (1_000_000, Some(1_001_000), 1_000, "stopped", first.clone()),
+            (
+                1_001_000,
+                Some(1_002_000),
+                1_000,
+                "stopped",
+                "invalid synthetic JSON".to_owned(),
+            ),
+        ],
+    );
+    assert!(Store::open(&path).is_err());
+    let original = Connection::open(&path).unwrap();
+    assert_eq!(
+        original
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        3
+    );
+    assert_eq!(
+        stored_text(&original, "SELECT activity FROM focus_sessions ORDER BY id"),
+        [first, "invalid synthetic JSON".to_owned()],
+        "the valid row converted before the failure is rolled back"
+    );
+    assert!(
+        stored_text(
+            &original,
+            "SELECT name FROM sqlite_master WHERE name LIKE 'focus_project%' OR name='focus_tasks' OR name='focus_sessions_ended'"
+        )
+        .is_empty()
+    );
+    assert_eq!(backup_files(dir.path(), "focus-before-v4-").len(), 1);
+}
+
+fn add(engine: &mut Engine, titles: &[&str]) -> Result<bool> {
+    engine.apply(
+        Some(Command::AddProjects(
+            titles.iter().map(|title| (*title).to_owned()).collect(),
+        )),
+        at(0),
+    )
+}
+fn project_id(engine: &Engine, title: &str) -> i64 {
+    engine
+        .snapshot(at(0))
+        .unwrap()
+        .projects
+        .iter()
+        .find(|p| p.title == title)
+        .unwrap_or_else(|| panic!("Missing project {title}"))
+        .id
+}
+fn chosen(engine: &Engine, title: &str, task: Option<&str>) -> Activity {
+    Activity {
+        project: Some(Project {
+            id: project_id(engine, title),
+            title: title.into(),
+            task: task.map(Into::into),
+        }),
+        note: "Example note".into(),
+    }
+}
+
+#[test]
+fn projects_are_listed_sorted_keep_any_language_and_survive_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let unicode = "\u{41f}\u{440}\u{43e}\u{435}\u{43a}\u{442} \u{1f331}";
+    add(&mut engine, &["  beta  ", "Alpha", unicode]).unwrap();
+    let titles = |state: &Snapshot| {
+        state
+            .projects
+            .iter()
+            .map(|p| p.title.clone())
+            .collect::<Vec<_>>()
+    };
+    let state = engine.snapshot(at(0)).unwrap();
+    assert_eq!(titles(&state), ["Alpha", "beta", unicode]);
+    assert!(state.projects.iter().all(|p| !p.archived && !p.used));
+    drop(engine);
+    let restored = Store::open(&dir.path().join("focus.sqlite3"))
+        .unwrap()
+        .snapshot()
+        .unwrap();
+    assert_eq!(titles(&restored), titles(&state));
+}
+
+#[test]
+fn adding_skips_existing_names_rejects_bad_ones_and_applies_all_or_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    add(&mut engine, &["Alpha"]).unwrap();
+    // A pasted list can repeat existing names, including with different case.
+    add(&mut engine, &["ALPHA", "Beta", "beta"]).unwrap();
+    assert_eq!(engine.snapshot(at(0)).unwrap().projects.len(), 2);
+    // Adding only known names is an error, so it does not silently do nothing.
+    assert!(add(&mut engine, &["alpha"]).is_err());
+    assert!(add(&mut engine, &["   "]).is_err());
+    let long = "x".repeat(201);
+    assert!(add(&mut engine, &["Gamma", &long]).is_err());
+    assert_eq!(
+        engine.snapshot(at(0)).unwrap().projects.len(),
+        2,
+        "one bad name rejects the whole list"
+    );
+    add(&mut engine, &[&"x".repeat(200)]).unwrap();
+    // Control characters cannot break one-line displays; other text is preserved.
+    add(&mut engine, &["Tab\there"]).unwrap();
+    assert!(project_id(&engine, "Tab here") > 0);
+}
+
+#[test]
+fn renaming_moves_the_selection_and_running_interval_but_not_finished_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    add(&mut engine, &["Old name", "Other"]).unwrap();
+    let id = project_id(&engine, "Old name");
+    engine
+        .apply(
+            Some(Command::Start(chosen(&engine, "Old name", None))),
+            at(0),
+        )
+        .unwrap();
+    // A note change makes this a real switch within the same project.
+    let mut noted = chosen(&engine, "Old name", None);
+    noted.note = "Second".into();
+    engine.apply(Some(Command::Switch(noted)), at(100)).unwrap();
+    engine
+        .apply(
+            Some(Command::RenameProject {
+                id,
+                title: "  New name ".into(),
+            }),
+            at(150),
+        )
+        .unwrap();
+    let state = engine.snapshot(at(200)).unwrap();
+    assert_eq!(state.activity.label(), "New name");
+    assert_eq!(state.project(id).unwrap().title, "New name");
+    assert!(state.running);
+    assert_eq!(state.elapsed_ms, 100, "the timer is not disturbed");
+    assert_eq!(engine.started.unwrap().mono_ms, 100);
+    // The stored running row follows, so a crash now would keep the new name.
+    let running: String = engine
+        .store
+        .connection
+        .query_row(
+            "SELECT activity FROM focus_sessions WHERE state='running'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Activity>(&running).unwrap().label(),
+        "New name"
+    );
+    engine.apply(Some(Command::Stop), at(300)).unwrap();
+    let report = engine
+        .store
+        .report(&whole_day("1970-01-01", "UTC"), at(300), 0)
+        .unwrap();
+    // Totals use the current name; the earlier session row keeps what it recorded.
+    assert_eq!(report.projects.len(), 1);
+    assert_eq!(report.projects[0].project, "New name");
+    assert_eq!(report.groups[0].project, "New name");
+    let labels: Vec<&str> = report
+        .history
+        .iter()
+        .map(|h| h.record.activity.label())
+        .collect();
+    assert!(labels.contains(&"Old name") && labels.contains(&"New name"));
+    // Names stay unambiguous, and a rename can change only the case of its own name.
+    for title in ["other", "   "] {
+        assert!(
+            engine
+                .apply(
+                    Some(Command::RenameProject {
+                        id,
+                        title: title.into(),
+                    }),
+                    at(300),
+                )
+                .is_err()
+        );
+    }
+    engine
+        .apply(
+            Some(Command::RenameProject {
+                id,
+                title: "NEW NAME".into(),
+            }),
+            at(300),
+        )
+        .unwrap();
+    assert!(
+        engine
+            .apply(
+                Some(Command::RenameProject {
+                    id: 9_999,
+                    title: "Missing".into(),
+                }),
+                at(300),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        engine.snapshot(at(300)).unwrap().project(id).unwrap().title,
+        "NEW NAME"
+    );
+}
+
+#[test]
+fn archiving_blocks_new_starts_but_keeps_running_time_and_reports() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    add(&mut engine, &["Alpha"]).unwrap();
+    let id = project_id(&engine, "Alpha");
+    let activity = chosen(&engine, "Alpha", None);
+    assert!(engine.snapshot(at(0)).unwrap().available(&activity));
+    engine
+        .apply(Some(Command::Start(activity.clone())), at(0))
+        .unwrap();
+    engine
+        .apply(
+            Some(Command::SetProjectArchived { id, archived: true }),
+            at(50),
+        )
+        .unwrap();
+    let state = engine.snapshot(at(60)).unwrap();
+    assert!(
+        state.running,
+        "archiving does not stop the running interval"
+    );
+    assert!(!state.available(&activity));
+    assert!(state.project(id).unwrap().archived);
+    engine.apply(Some(Command::Stop), at(100)).unwrap();
+    let report = engine
+        .store
+        .report(&whole_day("1970-01-01", "UTC"), at(100), 0)
+        .unwrap();
+    assert_eq!(report.projects[0].project, "Alpha");
+    assert_eq!(report.projects[0].saved_ms, 100);
+    // The name stays reserved until restored, so restoring cannot create a duplicate.
+    assert!(add(&mut engine, &["alpha"]).is_err());
+    engine
+        .apply(
+            Some(Command::SetProjectArchived {
+                id,
+                archived: false,
+            }),
+            at(100),
+        )
+        .unwrap();
+    assert!(engine.snapshot(at(100)).unwrap().available(&activity));
+    assert!(
+        engine
+            .apply(
+                Some(Command::SetProjectArchived {
+                    id: 9_999,
+                    archived: true,
+                }),
+                at(100),
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn only_never_tracked_projects_and_tasks_can_be_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    add(&mut engine, &["Tracked", "Unused", "Selected"]).unwrap();
+    let tracked = project_id(&engine, "Tracked");
+    let unused = project_id(&engine, "Unused");
+    let selected = project_id(&engine, "Selected");
+    for project in [tracked, unused] {
+        engine
+            .apply(
+                Some(Command::AddTasks {
+                    project,
+                    titles: vec!["Used task".into(), "Spare task".into()],
+                }),
+                at(0),
+            )
+            .unwrap();
+    }
+    engine
+        .apply(
+            Some(Command::Start(chosen(
+                &engine,
+                "Tracked",
+                Some("Used task"),
+            ))),
+            at(0),
+        )
+        .unwrap();
+    engine.apply(Some(Command::Stop), at(100)).unwrap();
+    let state = engine.snapshot(at(100)).unwrap();
+    let entry = state.project(tracked).unwrap();
+    let task = |title: &str| entry.tasks.iter().find(|t| t.title == title).unwrap();
+    assert!(entry.used && task("Used task").used && !task("Spare task").used);
+    let delete =
+        |engine: &mut Engine, id: i64| engine.apply(Some(Command::DeleteProject(id)), at(100));
+    assert!(delete(&mut engine, tracked).is_err(), "recorded time stays");
+    let delete_task = |engine: &mut Engine, project: i64, title: &str| {
+        engine.apply(
+            Some(Command::DeleteTask {
+                project,
+                title: title.into(),
+            }),
+            at(100),
+        )
+    };
+    assert!(delete_task(&mut engine, tracked, "Used task").is_err());
+    delete_task(&mut engine, tracked, "Spare task").unwrap();
+    assert!(delete_task(&mut engine, tracked, "Missing").is_err());
+    // The saved next activity must stay valid, so it blocks deletion too.
+    engine
+        .apply(
+            Some(Command::ChangeActivity(chosen(&engine, "Selected", None))),
+            at(100),
+        )
+        .unwrap();
+    assert!(delete(&mut engine, selected).is_err());
+    delete(&mut engine, unused).unwrap();
+    let state = engine.snapshot(at(100)).unwrap();
+    assert!(state.project(unused).is_none());
+    assert_eq!(state.project(tracked).unwrap().tasks.len(), 1);
+    let orphans: i64 = engine
+        .store
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM focus_tasks WHERE project_id=?1",
+            [unused],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(orphans, 0, "tasks are removed with their project");
+    assert!(delete(&mut engine, unused).is_err());
+}
+
+#[test]
+fn tasks_can_be_finished_reopened_and_added_without_duplicates() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    add(&mut engine, &["Alpha"]).unwrap();
+    let project = project_id(&engine, "Alpha");
+    let add_tasks = |engine: &mut Engine, titles: &[&str]| {
+        engine.apply(
+            Some(Command::AddTasks {
+                project,
+                titles: titles.iter().map(|t| (*t).to_owned()).collect(),
+            }),
+            at(0),
+        )
+    };
+    add_tasks(&mut engine, &["First \u{1f331}", "Second"]).unwrap();
+    assert!(add_tasks(&mut engine, &["first \u{1f331}"]).is_err());
+    let task = chosen(&engine, "Alpha", Some("Second"));
+    assert!(engine.snapshot(at(0)).unwrap().available(&task));
+    assert!(
+        !engine
+            .snapshot(at(0))
+            .unwrap()
+            .available(&chosen(&engine, "Alpha", Some("Unknown"))),
+        "a task must be listed to start"
+    );
+    let set_done = |engine: &mut Engine, title: &str, done: bool| {
+        engine.apply(
+            Some(Command::SetTaskDone {
+                project,
+                title: title.into(),
+                done,
+            }),
+            at(0),
+        )
+    };
+    set_done(&mut engine, "Second", true).unwrap();
+    assert!(!engine.snapshot(at(0)).unwrap().available(&task));
+    assert!(set_done(&mut engine, "Missing", true).is_err());
+    // Adding a finished task's name again reopens it instead of duplicating it.
+    add_tasks(&mut engine, &["SECOND"]).unwrap();
+    let state = engine.snapshot(at(0)).unwrap();
+    assert!(state.available(&task));
+    assert_eq!(state.project(project).unwrap().tasks.len(), 2);
+    assert!(
+        engine
+            .apply(
+                Some(Command::AddTasks {
+                    project: 9_999,
+                    titles: vec!["Lost".into()],
+                }),
+                at(0),
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn list_changes_leave_the_timer_history_and_recent_use_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    add(&mut engine, &["Alpha"]).unwrap();
+    engine
+        .apply(Some(Command::Start(chosen(&engine, "Alpha", None))), at(0))
+        .unwrap();
+    let before = engine.snapshot(at(100)).unwrap();
+    engine
+        .apply(Some(Command::AddProjects(vec!["Beta".into()])), at(100))
+        .unwrap();
+    let id = project_id(&engine, "Beta");
+    for (ms, command) in [
+        (
+            100,
+            Command::AddTasks {
+                project: id,
+                titles: vec!["Task".into()],
+            },
+        ),
+        (
+            200,
+            Command::RenameProject {
+                id,
+                title: "Gamma".into(),
+            },
+        ),
+        (300, Command::SetProjectArchived { id, archived: true }),
+    ] {
+        engine.apply(Some(command), at(ms)).unwrap();
+    }
+    let after = engine.snapshot(at(400)).unwrap();
+    assert!(after.running);
+    assert_eq!(after.elapsed_ms, 400);
+    assert_eq!(after.completed, before.completed);
+    assert_eq!(after.recent.len(), before.recent.len());
+    assert_eq!(after.activity, before.activity);
+    assert_eq!(rows(&engine).len(), 1);
 }

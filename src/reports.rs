@@ -1,7 +1,7 @@
 //! Pure calendar boundaries and exact allocation of recorded elapsed time.
 use crate::tracking::Activity;
 use jiff::{Timestamp, civil::Date, tz::TimeZone};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -213,14 +213,14 @@ pub struct History {
 #[derive(Clone, Debug)]
 pub struct Group {
     pub project: String,
+    pub project_id: Option<i64>,
     pub task: Option<String>,
-    pub source: Option<String>,
     pub saved_ms: u64,
     newest_id: i64,
 }
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 struct GroupKey {
-    source: Option<(i64, String, String)>,
+    project: Option<i64>,
     task: Option<String>,
 }
 #[derive(Debug)]
@@ -235,6 +235,26 @@ pub struct Report {
     pub matching_sessions: usize,
     pub diagnostics: Vec<String>,
     pub generated_ms: i64,
+}
+impl Report {
+    /// Totals show each project's current name, while session rows keep the recorded one.
+    pub fn use_current_titles(&mut self, titles: &HashMap<i64, String>) {
+        for groups in [&mut self.groups, &mut self.projects] {
+            for group in groups.iter_mut() {
+                if let Some(title) = group.project_id.and_then(|id| titles.get(&id)) {
+                    group.project = title.clone();
+                }
+            }
+            sort_groups(groups);
+        }
+    }
+}
+fn sort_groups(groups: &mut [Group]) {
+    groups.sort_by(|a, b| {
+        b.saved_ms
+            .cmp(&a.saved_ms)
+            .then_with(|| a.project.cmp(&b.project))
+    });
 }
 
 /// Cumulative rounding makes adjacent clips add to the original elapsed duration.
@@ -296,14 +316,15 @@ fn compute_with_limit(
                 }
                 let project = record.activity.project.as_ref();
                 let task = project.and_then(|p| p.task.clone());
+                let project_id = project.map(|p| p.id);
                 let key = GroupKey {
-                    source: project.map(|p| (p.source_id, p.source_path.clone(), p.slug.clone())),
+                    project: project_id,
                     task: task.clone(),
                 };
                 let group = groups.entry(key).or_insert_with(|| Group {
                     project: record.activity.label().into(),
+                    project_id,
                     task,
-                    source: project.map(|p| p.source_path.clone()),
                     saved_ms: 0,
                     newest_id: record.id,
                 });
@@ -326,10 +347,10 @@ fn compute_with_limit(
     if let Some(limit) = limit {
         history.truncate(limit);
     }
-    let mut projects = BTreeMap::<Option<(i64, String, String)>, Group>::new();
+    let mut projects = BTreeMap::<Option<i64>, Group>::new();
     let mut task_groups = Vec::new();
     for (key, group) in groups {
-        let project = projects.entry(key.source).or_insert_with(|| {
+        let project = projects.entry(key.project).or_insert_with(|| {
             let mut p = group.clone();
             p.task = None;
             p.saved_ms = 0;
@@ -343,17 +364,9 @@ fn compute_with_limit(
         task_groups.push(group);
     }
     let mut groups = task_groups;
-    groups.sort_by(|a, b| {
-        b.saved_ms
-            .cmp(&a.saved_ms)
-            .then_with(|| a.project.cmp(&b.project))
-    });
+    sort_groups(&mut groups);
     let mut projects: Vec<_> = projects.into_values().collect();
-    projects.sort_by(|a, b| {
-        b.saved_ms
-            .cmp(&a.saved_ms)
-            .then_with(|| a.project.cmp(&b.project))
-    });
+    sort_groups(&mut projects);
     Report {
         range,
         saved_ms,
@@ -536,9 +549,7 @@ mod tests {
         let start = range.start_ms;
         let mut saved = record(start, start + 1000, 1000, State::Saved);
         saved.activity.project = Some(crate::tracking::Project {
-            source_id: 1,
-            source_path: "synthetic-source".into(),
-            slug: "sample".into(),
+            id: 1,
             title: "Archived \u{1f331}".into(),
             task: Some("Old task".into()),
         });
@@ -547,15 +558,15 @@ mod tests {
         renamed.start_ms += 1000;
         renamed.end_ms += 1000;
         renamed.activity.project.as_mut().unwrap().title = "New title".into();
-        let mut other_source = renamed.clone();
-        other_source.id = 3;
-        other_source.activity.project.as_mut().unwrap().source_id = 2;
+        let mut other_project = renamed.clone();
+        other_project.id = 3;
+        other_project.activity.project.as_mut().unwrap().id = 2;
         let report = compute(
             range,
             vec![
                 saved,
                 renamed,
-                other_source,
+                other_project,
                 record(start + 3000, start + 4000, 1000, State::Review),
                 record(start + 4000, start + 5000, 1000, State::Running),
             ],
@@ -603,12 +614,10 @@ mod tests {
             (self.0 >> 33) % bound
         }
     }
-    fn project(slug: &str, task: Option<&str>) -> crate::tracking::Project {
+    fn project(id: i64, title: &str, task: Option<&str>) -> crate::tracking::Project {
         crate::tracking::Project {
-            source_id: 1,
-            source_path: "synthetic-source".into(),
-            slug: slug.into(),
-            title: slug.into(),
+            id,
+            title: title.into(),
             task: task.map(Into::into),
         }
     }
@@ -625,9 +634,9 @@ mod tests {
             record.id = id;
             record.activity.project = match rng.next(4) {
                 0 => None,
-                1 => Some(project("alpha", None)),
-                2 => Some(project("alpha", Some("Task \u{1f331}"))),
-                _ => Some(project("beta", None)),
+                1 => Some(project(1, "Alpha", None)),
+                2 => Some(project(1, "Alpha", Some("Task \u{1f331}"))),
+                _ => Some(project(2, "Beta", None)),
             };
             at = record.end_ms;
             records.push(record);

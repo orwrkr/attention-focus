@@ -1,0 +1,407 @@
+//! Controls for the application's own project and task list; changes go through the worker.
+use crate::tracking::{CatalogProject, Command};
+use eframe::egui;
+use std::collections::HashMap;
+
+/// One name per line, so a whole list can be pasted at once.
+fn lines(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+#[derive(Default)]
+pub struct Panel {
+    new_projects: String,
+    new_tasks: HashMap<i64, String>,
+    renames: HashMap<i64, String>,
+    show_archived: bool,
+}
+
+impl Panel {
+    /// Returns the changes the user asked for during this frame.
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        projects: &[CatalogProject],
+        enabled: bool,
+    ) -> Vec<Command> {
+        let mut commands = Vec::new();
+        ui.add_enabled_ui(enabled, |ui| {
+            let wrap = ui.available_width();
+            ui.add(
+                egui::TextEdit::multiline(&mut self.new_projects)
+                    .hint_text("New project name. Paste several, one per line.")
+                    .desired_rows(2)
+                    .desired_width(wrap),
+            );
+            let names = lines(&self.new_projects);
+            if ui
+                .add_enabled(!names.is_empty(), egui::Button::new("Add projects"))
+                .clicked()
+            {
+                commands.push(Command::AddProjects(names));
+                self.new_projects.clear();
+            }
+            let archived = projects.iter().filter(|p| p.archived).count();
+            if archived > 0 {
+                ui.checkbox(
+                    &mut self.show_archived,
+                    format!("Show archived projects ({archived})"),
+                );
+            }
+            ui.separator();
+            if projects.is_empty() {
+                ui.label("No projects yet. You can still track Unassigned focus.");
+            }
+            for project in projects {
+                if project.archived && !self.show_archived {
+                    continue;
+                }
+                ui.push_id(project.id, |ui| self.project(ui, project, &mut commands));
+            }
+        });
+        commands
+    }
+
+    fn project(&mut self, ui: &mut egui::Ui, project: &CatalogProject, out: &mut Vec<Command>) {
+        let open = project.tasks.iter().filter(|task| !task.done).count();
+        let title = match (project.archived, open) {
+            (true, _) => format!("{} (Archived)", project.title),
+            (false, 0) => project.title.clone(),
+            (false, count) => format!("{} ({count})", project.title),
+        };
+        egui::CollapsingHeader::new(title)
+            .id_salt("details")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let draft = self
+                        .renames
+                        .entry(project.id)
+                        .or_insert_with(|| project.title.clone());
+                    ui.add(egui::TextEdit::singleline(draft).desired_width(200.0));
+                    let changed = draft.trim() != project.title && !draft.trim().is_empty();
+                    if ui
+                        .add_enabled(changed, egui::Button::new("Rename"))
+                        .on_hover_text("Earlier sessions keep the name they recorded.")
+                        .clicked()
+                    {
+                        out.push(Command::RenameProject {
+                            id: project.id,
+                            title: draft.clone(),
+                        });
+                        self.renames.remove(&project.id);
+                    }
+                });
+                let (done, unfinished): (Vec<_>, Vec<_>) =
+                    project.tasks.iter().partition(|task| task.done);
+                for task in unfinished.into_iter().chain(done) {
+                    ui.horizontal(|ui| {
+                        let mut checked = task.done;
+                        let label = if task.done {
+                            egui::RichText::new(&task.title).strikethrough()
+                        } else {
+                            egui::RichText::new(&task.title)
+                        };
+                        if ui.checkbox(&mut checked, label).changed() {
+                            out.push(Command::SetTaskDone {
+                                project: project.id,
+                                title: task.title.clone(),
+                                done: checked,
+                            });
+                        }
+                        if !task.used
+                            && ui
+                                .small_button("Delete")
+                                .on_hover_text("Never tracked, so it can be removed.")
+                                .clicked()
+                        {
+                            out.push(Command::DeleteTask {
+                                project: project.id,
+                                title: task.title.clone(),
+                            });
+                        }
+                    });
+                }
+                if !project.archived {
+                    let draft = self.new_tasks.entry(project.id).or_default();
+                    ui.add(
+                        egui::TextEdit::multiline(draft)
+                            .hint_text("New task. Paste several, one per line.")
+                            .desired_rows(1)
+                            .desired_width(ui.available_width()),
+                    );
+                    let names = lines(draft);
+                    if ui
+                        .add_enabled(!names.is_empty(), egui::Button::new("Add tasks"))
+                        .clicked()
+                    {
+                        out.push(Command::AddTasks {
+                            project: project.id,
+                            titles: names,
+                        });
+                        draft.clear();
+                    }
+                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(if project.archived {
+                            "Restore"
+                        } else {
+                            "Archive"
+                        })
+                        .on_hover_text(
+                            "Archived projects leave the pickers. Their history stays in reports.",
+                        )
+                        .clicked()
+                    {
+                        out.push(Command::SetProjectArchived {
+                            id: project.id,
+                            archived: !project.archived,
+                        });
+                    }
+                    if !project.used
+                        && ui
+                            .button("Delete")
+                            .on_hover_text("Never tracked, so it can be removed.")
+                            .clicked()
+                    {
+                        out.push(Command::DeleteProject(project.id));
+                    }
+                });
+            });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tracking::CatalogTask;
+
+    fn project(id: i64, title: &str, used: bool, archived: bool) -> CatalogProject {
+        CatalogProject {
+            id,
+            title: title.into(),
+            archived,
+            used,
+            tasks: vec![
+                CatalogTask {
+                    title: "Open task".into(),
+                    done: false,
+                    used: false,
+                },
+                CatalogTask {
+                    title: "Done task".into(),
+                    done: true,
+                    used: true,
+                },
+            ],
+        }
+    }
+    struct Harness {
+        context: egui::Context,
+        panel: Panel,
+        projects: Vec<CatalogProject>,
+        enabled: bool,
+    }
+    impl Harness {
+        fn new(projects: Vec<CatalogProject>) -> Self {
+            Self {
+                context: egui::Context::default(),
+                panel: Panel::default(),
+                projects,
+                enabled: true,
+            }
+        }
+        fn frame(&mut self, events: Vec<egui::Event>) -> (egui::FullOutput, Vec<Command>) {
+            let mut commands = Vec::new();
+            let (panel, projects, enabled) = (&mut self.panel, &self.projects, self.enabled);
+            let mut output = self.context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(420.0, 900.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ui| commands = panel.show(ui, projects, enabled),
+            );
+            output.textures_delta.clear();
+            (output, commands)
+        }
+        /// Sections expand with an animation, so let it finish before reading the layout.
+        fn settled(&mut self) -> egui::FullOutput {
+            for _ in 0..30 {
+                self.frame(vec![]);
+            }
+            self.frame(vec![]).0
+        }
+        fn position(&mut self, label: &str) -> Option<egui::Pos2> {
+            let output = self.settled();
+            output.shapes.iter().find_map(|s| match &s.shape {
+                egui::Shape::Text(text) if text.galley.job.text == label => {
+                    Some(text.pos + egui::vec2(3.0, 3.0))
+                }
+                _ => None,
+            })
+        }
+        fn visible(&mut self, label: &str) -> bool {
+            self.position(label).is_some()
+        }
+        fn click(&mut self, label: &str) -> Vec<Command> {
+            let pos = self
+                .position(label)
+                .unwrap_or_else(|| panic!("{label} must be visible"));
+            let button = |pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            };
+            self.frame(vec![egui::Event::PointerMoved(pos), button(true)]);
+            let (_, commands) = self.frame(vec![egui::Event::PointerMoved(pos), button(false)]);
+            commands
+        }
+    }
+
+    #[test]
+    fn lines_keep_every_language_and_skip_blank_rows() {
+        assert_eq!(
+            lines("  Alpha \n\n\u{41f}\u{440}\u{43e}\u{435}\u{43a}\u{442}\r\n \n\u{1f331} Gamma"),
+            [
+                "Alpha",
+                "\u{41f}\u{440}\u{43e}\u{435}\u{43a}\u{442}",
+                "\u{1f331} Gamma"
+            ]
+        );
+        assert!(lines(" \n\r\n").is_empty());
+    }
+
+    #[test]
+    fn pasted_names_become_one_addition_and_clear_the_draft() {
+        let mut harness = Harness::new(vec![]);
+        assert!(harness.visible("No projects yet. You can still track Unassigned focus."));
+        assert!(harness.click("Add projects").is_empty(), "nothing to add");
+        harness.panel.new_projects = "Alpha\n\nBeta\n".into();
+        match harness.click("Add projects").as_slice() {
+            [Command::AddProjects(titles)] => assert_eq!(titles, &["Alpha", "Beta"]),
+            _ => panic!("Expected one addition"),
+        }
+        assert!(harness.panel.new_projects.is_empty());
+    }
+
+    #[test]
+    fn expanded_project_offers_rename_tasks_and_archive() {
+        let mut harness = Harness::new(vec![project(5, "Alpha", false, false)]);
+        harness.click("Alpha (1)");
+        assert!(
+            harness.click("Rename").is_empty(),
+            "the name has not changed"
+        );
+        harness.panel.renames.insert(5, "  ".into());
+        assert!(
+            harness.click("Rename").is_empty(),
+            "a blank name is not sent"
+        );
+        harness.panel.renames.insert(5, "Renamed".into());
+        match harness.click("Rename").as_slice() {
+            [Command::RenameProject { id: 5, title }] => assert_eq!(title, "Renamed"),
+            _ => panic!("Expected a rename"),
+        }
+        harness.panel.new_tasks.insert(5, "One\nTwo".into());
+        match harness.click("Add tasks").as_slice() {
+            [Command::AddTasks { project: 5, titles }] => assert_eq!(titles, &["One", "Two"]),
+            _ => panic!("Expected new tasks"),
+        }
+        assert!(harness.panel.new_tasks[&5].is_empty());
+        match harness.click("Open task").as_slice() {
+            [
+                Command::SetTaskDone {
+                    project: 5,
+                    title,
+                    done: true,
+                },
+            ] => {
+                assert_eq!(title, "Open task");
+            }
+            _ => panic!("Expected the task to be marked done"),
+        }
+        match harness.click("Done task").as_slice() {
+            [
+                Command::SetTaskDone {
+                    project: 5,
+                    title,
+                    done: false,
+                },
+            ] => {
+                assert_eq!(title, "Done task");
+            }
+            _ => panic!("Expected the task to be reopened"),
+        }
+        assert!(matches!(
+            harness.click("Archive").as_slice(),
+            [Command::SetProjectArchived {
+                id: 5,
+                archived: true
+            }]
+        ));
+    }
+
+    #[test]
+    fn delete_is_offered_only_for_what_was_never_tracked() {
+        let mut harness = Harness::new(vec![project(5, "Alpha", true, false)]);
+        harness.click("Alpha (1)");
+        // Only the task without recorded time offers a Delete button.
+        let output = harness.settled();
+        let deletes = output
+            .shapes
+            .iter()
+            .filter(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == "Delete"))
+            .count();
+        assert_eq!(deletes, 1);
+        let mut unused = Harness::new(vec![project(6, "Beta", false, false)]);
+        unused.click("Beta (1)");
+        let output = unused.settled();
+        let deletes = output
+            .shapes
+            .iter()
+            .filter(|s| matches!(&s.shape, egui::Shape::Text(t) if t.galley.job.text == "Delete"))
+            .count();
+        assert_eq!(deletes, 2);
+    }
+
+    #[test]
+    fn archived_projects_stay_hidden_until_requested_and_can_be_restored() {
+        let mut harness = Harness::new(vec![
+            project(5, "Alpha", true, true),
+            project(6, "Beta", false, false),
+        ]);
+        assert!(!harness.visible("Alpha (Archived)"));
+        assert!(harness.visible("Beta (1)"));
+        harness.click("Show archived projects (1)");
+        assert!(harness.visible("Alpha (Archived)"));
+        harness.click("Alpha (Archived)");
+        assert!(
+            !harness.visible("Add tasks"),
+            "archived projects take no new tasks"
+        );
+        assert!(matches!(
+            harness.click("Restore").as_slice(),
+            [Command::SetProjectArchived {
+                id: 5,
+                archived: false
+            }]
+        ));
+    }
+
+    #[test]
+    fn disabled_panel_sends_nothing_while_a_change_is_saving() {
+        let mut harness = Harness::new(vec![project(5, "Alpha", false, false)]);
+        harness.click("Alpha (1)");
+        harness.enabled = false;
+        assert!(harness.click("Archive").is_empty());
+    }
+}

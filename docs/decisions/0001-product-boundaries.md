@@ -1,7 +1,8 @@
 # ADR-0001: Rust and Independent Time Tracking
 
 Date: 2026-10-26.
-Status: accepted.
+Status: superseded in part by [ADR-0031](0031-application-projects.md): the choice of Rust
+stands, while the application now owns its project list instead of reading MetaPlan.
 Basis: explicit user instructions.
 
 ## Context

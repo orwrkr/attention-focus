@@ -6,13 +6,13 @@ record a replacement and link to the superseded record. Translation preserves me
 
 | ADR | Status | Topic |
 | --- | --- | --- |
-| [0001](0001-product-boundaries.md) | accepted | Rust and read-only MetaPlan integration |
+| [0001](0001-product-boundaries.md) | superseded in part | Rust and read-only MetaPlan integration |
 | [0002](0002-english-only.md) | accepted | English-only project and application UI |
 | [0003](0003-chat-language.md) | accepted | Chat language clarification |
 | [0004](0004-desktop-stack.md) | accepted | Native Rust UI and transactional storage |
 | [0005](0005-desktop-state-and-branding.md) | accepted | Persistent desktop state and tray tracking |
 | [0006](0006-tray-single-click.md) | accepted | Single-click window access and hover time |
-| [0007](0007-source-settings.md) | accepted | Source settings and read-only preview |
+| [0007](0007-source-settings.md) | superseded | Source settings and read-only preview |
 | [0008](0008-attributed-session-engine.md) | accepted | Attributed sessions, migration, and lifecycle |
 | [0009](0009-focus-reports.md) | accepted | Date-range focus reports and timezone accounting |
 | [0010](0010-runtime-profiles.md) | accepted | Independent production/development and pinned actions |
@@ -35,5 +35,7 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0027](0027-project-note-recall-and-report-totals.md) | accepted | Project note recall and report totals |
 | [0028](0028-verified-window-activation.md) | accepted | Verified window activation on tray click |
 | [0029](0029-day-boundary-intervals.md) | accepted | Split intervals at the local day start |
+| [0030](0030-launch-commands-and-clock-corrections.md) | accepted | Repeated launches, queued commands and small clock corrections |
+| [0031](0031-application-projects.md) | accepted | Application-owned projects and tasks |
 
-Next number: `0030`. Template: `templates/ADR.md` from the repository root.
+Next number: `0032`. Template: `templates/ADR.md` from the repository root.

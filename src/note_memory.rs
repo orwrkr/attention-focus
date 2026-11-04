@@ -1,7 +1,12 @@
 //! Profile-local note suggestions, updated only from confirmed activities.
-use crate::tracking::{Activity, Project};
+use crate::tracking::{Activity, LegacyProject, Project};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
+
+/// Preference key since project IDs replaced the former source identity.
+pub const STORAGE_KEY: &str = "project_notes_v2";
+/// Preference key written by older versions, converted once and then removed.
+pub const LEGACY_STORAGE_KEY: &str = "project_notes";
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct NoteMemory {
@@ -11,16 +16,44 @@ pub struct NoteMemory {
 }
 #[derive(Serialize, Deserialize)]
 struct Entry {
-    key: Option<(i64, String, String)>,
+    key: Option<i64>,
     last: String,
     recent: Vec<String>,
 }
-fn key(project: &Option<Project>) -> Option<(i64, String, String)> {
-    project
-        .as_ref()
-        .map(|p| (p.source_id, p.source_path.clone(), p.slug.clone()))
+/// Note memory as saved by older versions.
+#[derive(Deserialize)]
+pub struct LegacyNotes {
+    projects: Vec<LegacyEntry>,
+}
+#[derive(Deserialize)]
+struct LegacyEntry {
+    key: Option<LegacyProject>,
+    last: String,
+    recent: Vec<String>,
+}
+fn key(project: &Option<Project>) -> Option<i64> {
+    project.as_ref().map(|p| p.id)
 }
 impl NoteMemory {
+    /// Keep notes whose project still exists. Notes already recorded under the new key win.
+    pub fn import_legacy(&mut self, legacy: LegacyNotes, aliases: &[(LegacyProject, i64)]) {
+        for entry in legacy.projects {
+            let key = match &entry.key {
+                None => None,
+                Some(identity) => match aliases.iter().find(|(known, _)| known == identity) {
+                    Some((_, id)) => Some(*id),
+                    None => continue,
+                },
+            };
+            if !self.projects.iter().any(|existing| existing.key == key) {
+                self.projects.push(Entry {
+                    key,
+                    last: entry.last,
+                    recent: entry.recent,
+                });
+            }
+        }
+    }
     pub fn remember(&mut self, activity: &Activity) -> bool {
         let key = key(&activity.project);
         let index = self.projects.iter().position(|e| e.key == key);
@@ -169,9 +202,7 @@ mod tests {
         assert_eq!(suggestions[0], "Note 4");
         assert!(!suggestions.contains(&"Note 0".into()));
         activity.project = Some(Project {
-            source_id: 1,
-            source_path: "synthetic".into(),
-            slug: "alpha".into(),
+            id: 1,
             title: "Alpha".into(),
             task: None,
         });
@@ -183,10 +214,82 @@ mod tests {
         assert_eq!(memory.last(&activity.project), "Planning");
         activity.note = "PLAN".into();
         assert_eq!(memory.suggestions(&activity), ["Planning"]);
-        activity.project.as_mut().unwrap().source_id = 2;
+        activity.project.as_mut().unwrap().id = 2;
         assert_eq!(memory.last(&activity.project), "");
         let restored: NoteMemory =
             serde_json::from_str(&serde_json::to_string(&memory).unwrap()).unwrap();
         assert_eq!(restored.projects[0].recent, memory.projects[0].recent);
+    }
+    #[test]
+    fn notes_saved_by_older_versions_follow_their_converted_project() {
+        // Mirrors the fields older versions saved, through the same preference storage.
+        #[derive(Serialize)]
+        struct OldMemory {
+            projects: Vec<OldEntry>,
+        }
+        #[derive(Serialize)]
+        struct OldEntry {
+            key: Option<(i64, String, String)>,
+            last: String,
+            recent: Vec<String>,
+        }
+        #[derive(Default)]
+        struct Memory(std::collections::HashMap<String, String>);
+        impl eframe::Storage for Memory {
+            fn get_string(&self, key: &str) -> Option<String> {
+                self.0.get(key).cloned()
+            }
+            fn set_string(&mut self, key: &str, value: String) {
+                self.0.insert(key.into(), value);
+            }
+            fn remove_string(&mut self, key: &str) {
+                self.0.remove(key);
+            }
+            fn flush(&mut self) {}
+        }
+        let identity = |slug: &str| Some((1, "synthetic-source".to_owned(), slug.to_owned()));
+        let entry = |key, last: &str, recent: &[&str]| OldEntry {
+            key,
+            last: last.to_owned(),
+            recent: recent.iter().map(|note| (*note).to_owned()).collect(),
+        };
+        let mut storage = Memory::default();
+        eframe::set_value(
+            &mut storage,
+            LEGACY_STORAGE_KEY,
+            &OldMemory {
+                projects: vec![
+                    entry(
+                        identity("alpha"),
+                        "Old \u{1f331}",
+                        &["Old \u{1f331}", "Older"],
+                    ),
+                    entry(identity("removed"), "Lost", &["Lost"]),
+                    entry(None, "Loose", &["Loose"]),
+                ],
+            },
+        );
+        let legacy: LegacyNotes = eframe::get_value(&storage, LEGACY_STORAGE_KEY).unwrap();
+        let mut memory = NoteMemory::default();
+        let mut current = Activity {
+            project: Some(Project {
+                id: 7,
+                title: "Alpha".into(),
+                task: None,
+            }),
+            note: String::new(),
+        };
+        let aliases = [((1, "synthetic-source".to_owned(), "alpha".to_owned()), 7)];
+        memory.import_legacy(legacy, &aliases);
+        assert_eq!(memory.last(&current.project), "Old \u{1f331}");
+        assert_eq!(memory.suggestions(&current), ["Old \u{1f331}", "Older"]);
+        assert_eq!(memory.last(&None), "Loose");
+        assert_eq!(memory.projects.len(), 2, "unknown projects are dropped");
+        // A note confirmed by this version is never replaced by an older copy.
+        current.note = "Newer".into();
+        memory.remember(&current);
+        let again: LegacyNotes = eframe::get_value(&storage, LEGACY_STORAGE_KEY).unwrap();
+        memory.import_legacy(again, &aliases);
+        assert_eq!(memory.last(&current.project), "Newer");
     }
 }

@@ -1,10 +1,9 @@
 //! Fixed, independent runtime profiles. Never import old focus history implicitly.
-use crate::source;
+use crate::paths;
 use std::{
     io,
     path::{Path, PathBuf},
 };
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Profile {
@@ -92,7 +91,7 @@ impl Paths {
     /// Resolve identities before acquiring a mutex or opening writable files.
     pub fn new(root: &Path, profile: Profile) -> io::Result<Self> {
         reject_link(root)?;
-        let root = source::resolve(root)?;
+        let root = paths::resolve(root)?;
         let directory = root.join(profile.folder());
         reject_link(&directory)?;
         Ok(Self {
@@ -101,34 +100,10 @@ impl Paths {
             profile,
         })
     }
-    pub fn validate_source(&self, path: &Path) -> io::Result<PathBuf> {
-        source::validate_boundary(path, &self.root)
-    }
-    /// Import only the legacy source path, once; leave every legacy byte in place.
-    pub fn prepare(&self) -> Result<(Option<source::Selection>, Option<String>)> {
+    /// Validate storage before anything writable opens; older files stay in place, unread.
+    pub fn prepare(&self) -> io::Result<()> {
         reject_link(&self.directory)?;
-        if let Some(selection) = source::restore(&self.directory)? {
-            self.validate_source(&selection.path)?;
-            return Ok((Some(selection), None));
-        }
-        let legacy=match source::restore_source_only(&self.root) {
-            Ok(selection)=>selection,
-            Err(_)=>return Ok((None,Some("The previous MetaPlan setting could not be imported. Choose the Instance folder.".into()))),
-        };
-        if let Some(selection) = legacy {
-            self.validate_source(&selection.path)?;
-            match source::save(&self.directory, &selection.path) {
-                Ok(selection) => return Ok((Some(selection), None)),
-                Err(_) => return Ok((
-                    None,
-                    Some(
-                        "The previous MetaPlan folder is unavailable. Choose the Instance folder."
-                            .into(),
-                    ),
-                )),
-            }
-        }
-        Ok((None, None))
+        paths::check_storage(&self.directory)
     }
 }
 
@@ -159,8 +134,8 @@ mod tests {
         std::fs::write(root.join("window.ron"), b"Synthetic legacy geometry").unwrap();
         let prod = Paths::new(&root, Profile::Production).unwrap();
         let dev = Paths::new(&root, Profile::Development).unwrap();
-        assert!(prod.prepare().unwrap().0.is_none());
-        assert!(dev.prepare().unwrap().0.is_none());
+        prod.prepare().unwrap();
+        dev.prepare().unwrap();
         std::fs::create_dir_all(&prod.directory).unwrap();
         std::fs::create_dir_all(&dev.directory).unwrap();
         let prod_store =
@@ -256,43 +231,21 @@ mod tests {
             std::fs::read(root.join("window.ron")).unwrap(),
             b"Synthetic legacy geometry"
         );
-        assert!(prod.validate_source(&dev.directory).is_err());
-        assert!(dev.validate_source(&prod.directory).is_err());
     }
     #[test]
-    fn only_source_setting_is_imported_and_new_settings_are_independent() {
+    fn source_settings_left_by_older_versions_are_ignored_and_preserved() {
         let temp = tempfile::tempdir().unwrap();
-        let source = temp.path().join("Instance");
-        std::fs::create_dir_all(source.join("PROJECTS/Active")).unwrap();
         let root = temp.path().join("app");
-        source::save(&root, &source).unwrap();
-        let original = std::fs::read(root.join("source.sqlite3")).unwrap();
         let prod = Paths::new(&root, Profile::Production).unwrap();
-        let dev = Paths::new(&root, Profile::Development).unwrap();
+        std::fs::create_dir_all(&prod.directory).unwrap();
+        let settings = prod.directory.join("source.sqlite3");
+        std::fs::write(&settings, b"Synthetic older settings, never opened").unwrap();
+        prod.prepare().unwrap();
+        crate::tracking::Store::open(&prod.directory.join("focus.sqlite3")).unwrap();
         assert_eq!(
-            prod.prepare().unwrap().0.unwrap().path,
-            source::resolve(&source).unwrap()
+            std::fs::read(settings).unwrap(),
+            b"Synthetic older settings, never opened"
         );
-        assert_eq!(
-            dev.prepare().unwrap().0.unwrap().path,
-            source::resolve(&source).unwrap()
-        );
-        let another = temp.path().join("OtherInstance");
-        std::fs::create_dir_all(another.join("PROJECTS/Active")).unwrap();
-        source::save(&dev.directory, &another).unwrap();
-        assert_eq!(
-            prod.prepare().unwrap().0.unwrap().path,
-            source::resolve(&source).unwrap()
-        );
-        assert_eq!(
-            dev.prepare().unwrap().0.unwrap().path,
-            source::resolve(&another).unwrap()
-        );
-        assert_eq!(
-            std::fs::read(root.join("source.sqlite3")).unwrap(),
-            original
-        );
-        assert!(!prod.directory.join("focus.sqlite3").exists());
     }
 
     #[cfg(windows)]

@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use attention_focus::{
-    export, icons, lifecycle, platform, presentation,
+    export, icons, lifecycle,
+    note_memory::{LEGACY_STORAGE_KEY, LegacyNotes, NoteMemory, STORAGE_KEY},
+    platform, presentation,
     profiles::{Paths, Profile},
-    report_ui, source, tracking,
+    project_ui, report_ui, tracking,
     tray_interaction::{Clicks, WindowRaise},
 };
 use eframe::egui;
@@ -16,8 +18,8 @@ use tray_icon::{
     menu::{Menu, MenuEvent, MenuItem},
 };
 
+#[expect(clippy::large_enum_variant, reason = "short-lived channel messages")]
 enum Action {
-    Folder(Result<Option<std::path::PathBuf>, String>),
     Export(Result<String, String>),
     Show,
     LeftPress,
@@ -26,7 +28,6 @@ enum Action {
     Toggle,
     Exit,
     Tracking(tracking::Event),
-    Source(Result<(source::Selection, source::Catalog), String>),
     PlatformError(String),
 }
 
@@ -46,18 +47,14 @@ struct Desktop {
     raise: WindowRaise,
     directory: std::path::PathBuf,
     sender: mpsc::Sender<Action>,
-    source_path: String,
-    source_selection: Option<source::Selection>,
-    catalog: source::Catalog,
-    source_pending: bool,
-    folder_pending: bool,
-    source_error: Option<String>,
     activity: tracking::Activity,
     lifecycle: Option<lifecycle::Listener>,
     reports: report_ui::Panel,
     project_search: String,
     restored_note: Option<String>,
-    note_memory: attention_focus::note_memory::NoteMemory,
+    note_memory: NoteMemory,
+    legacy_notes: Option<LegacyNotes>,
+    projects_panel: project_ui::Panel,
     profile: Profile,
     storage_root: std::path::PathBuf,
     stay_on_top: bool,
@@ -95,8 +92,6 @@ impl Desktop {
     fn new(
         context: &eframe::CreationContext<'_>,
         paths: Paths,
-        selection: Option<source::Selection>,
-        source_warning: Option<String>,
         launch: attention_focus::startup::Launch,
     ) -> Self {
         let directory = paths.directory;
@@ -242,7 +237,15 @@ impl Desktop {
             ctx.request_repaint();
         })
         .ok();
-        let mut desktop = Self {
+        // Notes saved by older versions are converted when the first state names their projects.
+        let storage = context.storage;
+        let note_memory = storage.and_then(|s| eframe::get_value::<NoteMemory>(s, STORAGE_KEY));
+        let legacy_notes = if note_memory.is_none() {
+            storage.and_then(|s| eframe::get_value(s, LEGACY_STORAGE_KEY))
+        } else {
+            None
+        };
+        Self {
             settings_open: false,
             startup: attention_focus::startup_ui::Panel::new(
                 profile,
@@ -272,15 +275,6 @@ impl Desktop {
             raise: WindowRaise::default(),
             directory,
             sender,
-            source_path: selection
-                .as_ref()
-                .map(|s| s.path.display().to_string())
-                .unwrap_or_default(),
-            source_selection: selection,
-            catalog: source::Catalog::default(),
-            source_pending: false,
-            folder_pending: false,
-            source_error: source_warning,
             activity: tracking::Activity::default(),
             lifecycle: listener,
             reports: report_ui::Panel::restore(context.storage),
@@ -288,10 +282,9 @@ impl Desktop {
                 .storage
                 .and_then(|s| eframe::get_value(s, "project_search"))
                 .unwrap_or_default(),
-            note_memory: context
-                .storage
-                .and_then(|s| eframe::get_value(s, "project_notes"))
-                .unwrap_or_default(),
+            note_memory: note_memory.unwrap_or_default(),
+            legacy_notes,
+            projects_panel: project_ui::Panel::default(),
             restored_note: context
                 .storage
                 .and_then(|s| eframe::get_value::<Option<String>>(s, "note_draft"))
@@ -299,37 +292,7 @@ impl Desktop {
             profile,
             storage_root: paths.root,
             stay_on_top,
-        };
-        if desktop.source_selection.is_some() {
-            desktop.load_source(&context.egui_ctx, false);
         }
-        desktop
-    }
-
-    fn load_source(&mut self, ctx: &egui::Context, save: bool) {
-        self.source_pending = true;
-        self.source_error = None;
-        let path = std::path::PathBuf::from(self.source_path.trim());
-        let directory = self.directory.clone();
-        let storage_root = self.storage_root.clone();
-        let selection = self.source_selection.clone();
-        let sender = self.sender.clone();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let result = (|| -> Result<_, Box<dyn std::error::Error + Send + Sync>> {
-                let path = source::validate_boundary(&path, &storage_root)?;
-                let catalog = source::read(&path)?;
-                let selection = if save {
-                    source::save(&directory, &path)?
-                } else {
-                    selection.ok_or("No source selected.")?
-                };
-                Ok((selection, catalog))
-            })()
-            .map_err(|e| format!("Cannot load MetaPlan: {e}"));
-            let _ = sender.send(Action::Source(result));
-            ctx.request_repaint();
-        });
     }
 
     fn command(&mut self, command: tracking::Command) {
@@ -373,43 +336,26 @@ impl Desktop {
                     egui::TextEdit::singleline(&mut self.project_search)
                         .hint_text("Search projects"),
                 )
-                .on_hover_text(
-                    "Filter projects by name or folder ID. Searching does not change the activity.",
-                );
+                .on_hover_text("Filter projects by name. Searching does not change the activity.");
                 ui.separator();
                 let query = self.project_search.trim().to_lowercase();
                 let mut choices = vec![tracking::Activity::default()];
-                if let Some(source) = &self.source_selection {
-                    for project in self.catalog.projects.iter().filter(|p| {
-                        !p.archived
-                            && p.status != "Completed"
-                            && (query.is_empty()
-                                || p.title.to_lowercase().contains(&query)
-                                || p.slug.to_lowercase().contains(&query))
-                    }) {
-                        choices.push(tracking::Activity {
-                            project: Some(tracking::Project {
-                                source_id: source.id,
-                                source_path: source.path.to_string_lossy().into_owned(),
-                                slug: project.slug.clone(),
-                                title: project.title.clone(),
-                                task: None,
-                            }),
-                            note: String::new(),
-                        });
-                    }
+                for project in self.state.projects.iter().filter(|p| {
+                    !p.archived && (query.is_empty() || p.title.to_lowercase().contains(&query))
+                }) {
+                    choices.push(tracking::Activity {
+                        project: Some(tracking::Project {
+                            id: project.id,
+                            title: project.title.clone(),
+                            task: None,
+                        }),
+                        note: String::new(),
+                    });
                 }
                 self.state.sort_projects(&mut choices);
                 for choice in choices {
-                    let selected = match (&self.activity.project, &choice.project) {
-                        (None, None) => true,
-                        (Some(a), Some(b)) => {
-                            a.source_id == b.source_id
-                                && a.source_path == b.source_path
-                                && a.slug == b.slug
-                        }
-                        _ => false,
-                    };
+                    let selected = self.activity.project.as_ref().map(|p| p.id)
+                        == choice.project.as_ref().map(|p| p.id);
                     let label = if choice.project.is_none() {
                         egui::RichText::new("Unassigned focus (no project)")
                             .strong()
@@ -437,18 +383,10 @@ impl Desktop {
                         project: Some(no_task),
                         note: String::new(),
                     }];
-                    if let Some(source) = &self.source_selection
-                        && source.id == project.source_id
-                        && source.path.to_string_lossy() == project.source_path
-                        && let Some(snapshot) = self
-                            .catalog
-                            .projects
-                            .iter()
-                            .find(|p| p.slug == project.slug)
-                    {
-                        for task in &snapshot.tasks {
+                    if let Some(entry) = self.state.project(project.id) {
+                        for task in entry.tasks.iter().filter(|task| !task.done) {
                             let mut candidate = project.clone();
-                            candidate.task = Some(task.clone());
+                            candidate.task = Some(task.title.clone());
                             choices.push(tracking::Activity {
                                 project: Some(candidate),
                                 note: String::new(),
@@ -464,7 +402,7 @@ impl Desktop {
                 });
         }
         self.note_memory.show(ui, &mut self.activity);
-        if self.activity.project != before && self.available(&self.activity) {
+        if self.activity.project != before && self.state.available(&self.activity) {
             self.command(tracking::Command::ChangeActivity(self.activity.clone()));
         }
         if self.activity != self.state.activity {
@@ -478,7 +416,7 @@ impl Desktop {
                     self.ready
                         && !self.outbox.busy()
                         && !self.state.needs_review
-                        && self.available(&self.activity),
+                        && self.state.available(&self.activity),
                     egui::Button::new(if self.state.running && split {
                         "Start new interval with changes"
                     } else if self.state.running {
@@ -492,28 +430,12 @@ impl Desktop {
                 self.command(tracking::Command::ChangeActivity(self.activity.clone()));
             }
         }
-        if !self.available(&self.activity) {
-            ui.label(
-                "Selected activity is unavailable. Refresh MetaPlan or choose another activity.",
-            );
+        if !self.state.running && !self.state.available(&self.activity) {
+            ui.label("The selected project or task is archived, finished or removed. Choose another activity.");
         }
-    }
-
-    fn available(&self, activity: &tracking::Activity) -> bool {
-        let Some(project) = &activity.project else {
-            return true;
-        };
-        self.source_selection.as_ref().is_some_and(|source| {
-            source.id == project.source_id && source.path.to_string_lossy() == project.source_path
-        }) && self.catalog.projects.iter().any(|snapshot| {
-            snapshot.slug == project.slug
-                && !snapshot.archived
-                && snapshot.status != "Completed"
-                && project
-                    .task
-                    .as_ref()
-                    .is_none_or(|task| snapshot.tasks.contains(task))
-        })
+        if self.state.projects.iter().all(|project| project.archived) {
+            ui.weak("Add projects in the Projects section below, or track Unassigned focus.");
+        }
     }
 
     fn show(&mut self, ctx: &egui::Context) {
@@ -554,7 +476,7 @@ impl eframe::App for Desktop {
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, "project_notes", &self.note_memory);
+        eframe::set_value(storage, STORAGE_KEY, &self.note_memory);
         eframe::set_value(storage, "stay_on_top", &self.stay_on_top);
         eframe::set_value(storage, "startup_tray", &self.startup.tray);
         eframe::set_value(storage, "project_search", &self.project_search);
@@ -577,48 +499,20 @@ impl eframe::App for Desktop {
         }
         while let Ok(action) = self.actions.try_recv() {
             match action {
-                Action::Folder(result) => {
-                    self.folder_pending = false;
-                    match result {
-                        Ok(Some(path)) => {
-                            self.source_path = path.to_string_lossy().into_owned();
-                            self.source_error = None;
-                        }
-                        Ok(None) => {}
-                        Err(error) => self.source_error = Some(error),
-                    }
-                }
                 Action::Export(result) => self.reports.export_finished(result),
                 Action::PlatformError(error) => self.show_error(ctx, error),
-                Action::Source(result) => {
-                    self.source_pending = false;
-                    match result {
-                        Ok((selection, catalog)) => {
-                            self.source_path = selection.path.display().to_string();
-                            self.source_selection = Some(selection);
-                            self.catalog = catalog;
-                        }
-                        Err(error) => {
-                            self.source_error = Some(error);
-                            self.catalog = source::Catalog::default();
-                        }
-                    }
-                }
                 Action::Show => self.show(ctx),
                 Action::LeftPress => self.clicks.press(),
                 Action::LeftRelease(now) => {
-                    let interval = unsafe {
-                        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime()
-                    };
-                    self.clicks
-                        .release(now, Duration::from_millis(u64::from(interval)));
+                    self.clicks.release(now, platform::double_click_time());
                 }
                 Action::DoubleClick => {
                     self.clicks.double_click();
                     if self.ready
                         && !self.state.needs_review
                         && (self.state.running
-                            || (self.lifecycle.is_some() && self.available(&self.state.activity)))
+                            || (self.lifecycle.is_some()
+                                && self.state.available(&self.state.activity)))
                     {
                         self.command(tracking::Command::Toggle);
                     } else {
@@ -629,7 +523,8 @@ impl eframe::App for Desktop {
                     if self.ready
                         && !self.state.needs_review
                         && (self.state.running
-                            || (self.lifecycle.is_some() && self.available(&self.state.activity)))
+                            || (self.lifecycle.is_some()
+                                && self.state.available(&self.state.activity)))
                     {
                         self.command(tracking::Command::Toggle);
                     } else {
@@ -666,12 +561,30 @@ impl eframe::App for Desktop {
                     self.toggle_item.set_enabled(
                         !state.needs_review && (state.running || self.lifecycle.is_some()),
                     );
-                    if (!self.ready || completed)
-                        && self.note_memory.remember(&state.activity)
+                    let imported = match self.legacy_notes.take() {
+                        Some(legacy) => {
+                            self.note_memory
+                                .import_legacy(legacy, &state.legacy_projects);
+                            true
+                        }
+                        None => false,
+                    };
+                    let remembered =
+                        (!self.ready || completed) && self.note_memory.remember(&state.activity);
+                    if (imported || remembered)
                         && let Some(storage) = frame.storage_mut()
                     {
-                        eframe::set_value(storage, "project_notes", &self.note_memory);
+                        eframe::set_value(storage, STORAGE_KEY, &self.note_memory);
+                        if imported {
+                            storage.remove_string(LEGACY_STORAGE_KEY);
+                        }
                         storage.flush();
+                    }
+                    // A rename must not make the unchanged draft look like an unsaved edit.
+                    if let Some(project) = &mut self.activity.project
+                        && let Some(entry) = state.project(project.id)
+                    {
+                        project.title.clone_from(&entry.title);
                     }
                     if !self.ready {
                         self.activity = state.activity.clone();
@@ -739,7 +652,7 @@ impl eframe::App for Desktop {
                 && !self.outbox.busy()
                 && !self.state.needs_review
                 && (self.state.running
-                    || (self.lifecycle.is_some() && self.available(&self.state.activity))),
+                    || (self.lifecycle.is_some() && self.state.available(&self.state.activity))),
         );
     }
 
@@ -881,7 +794,7 @@ impl eframe::App for Desktop {
                     && !self.outbox.busy()
                     && !self.state.needs_review
                     && (self.state.running
-                        || (self.lifecycle.is_some() && self.available(&self.activity)));
+                        || (self.lifecycle.is_some() && self.state.available(&self.activity)));
                 if attention_focus::counters::show(ui, &self.state, self.ready, enabled).toggle {
                     self.command(if self.state.running {
                         tracking::Command::Stop
@@ -912,110 +825,38 @@ impl eframe::App for Desktop {
                 ui.add_space(12.0);
                 ui.label("Double-click the tray icon to start or stop.");
                 ui.label("Click the tray icon to show this window. Hover to see tracked time.");
-                ui.collapsing("MetaPlan source and projects", |ui| {
-                    ui.label("Instance folder (read-only)");
-                    ui.horizontal(|ui| {
-                        let width = (ui.available_width() - 84.0).max(80.0);
-                        ui.add_enabled_ui(!self.source_pending, |ui| {
-                            ui.add_sized(
-                                [width, 22.0],
-                                egui::TextEdit::singleline(&mut self.source_path),
-                            );
-                        });
-                        if ui
-                            .add_enabled(
-                                !self.folder_pending && !self.source_pending,
-                                egui::Button::new("Browse..."),
-                            )
-                            .clicked()
-                        {
-                            self.folder_pending = true;
-                            let initial = std::path::PathBuf::from(&self.source_path);
-                            let owner = unsafe {
-                                windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow()
-                            } as usize;
-                            let sender = self.sender.clone();
-                            let ctx = ctx.clone();
-                            std::thread::spawn(move || {
-                                let result = attention_focus::folder_picker::pick(owner, &initial)
-                                    .map_err(|error| format!("Cannot choose folder: {error}"));
-                                let _ = sender.send(Action::Folder(result));
-                                ctx.request_repaint();
-                            });
-                        }
-                    });
-                    if ui
-                        .add_enabled(!self.source_pending, egui::Button::new("Save and refresh"))
-                        .clicked()
-                    {
-                        self.load_source(&ctx, true);
-                    }
-                    if self.source_pending {
-                        ui.label("Loading projects...");
-                    }
-                    if let Some(error) = &self.source_error {
-                        ui.colored_label(egui::Color32::LIGHT_RED, error);
-                    }
-                    ui.label("Projects are read only. Use the project picker to choose focus.");
-                    egui::ScrollArea::vertical()
-                        .id_salt("source-preview")
-                        .max_height(230.0)
-                        .show(ui, |ui| {
-                            for project in &self.catalog.projects {
-                                ui.push_id((&project.slug, project.archived), |ui| {
-                                    ui.collapsing(
-                                        format!(
-                                            "{}{}",
-                                            project.title,
-                                            if project.archived { " (Archived)" } else { "" }
-                                        ),
-                                        |ui| {
-                                            ui.label(format!(
-                                                "{} | {} | {}",
-                                                project.slug, project.status, project.priority
-                                            ));
-                                            if project.tasks.is_empty() {
-                                                ui.label("No unfinished current-cycle tasks.");
-                                            }
-                                            for task in &project.tasks {
-                                                ui.label(task);
-                                            }
-                                        },
-                                    );
-                                });
-                            }
-                            for diagnostic in &self.catalog.diagnostics {
-                                ui.colored_label(egui::Color32::YELLOW, diagnostic);
-                            }
-                        });
-                });
+                let enabled = self.ready && !self.outbox.busy();
+                let changes = egui::CollapsingHeader::new("Projects")
+                    .default_open(self.state.projects.is_empty())
+                    .show(ui, |ui| {
+                        self.projects_panel.show(ui, &self.state.projects, enabled)
+                    })
+                    .body_returned
+                    .unwrap_or_default();
+                for change in changes {
+                    self.command(change);
+                }
                 self.reports.show(ui, &self.commands, self.ready);
                 if let Some((format, request)) = self.reports.take_export() {
                     let directory = self.directory.clone();
                     let root = self.storage_root.clone();
                     let sender = self.sender.clone();
                     let ctx = ctx.clone();
-                    let owner = unsafe {
-                        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow()
-                    } as usize;
+                    let owner = platform::active_window();
                     std::thread::spawn(move || {
                         let result =
                             (|| -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-                                let snapshot = tracking::export_snapshot(
+                                let report = tracking::export_snapshot(
                                     &directory.join("focus.sqlite3"),
                                     &request,
                                 )?;
                                 let Some(path) = export::pick_path(owner, format)? else {
                                     return Ok("Export canceled.".into());
                                 };
-                                let mut protected = source::known_paths(&directory)?;
-                                protected.extend(snapshot.sources);
-                                protected.push(root);
-                                let path =
-                                    export::write(&snapshot.report, &path, format, &protected)?;
+                                let path = export::write(&report, &path, format, &[root])?;
                                 Ok(format!(
                                     "Exported {} sessions to {}",
-                                    snapshot.report.matching_sessions,
+                                    report.matching_sessions,
                                     path.display()
                                 ))
                             })()
@@ -1049,10 +890,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(error) => return Err(error.into()),
     };
-    // Restore read-only and validate source overlap before SQLite or eframe can write.
-    let (selection, warning) = paths
-        .prepare()
-        .map_err(|error| -> Box<dyn std::error::Error> { error })?;
+    // Validate storage before SQLite or eframe can write.
+    paths.prepare()?;
     std::fs::create_dir_all(&paths.directory)?;
     let window_state = paths.directory.join("window.ron");
     eframe::run_native(
@@ -1079,27 +918,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             persistence_path: Some(window_state),
             ..Default::default()
         },
-        Box::new(move |context| {
-            Ok(Box::new(Desktop::new(
-                context, paths, selection, warning, launch,
-            )))
-        }),
+        Box::new(move |context| Ok(Box::new(Desktop::new(context, paths, launch)))),
     )?;
     Ok(())
 }
 
 fn main() {
     if let Err(error) = run() {
-        let message: Vec<u16> = error.to_string().encode_utf16().chain(Some(0)).collect();
-        let title: Vec<u16> = "Attention Focus".encode_utf16().chain(Some(0)).collect();
-        unsafe {
-            windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
-                std::ptr::null_mut(),
-                message.as_ptr(),
-                title.as_ptr(),
-                windows_sys::Win32::UI::WindowsAndMessaging::MB_OK
-                    | windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONERROR,
-            );
-        }
+        platform::show_error_box(&error.to_string());
     }
 }

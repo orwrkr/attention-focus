@@ -206,6 +206,8 @@ impl Store {
             change_mode: self.change_mode()?,
             split_on_day: self.split_on_day()?,
             recent,
+            projects: self.catalog()?,
+            legacy_projects: migrate::legacy_projects(&self.connection)?,
         })
     }
 
@@ -216,7 +218,9 @@ impl Store {
         active_ms: u64,
     ) -> Result<reports::Report> {
         let (range, records) = self.report_records(request, now, Some(active_ms))?;
-        Ok(reports::compute(range, records, now.wall_ms))
+        let mut report = reports::compute(range, records, now.wall_ms);
+        report.use_current_titles(&self.current_titles()?);
+        Ok(report)
     }
     pub(super) fn report_records(
         &self,
@@ -225,7 +229,7 @@ impl Store {
         active_ms: Option<u64>,
     ) -> Result<(reports::Range, Vec<reports::Record>)> {
         let range = reports::Range::new(request)?;
-        let mut statement = self.connection.prepare("SELECT id,started_ms,COALESCE(ended_ms,?3),elapsed_ms,state,activity,COALESCE(end_reason,''),checkpoint_ms FROM focus_sessions WHERE started_ms<?2 AND COALESCE(ended_ms,?3)>=?1 ORDER BY id")?;
+        let mut statement = self.connection.prepare("SELECT id,started_ms,COALESCE(ended_ms,?3),elapsed_ms,state,activity,COALESCE(end_reason,''),checkpoint_ms FROM focus_sessions WHERE started_ms<?2 AND (ended_ms IS NULL OR ended_ms>=?1) ORDER BY id")?;
         let raw =
             statement.query_map(params![range.start_ms, range.end_ms, now.wall_ms], |row| {
                 Ok((
@@ -277,11 +281,7 @@ impl Store {
 }
 
 /// Read one immutable checkpoint snapshot without migrations, recovery writes or UI row limits.
-pub struct ExportSnapshot {
-    pub report: reports::Report,
-    pub sources: Vec<std::path::PathBuf>,
-}
-pub fn export_snapshot(path: &Path, request: &reports::Request) -> Result<ExportSnapshot> {
+pub fn export_snapshot(path: &Path, request: &reports::Request) -> Result<reports::Report> {
     let connection = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     connection.busy_timeout(Duration::from_millis(250))?;
     if connection.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))?
@@ -298,19 +298,9 @@ pub fn export_snapshot(path: &Path, request: &reports::Request) -> Result<Export
         mono_ms: 0,
     };
     let store = Store { connection };
-    let sources = {
-        let mut statement=store.connection.prepare("SELECT DISTINCT CASE WHEN json_valid(activity) THEN json_extract(activity,'$.project.source_path') END FROM focus_sessions")?;
-        statement
-            .query_map([], |r| r.get::<_, Option<String>>(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .map(std::path::PathBuf::from)
-            .collect()
-    };
+    let titles = store.current_titles()?;
     let (range, records) = store.report_records(request, now, None)?;
-    Ok(ExportSnapshot {
-        report: reports::compute_all(range, records, now.wall_ms),
-        sources,
-    })
+    let mut report = reports::compute_all(range, records, now.wall_ms);
+    report.use_current_titles(&titles);
+    Ok(report)
 }

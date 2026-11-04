@@ -1,21 +1,20 @@
-//! Local focus tracking, read-only MetaPlan snapshots, and desktop assets.
+//! Local focus tracking with an application-owned project list, and desktop assets.
 
 pub mod counters;
 pub mod export;
-#[cfg(windows)]
-pub mod folder_picker;
 pub mod icons;
 #[cfg(windows)]
 pub mod lifecycle;
 pub mod motion;
 pub mod note_memory;
 pub mod outbox;
+pub mod paths;
 #[cfg(windows)]
 pub mod platform;
 pub mod profiles;
+pub mod project_ui;
 pub mod report_ui;
 pub mod reports;
-pub mod source;
 #[cfg(windows)]
 pub mod startup;
 #[cfg(windows)]

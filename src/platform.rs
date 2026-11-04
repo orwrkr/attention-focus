@@ -41,12 +41,39 @@ pub fn data_root() -> io::Result<PathBuf> {
     Ok(PathBuf::from(path).join("AttentionFocus"))
 }
 
+/// The system setting that separates a single tray click from a double click.
+pub fn double_click_time() -> std::time::Duration {
+    let milliseconds =
+        unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime() };
+    std::time::Duration::from_millis(u64::from(milliseconds))
+}
+
+/// The active window of this thread, to own a dialog opened from another thread.
+pub fn active_window() -> usize {
+    unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow() as usize }
+}
+
+/// Report a failure that happens before the window exists.
+pub fn show_error_box(message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (message, title) = (wide(message), wide("Attention Focus"));
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
 pub struct Instance(HANDLE);
 
 /// Named object within this Windows session, unique to the user and runtime profile.
 fn profile_object(kind: &str, directory: &Path) -> io::Result<Vec<u16>> {
     // The resolved directory distinguishes both the Windows user and runtime profile.
-    let identity = crate::source::resolve(directory)?
+    let identity = crate::paths::resolve(directory)?
         .to_string_lossy()
         .to_lowercase()
         .replace(['\\', '/'], "_");

@@ -81,9 +81,7 @@ mod tests {
             daily_all_ms: Some(55_000),
             activity: Activity {
                 project: Some(Project {
-                    source_id: 1,
-                    source_path: "synthetic".into(),
-                    slug: "example".into(),
+                    id: 1,
                     title: "Example project ".to_owned() + &"\u{1f331}".repeat(150),
                     task: None,
                 }),

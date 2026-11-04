@@ -442,8 +442,7 @@ impl Panel {
                     ui.strong("Saved time");
                     ui.end_row();
                     for group in &report.projects {
-                        ui.label(&group.project)
-                            .on_hover_text(group.source.as_deref().unwrap_or("Unassigned"));
+                        ui.label(&group.project);
                         ui.label(duration(group.saved_ms));
                         ui.end_row();
                     }
@@ -459,8 +458,7 @@ impl Panel {
                 ui.strong("Saved time");
                 ui.end_row();
                 for group in &report.groups {
-                    ui.label(&group.project)
-                        .on_hover_text(group.source.as_deref().unwrap_or("Unassigned"));
+                    ui.label(&group.project);
                     ui.label(group.task.as_deref().unwrap_or("No task"));
                     ui.label(duration(group.saved_ms));
                     ui.end_row();

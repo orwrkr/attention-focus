@@ -3,13 +3,16 @@ use crate::reports;
 use serde::{Deserialize, Serialize};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+mod catalog;
 mod engine;
 mod migrate;
 mod store;
 mod worker;
 
+pub use catalog::{CatalogProject, CatalogTask};
 pub use engine::Engine;
-pub use store::{ExportSnapshot, Store, export_snapshot};
+pub use migrate::LegacyProject;
+pub use store::{Store, export_snapshot};
 pub use worker::spawn;
 
 pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -21,21 +24,18 @@ pub struct Activity {
     pub project: Option<Project>,
     pub note: String,
 }
+/// A session's activity: the project ID identifies it, while the title and task text stay
+/// as recorded, so later renames do not rewrite finished history.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Project {
-    pub source_id: i64,
-    pub source_path: String,
-    pub slug: String,
+    pub id: i64,
     pub title: String,
     pub task: Option<String>,
 }
 impl Activity {
     fn key(&self) -> ActivityKey {
         ActivityKey {
-            project: self
-                .project
-                .as_ref()
-                .map(|p| (p.source_id, p.source_path.clone(), p.slug.clone())),
+            project: self.project.as_ref().map(|p| p.id),
             task: self.project.as_ref().and_then(|p| p.task.clone()),
         }
     }
@@ -46,12 +46,10 @@ impl Activity {
     }
     fn validate(&self) -> Result<()> {
         if self.note.len() > 16_384
-            || self.project.as_ref().is_some_and(|p| {
-                p.source_id <= 0
-                    || p.slug.is_empty()
-                    || p.title.is_empty()
-                    || p.source_path.is_empty()
-            })
+            || self
+                .project
+                .as_ref()
+                .is_some_and(|p| p.id <= 0 || p.title.is_empty())
         {
             return Err(invalid("Invalid activity snapshot.").into());
         }
@@ -60,7 +58,7 @@ impl Activity {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct ActivityKey {
-    project: Option<(i64, String, String)>,
+    project: Option<i64>,
     task: Option<String>,
 }
 #[derive(Clone, Debug)]
@@ -88,8 +86,30 @@ pub struct Snapshot {
     pub change_mode: ChangeMode,
     pub split_on_day: bool,
     pub recent: Vec<RecentUse>,
+    pub projects: Vec<CatalogProject>,
+    /// Earlier project identities, for converting preferences saved by older versions.
+    pub legacy_projects: Vec<(LegacyProject, i64)>,
 }
 impl Snapshot {
+    pub fn project(&self, id: i64) -> Option<&CatalogProject> {
+        self.projects.iter().find(|project| project.id == id)
+    }
+    /// Unassigned focus is always available; otherwise the project must be listed and not
+    /// archived, and a chosen task must be listed and not done.
+    pub fn available(&self, activity: &Activity) -> bool {
+        let Some(chosen) = &activity.project else {
+            return true;
+        };
+        self.project(chosen.id).is_some_and(|project| {
+            !project.archived
+                && chosen.task.as_ref().is_none_or(|title| {
+                    project
+                        .tasks
+                        .iter()
+                        .any(|task| !task.done && task.title == *title)
+                })
+        })
+    }
     pub fn sort_projects(&self, choices: &mut [Activity]) {
         choices.sort_by_cached_key(|a| {
             (
@@ -140,6 +160,29 @@ pub enum Command {
     ChangeActivity(Activity),
     SetChangeMode(ChangeMode),
     SetSplitOnDay(bool),
+    AddProjects(Vec<String>),
+    RenameProject {
+        id: i64,
+        title: String,
+    },
+    SetProjectArchived {
+        id: i64,
+        archived: bool,
+    },
+    DeleteProject(i64),
+    AddTasks {
+        project: i64,
+        titles: Vec<String>,
+    },
+    SetTaskDone {
+        project: i64,
+        title: String,
+        done: bool,
+    },
+    DeleteTask {
+        project: i64,
+        title: String,
+    },
     AcceptRecovery,
     Report {
         id: u64,

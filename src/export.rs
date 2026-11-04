@@ -1,7 +1,7 @@
 //! Immutable report exports. Destination validation precedes every filesystem write.
 use crate::{
+    paths,
     reports::{Report, State},
-    source,
 };
 use std::{
     io::{self, Write},
@@ -113,7 +113,7 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
         ] {
             writeln!(
                 out,
-                "## {title}\n\n| Project | Task | Source | Saved ms |\n| --- | --- | --- | --- |"
+                "## {title}\n\n| Project | Task | Saved ms |\n| --- | --- | --- |"
             )?;
             for g in groups {
                 row(
@@ -121,7 +121,6 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
                     &[
                         g.project.clone(),
                         g.task.clone().unwrap_or_default(),
-                        g.source.clone().unwrap_or_default(),
                         g.saved_ms.to_string(),
                     ],
                     format,
@@ -131,7 +130,6 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
                 out,
                 &[
                     "Total saved".into(),
-                    String::new(),
                     String::new(),
                     report.saved_ms.to_string(),
                 ],
@@ -157,9 +155,7 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
     let session_columns = [
         "Session ID",
         "State",
-        "Source ID",
-        "Source path",
-        "Project slug",
+        "Project ID",
         "Project",
         "Task",
         "Note",
@@ -212,9 +208,7 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
         values.extend([
             r.id.to_string(),
             state(r.state).into(),
-            p.map(|p| p.source_id.to_string()).unwrap_or_default(),
-            p.map(|p| p.source_path.clone()).unwrap_or_default(),
-            p.map(|p| p.slug.clone()).unwrap_or_default(),
+            p.map(|p| p.id.to_string()).unwrap_or_default(),
             r.activity.label().into(),
             p.and_then(|p| p.task.clone()).unwrap_or_default(),
             r.activity.note.clone(),
@@ -235,7 +229,7 @@ pub fn render(out: &mut impl Write, report: &Report, format: Format) -> io::Resu
     Ok(())
 }
 fn destination(path: &Path, protected: &[PathBuf]) -> io::Result<PathBuf> {
-    let target = source::resolve(path)?;
+    let target = paths::resolve(path)?;
     if target.try_exists()? {
         return Err(io::Error::other(
             "Choose a new filename; existing files are never overwritten.",
@@ -243,23 +237,9 @@ fn destination(path: &Path, protected: &[PathBuf]) -> io::Result<PathBuf> {
     }
     let key = target.to_string_lossy().to_lowercase();
     for root in protected {
-        // Stored source identities are canonical. A disconnected source still has a
-        // lexical identity; an unresolved destination is never allowed.
-        let root = source::resolve(root).or_else(|error| {
-            if root.is_absolute()
-                && !root
-                    .components()
-                    .any(|c| matches!(c, std::path::Component::ParentDir))
-            {
-                Ok(root.clone())
-            } else {
-                Err(error)
-            }
-        })?;
+        let root = paths::resolve(root)?;
         if Path::new(&key).starts_with(Path::new(&root.to_string_lossy().to_lowercase())) {
-            return Err(io::Error::other(
-                "Export outside MetaPlan and application storage.",
-            ));
+            return Err(io::Error::other("Export outside application storage."));
         }
     }
     Ok(target)
@@ -369,8 +349,7 @@ mod tests {
         conn.execute("INSERT INTO focus_sessions(started_ms,checkpoint_ms,ended_ms,elapsed_ms,state,activity) VALUES(400000,410000,410000,10000,'interrupted',?1)",[&activity]).unwrap();
         drop(conn);
         let before = std::fs::read(&path).unwrap();
-        let snapshot = tracking::export_snapshot(&path, &request).unwrap();
-        let report = snapshot.report;
+        let report = tracking::export_snapshot(&path, &request).unwrap();
         assert_eq!((report.matching_sessions, report.history.len()), (207, 207));
         assert_eq!(
             (report.saved_ms, report.running_ms, report.review_ms),
@@ -423,21 +402,12 @@ mod tests {
         );
     }
     #[test]
-    fn writing_rejects_sources_storage_aliases_and_overwrites() {
+    fn writing_rejects_storage_aliases_and_overwrites() {
         let (dir, path, request) = fixture(1);
-        let source = dir.path().join("source");
-        std::fs::create_dir(&source).unwrap();
-        let report = tracking::export_snapshot(&path, &request).unwrap().report;
-        let protected = vec![source.clone(), path.parent().unwrap().to_path_buf()];
-        assert!(
-            write(
-                &report,
-                &source.join("blocked.csv"),
-                Format::Csv,
-                &protected
-            )
-            .is_err()
-        );
+        let storage = path.parent().unwrap().to_path_buf();
+        let report = tracking::export_snapshot(&path, &request).unwrap();
+        let protected = vec![storage.clone()];
+        let stored = std::fs::read_dir(&storage).unwrap().count();
         assert!(
             write(
                 &report,
@@ -447,7 +417,6 @@ mod tests {
             )
             .is_err()
         );
-        assert_eq!(std::fs::read_dir(&source).unwrap().count(), 0);
         let target = dir.path().join("report.csv");
         write(&report, &target, Format::Csv, &protected).unwrap();
         let before = std::fs::read(&target).unwrap();
@@ -465,11 +434,11 @@ mod tests {
         #[cfg(windows)]
         {
             let link = dir.path().join("alias");
-            let status=std::process::Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-Command","$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:AF_EXPORT_LINK -Target $env:AF_EXPORT_TARGET | Out-Null"]).env("AF_EXPORT_LINK",&link).env("AF_EXPORT_TARGET",&source).status().unwrap();
+            let status=std::process::Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-Command","$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:AF_EXPORT_LINK -Target $env:AF_EXPORT_TARGET | Out-Null"]).env("AF_EXPORT_LINK",&link).env("AF_EXPORT_TARGET",&storage).status().unwrap();
             assert!(status.success());
             assert!(write(&report, &link.join("blocked.csv"), Format::Csv, &protected).is_err());
-            assert_eq!(std::fs::read_dir(&source).unwrap().count(), 0);
         }
+        assert_eq!(std::fs::read_dir(&storage).unwrap().count(), stored);
     }
     #[test]
     fn output_failure_is_propagated() {
@@ -483,7 +452,7 @@ mod tests {
             }
         }
         let (_dir, path, request) = fixture(0);
-        let report = tracking::export_snapshot(&path, &request).unwrap().report;
+        let report = tracking::export_snapshot(&path, &request).unwrap();
         assert!(render(&mut Broken, &report, Format::Csv).is_err());
     }
     #[test]
@@ -505,8 +474,7 @@ mod tests {
         engine
             .apply(Some(tracking::Command::Stop), moment(12000))
             .unwrap();
-        let snapshot = reader.join().unwrap().unwrap();
-        assert_eq!(snapshot.report.history.len(), 5001);
+        assert_eq!(reader.join().unwrap().unwrap().history.len(), 5001);
         assert!(!engine.snapshot(moment(12000)).unwrap().running);
     }
 }

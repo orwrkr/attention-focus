@@ -269,9 +269,7 @@ mod tests {
         let state = Snapshot {
             activity: crate::tracking::Activity {
                 project: Some(crate::tracking::Project {
-                    source_id: 1,
-                    source_path: "synthetic".into(),
-                    slug: "example".into(),
+                    id: 1,
                     title: name.into(),
                     task: None,
                 }),

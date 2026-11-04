@@ -235,6 +235,23 @@ impl Engine {
                     [enabled],
                 )?;
             }
+            Some(Command::AddProjects(titles)) => self.store.add_projects(&titles)?,
+            Some(Command::RenameProject { id, title }) => self.store.rename_project(id, &title)?,
+            Some(Command::SetProjectArchived { id, archived }) => {
+                self.store.set_project_archived(id, archived)?;
+            }
+            Some(Command::DeleteProject(id)) => self.store.delete_project(id)?,
+            Some(Command::AddTasks { project, titles }) => {
+                self.store.add_tasks(project, &titles)?;
+            }
+            Some(Command::SetTaskDone {
+                project,
+                title,
+                done,
+            }) => self.store.set_task_done(project, &title, done)?,
+            Some(Command::DeleteTask { project, title }) => {
+                self.store.delete_task(project, &title)?;
+            }
             Some(Command::Stop) => {
                 if let Some(elapsed) = elapsed {
                     self.stop(now, elapsed, "stop")?;

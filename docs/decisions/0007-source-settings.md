@@ -1,7 +1,7 @@
 # ADR-0007: Source Settings and Read-Only Preview
 
 Date: 2026-10-27.
-Status: accepted.
+Status: superseded by [ADR-0031](0031-application-projects.md).
 
 ## Decision
 
