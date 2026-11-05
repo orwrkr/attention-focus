@@ -14,7 +14,7 @@ watch your screen or keyboard, score productivity, or use the network.
 3. Choose the project and optionally a task, then click **Start tracking**.
 
 You can also track **Unassigned focus** at any time, without adding a project. A small **i**
-beside a label or control explains it: rest the pointer on it, or move to the control with Tab.
+beside a label or control explains it: rest the pointer on it, or reach it with Tab.
 
 ## Manage projects and tasks
 

@@ -646,7 +646,7 @@ impl Panel {
                     };
                     ui.push_id(record.id, |ui| {
                         // The text holds a running duration, so it cannot identify the row.
-                        egui::CollapsingHeader::new(tf(
+                        let row = egui::CollapsingHeader::new(tf(
                             "reports.session_row",
                             &[
                                 ("start", &report.range.format_time(record.start_ms)),
@@ -697,6 +697,10 @@ impl Panel {
                                 ui.label(tf("reports.ended", &[("reason", &reason)]));
                             }
                         });
+                        // This list scrolls on its own, inside the body that follows the focus.
+                        if row.header_response.gained_focus() {
+                            row.header_response.scroll_to_me(None);
+                        }
                     });
                 }
             });

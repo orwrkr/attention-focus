@@ -23,10 +23,18 @@ mark and leaves it the rest of the width, and `info_after_header` places one bes
 The balloon is egui's tooltip, at most 320 points wide and never wider than the window.
 
 **What opens a balloon.** The pointer on the mark, at once, as the mark has no other purpose. The
-keyboard focus on the control it explains: egui gives buttons and checkboxes focus only through the
-keyboard, so a click leaves no balloon behind. A mark on a label that cannot take focus opens only
-under the pointer, as requested. Focus does not stop at the mark itself, because that would add a
-Tab stop to every row.
+keyboard focus on the mark or on the control it explains: egui gives buttons and checkboxes focus
+only through the keyboard, so a click leaves no balloon behind.
+
+**Every mark is a Tab stop.** The first version, 0.24.0, left marks out of the Tab order to save
+stops, so explanations of labels opened only under the pointer. The owner then chose to add them, in
+0.24.1, which makes every explanation reachable by keyboard. A mark that has the focus draws a
+thicker ring.
+
+**The window follows the focus.** egui moves the keyboard focus without bringing the widget into
+view, so a Tab stop and its balloon could be off screen. The real window showed this. The body now
+scrolls to a widget that gains focus when its clip cuts it, as does the session list. The fixed
+header is never cut, so it moves nothing.
 
 **What stays visible.** Errors, warnings, states that ask for an action such as interrupted time or
 a startup entry that points elsewhere, the progress of an export, empty states and all figures. The
@@ -44,13 +52,13 @@ applies a change still says that it changes the current interval.
 ## Alternatives
 
 - Native Windows tooltips: egui draws the whole window, so nothing native could anchor to a control.
-- Tab stops on marks: every hint would be reachable by keyboard, at the cost of a stop on each row.
-  This is easy to add if keyboard use needs it.
+- Tab stops only on marks beside labels: fewer stops, but marks would behave differently from one
+  another, and the owner chose marks in the Tab order without that exception.
 - A delay before the balloon, as for ordinary tooltips: it only slows the one thing a mark does.
 - Replacing state and warning text as well: a person has to notice those without looking for them.
 
 ## Consequences
 
 The window is shorter, and the two lower counter cards no longer reserve empty rows. An explanation
-now takes a deliberate step to read. Explanations of labels cannot be reached by keyboard alone.
+now takes a deliberate step to read. Each mark adds a stop to the Tab order.
 Marks and their balloons are drawn inside the window, so a balloon near an edge moves to stay inside.

@@ -22,8 +22,8 @@
   Polish, Turkish, Chinese (Simplified), Japanese, Korean and Arabic, selectable, following the
   Windows language by default and falling back to English. The guide and exports stay in English.
 - **Explanations on demand.** An **i** mark replaces text that explains a label or control. Its
-  balloon opens while the pointer rests on the mark, or while the keyboard focus is on the control
-  it explains. Errors, warnings and states that need an action stay visible. **About** is a
+  balloon opens while the pointer rests on the mark, or while the keyboard focus is on the mark or
+  the control it explains. Errors, warnings and states that need an action stay visible. **About** is a
   separate button that holds the version and the licenses.
 - **Releases.** A Rust implementation under the MIT License. English-only project content.
   Consistent version metadata, and one EXE that holds the required notices, published with an

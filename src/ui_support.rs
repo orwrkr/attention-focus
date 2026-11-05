@@ -85,7 +85,9 @@ fn paint_mark(ui: &egui::Ui, response: &egui::Response, text: &str, about: &[&eg
     if !ui.is_rect_visible(rect) {
         return;
     }
-    let open = response.contains_pointer() || about.iter().any(|control| control.has_focus());
+    let focused = response.has_focus();
+    let open =
+        response.contains_pointer() || focused || about.iter().any(|control| control.has_focus());
     let visuals = ui.visuals();
     let color = if open {
         visuals.strong_text_color()
@@ -95,7 +97,9 @@ fn paint_mark(ui: &egui::Ui, response: &egui::Response, text: &str, about: &[&eg
     // Drawn rather than typed, so it looks the same whichever font a language uses.
     let center = rect.center();
     let painter = ui.painter();
-    painter.circle_stroke(center, 6.5, egui::Stroke::new(1.0, color));
+    // The mark may be the keyboard's stop, and that has to show on the mark itself.
+    let ring = if focused { 2.0 } else { 1.0 };
+    painter.circle_stroke(center, 6.5, egui::Stroke::new(ring, color));
     painter.circle_filled(center + egui::vec2(0.0, -3.0), 1.0, color);
     painter.line_segment(
         [
@@ -109,11 +113,12 @@ fn paint_mark(ui: &egui::Ui, response: &egui::Response, text: &str, about: &[&eg
     }
 }
 
-/// A mark that stands in for an explanation. Its balloon opens while the pointer rests on the
-/// mark, and while the keyboard focus is on a control the explanation is about.
+/// A mark that stands in for an explanation, and a Tab stop of its own. Its balloon opens while
+/// the pointer rests on the mark, and while the keyboard focus is on the mark or on a control the
+/// explanation is about.
 pub fn info(ui: &mut egui::Ui, text: &str, about: &[&egui::Response]) -> egui::Response {
     let size = egui::vec2(MARK_WIDTH, ui.spacing().interact_size.y);
-    let (_, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let (_, response) = ui.allocate_exact_size(size, egui::Sense::focusable_noninteractive());
     paint_mark(ui, &response, text, about);
     response
 }
@@ -155,7 +160,11 @@ pub fn info_after_header(ui: &mut egui::Ui, header: &egui::Response, text: &str)
         header.rect.right_top() + egui::vec2(ui.spacing().item_spacing.x, 0.0),
         egui::vec2(MARK_WIDTH, header.rect.height()),
     );
-    let response = ui.interact(rect, header.id.with("info"), egui::Sense::hover());
+    let response = ui.interact(
+        rect,
+        header.id.with("info"),
+        egui::Sense::focusable_noninteractive(),
+    );
     paint_mark(ui, &response, text, &[header]);
 }
 
@@ -200,7 +209,9 @@ pub fn body<R>(
                 .show(ui, |ui| {
                     // Scroll areas inside the body reserve room for their own bars.
                     ui.spacing_mut().scroll = scroll_style();
-                    add(ui)
+                    let added = add(ui);
+                    follow_keyboard_focus(ui);
+                    added
                 })
         })
         .inner;
@@ -211,6 +222,19 @@ pub fn body<R>(
         ui.ctx().request_repaint();
     }
     output
+}
+
+/// egui moves the keyboard focus without bringing the widget into view. A widget that its clip
+/// does not cut is already in view, which also leaves the fixed header out of this.
+fn follow_keyboard_focus(ui: &egui::Ui) {
+    let ctx = ui.ctx();
+    let focused = ctx.memory(|memory| memory.focused());
+    if let Some(widget) = focused.and_then(|id| ctx.read_response(id))
+        && widget.gained_focus()
+        && widget.interact_rect != widget.rect
+    {
+        widget.scroll_to_me(None);
+    }
 }
 
 pub fn maximized_edge(ctx: &egui::Context) {
@@ -394,6 +418,145 @@ mod tests {
             ]),
             "a click on the control gives it no focus, so no balloon stays open"
         );
+    }
+
+    #[test]
+    fn every_mark_is_a_tab_stop_so_explanations_of_labels_open_by_keyboard() {
+        const LABEL_HINT: &str = "Synthetic label explanation";
+        const CONTROL_HINT: &str = "Synthetic control explanation";
+        let context = egui::Context::default();
+        let label_mark = std::cell::Cell::new(None);
+        let control = std::cell::Cell::new(None);
+        let control_mark = std::cell::Cell::new(None);
+        let mut time = 0.0;
+        let mut tab = || {
+            let mut events = vec![egui::Event::Key {
+                key: egui::Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            }];
+            let mut open = Vec::new();
+            for _ in 0..3 {
+                time += 1.0;
+                let texts = painted(&context, time, 400.0, std::mem::take(&mut events), |ui| {
+                    let (_, mark) =
+                        control_and_mark(ui, LABEL_HINT, |ui| ui.label("Synthetic label"));
+                    label_mark.set(Some(mark.id));
+                    let (button, mark) =
+                        control_and_mark(ui, CONTROL_HINT, |ui| ui.button("Control"));
+                    control.set(Some(button.id));
+                    control_mark.set(Some(mark.id));
+                });
+                open = texts
+                    .into_iter()
+                    .map(|(text, _)| text)
+                    .filter(|text| text == LABEL_HINT || text == CONTROL_HINT)
+                    .collect();
+            }
+            (context.memory(|memory| memory.focused()), open)
+        };
+        assert_eq!(tab(), (label_mark.get(), vec![LABEL_HINT.to_owned()]));
+        assert_eq!(tab(), (control.get(), vec![CONTROL_HINT.to_owned()]));
+        assert_eq!(tab(), (control_mark.get(), vec![CONTROL_HINT.to_owned()]));
+    }
+
+    #[test]
+    fn the_body_scrolls_to_a_widget_that_takes_the_keyboard_focus_and_leaves_the_header() {
+        const HEIGHT: f32 = 300.0;
+        let context = egui::Context::default();
+        apply_style(&context);
+        let rows = std::cell::RefCell::new(Vec::new());
+        let header = std::cell::Cell::new(egui::Rect::NOTHING);
+        let offset = std::cell::Cell::new(0.0);
+        let clip = std::cell::Cell::new(egui::Rect::NOTHING);
+        let mut time = 0.0;
+        let mut tab = |shift: bool| {
+            let mut events = vec![egui::Event::Key {
+                key: egui::Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: if shift {
+                    egui::Modifiers::SHIFT
+                } else {
+                    egui::Modifiers::default()
+                },
+            }];
+            // Backward focus arrives a frame later, and the scroll takes frames of its own.
+            for _ in 0..8 {
+                time += 1.0;
+                let mut output = context.run_ui(
+                    egui::RawInput {
+                        time: Some(time),
+                        events: std::mem::take(&mut events),
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(400.0, HEIGHT),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        header.set(ui.button("Header").rect);
+                        let area = body(ui, |ui| {
+                            clip.set(ui.clip_rect());
+                            let mut shown = Vec::new();
+                            for row in 0..40 {
+                                let button = ui.button(format!("Row {row}"));
+                                shown.push((button.id, button.rect));
+                            }
+                            *rows.borrow_mut() = shown;
+                        });
+                        offset.set(area.state.unclamped_offset().y);
+                    },
+                );
+                output.textures_delta.clear();
+            }
+            context.memory(|memory| memory.focused())
+        };
+        // The first stop is the header, and with the body at its top nothing moves.
+        tab(false);
+        assert_eq!(offset.get(), 0.0);
+        let mut last = None;
+        for _ in 0..30 {
+            last = tab(false);
+            let rows = rows.borrow();
+            let rect = rows
+                .iter()
+                .find(|row| Some(row.0) == last)
+                .expect("a row has focus")
+                .1;
+            assert!(
+                clip.get().contains_rect(rect),
+                "forward: {rect:?} outside {:?}",
+                clip.get()
+            );
+        }
+        assert!(offset.get() > 0.0, "the body scrolled down");
+        let scrolled = offset.get();
+        for _ in 0..20 {
+            last = tab(true);
+            let rows = rows.borrow();
+            let rect = rows
+                .iter()
+                .find(|row| Some(row.0) == last)
+                .expect("a row has focus")
+                .1;
+            assert!(
+                clip.get().contains_rect(rect),
+                "backward: {rect:?} outside {:?}",
+                clip.get()
+            );
+        }
+        assert!(offset.get() < scrolled, "the body scrolled back up");
+        let scrolled = offset.get();
+        // Back through the remaining rows to the header, which is always in view.
+        for _ in 0..10 {
+            last = tab(true);
+        }
+        assert_eq!(last, context.memory(|memory| memory.focused()));
+        assert!(offset.get() <= scrolled);
     }
 
     #[test]

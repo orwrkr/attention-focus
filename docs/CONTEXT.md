@@ -5,7 +5,7 @@ Updated: 2026-11-05. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.24.0, built and verified but not yet run by the owner, and it keeps schema
+Current release: 0.24.1, built and verified but not yet run by the owner, and it keeps schema
 four. Production runs an earlier version until the owner replaces it. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
@@ -30,7 +30,9 @@ Recent work:
 
 Commits are signed with the owner's SSH key through an `includeIf` in the global Git
 configuration. The repository `orwrkr/attention-focus` exists on GitHub and is private for now,
-and the owner plans to make it public. CI passed there on its first run. No tag or release exists.
+and the owner plans to make it public. CI passed there on its first run. Version tags start at
+`v0.1.0` and skip 0.20.0 to 0.24.0, whose commits hold the release workflow, so a tag would start a
+build. `v0.24.1` is the first release build.
 
 The ignored `local/` directory holds useful context that does not belong in a public repository:
 machine notes, prepared application answers, helper tools and retired logs. Clones do not have
