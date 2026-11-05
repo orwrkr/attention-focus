@@ -123,6 +123,51 @@ fn minute_boundary(mut date: Date, minute: u16, zone: &TimeZone) -> Result<i64> 
             std::io::Error::other(crate::i18n::message("errors.time_ambiguous", &[])).into()
         })
 }
+/// Resolve typed civil boundaries without choosing a side of a skipped or repeated hour.
+pub fn local_moment(date: &str, time: &str, allow_end: bool, timezone: &str) -> Result<i64> {
+    let date: Date = date.parse()?;
+    let (minute_text, second) = if time.len() == 8 {
+        let bytes = time.as_bytes();
+        if bytes[5] != b':' || !bytes[6..].iter().all(u8::is_ascii_digit) {
+            return Err(
+                std::io::Error::other(crate::i18n::message("errors.time_format", &[])).into(),
+            );
+        }
+        let second = (bytes[6] - b'0') * 10 + bytes[7] - b'0';
+        if second >= 60 {
+            return Err(
+                std::io::Error::other(crate::i18n::message("errors.time_range", &[])).into(),
+            );
+        }
+        (
+            time.get(..5).ok_or_else(|| {
+                std::io::Error::other(crate::i18n::message("errors.time_format", &[]))
+            })?,
+            second,
+        )
+    } else {
+        (time, 0)
+    };
+    let minute = parse_minute(minute_text, allow_end)?;
+    if minute == 1440 && second != 0 {
+        return Err(std::io::Error::other(crate::i18n::message("errors.time_range", &[])).into());
+    }
+    let zone = TimeZone::get(timezone)?;
+    // Keep the report boundary rules, then require the exact civil second to be unique,
+    // including midnight (which reports alone may resolve to a shifted day start).
+    minute_boundary(date, minute, &zone)?;
+    let (date, minute) = if minute == 1440 {
+        (date.tomorrow()?, 0)
+    } else {
+        (date, minute)
+    };
+    zone.to_ambiguous_zoned(date.at((minute / 60) as i8, (minute % 60) as i8, second as i8, 0))
+        .unambiguous()
+        .map(|z| z.timestamp().as_millisecond())
+        .map_err(|_| {
+            std::io::Error::other(crate::i18n::message("errors.time_ambiguous", &[])).into()
+        })
+}
 #[derive(Clone, Debug)]
 pub struct Day {
     pub date: String,
@@ -262,6 +307,7 @@ pub const CHART_MAX_DAYS: usize = 92;
 /// One session's part of one day, positioned by local clock time.
 #[derive(Clone, Debug)]
 pub struct ChartSegment {
+    pub session: i64,
     pub day: usize,
     pub start_minute: f32,
     /// The start plus the real duration, which sets the length of the drawn block.
@@ -306,6 +352,7 @@ pub struct ChartSeries {
 /// Graphical views of the same elapsed time as the report's totals.
 #[derive(Clone, Debug, Default)]
 pub struct Chart {
+    pub sessions: BTreeMap<i64, Record>,
     /// Empty when the period is longer than `CHART_MAX_DAYS`.
     pub days: Vec<ChartDay>,
     pub segments: Vec<ChartSegment>,
@@ -346,6 +393,9 @@ impl Chart {
         }
         let mut series = BTreeMap::<Option<i64>, (String, u64, i64)>::new();
         for record in records.iter().filter(|r| counted(r, range)) {
+            if !chart.too_long {
+                chart.sessions.insert(record.id, record.clone());
+            }
             let project = record.activity.project.as_ref();
             let id = project.map(|p| p.id);
             let first = range
@@ -389,6 +439,7 @@ impl Chart {
                 let start_minute = range.clock_minute(start);
                 let clock = range.clock_minute(end);
                 chart.segments.push(ChartSegment {
+                    session: record.id,
                     day: index,
                     start_minute,
                     // Real duration, since local clock times repeat when daylight saving ends.
@@ -634,6 +685,47 @@ fn compute_with_limit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_moments_keep_seconds_reject_dst_gaps_and_repeats_and_limit_end_of_day() {
+        let zone = "America/New_York";
+        for (date, time) in [
+            ("2026-03-08", "02:30"),
+            ("2026-03-08", "02:30:45"),
+            ("2026-11-01", "01:30"),
+            ("2026-11-01", "01:30:45"),
+        ] {
+            assert_eq!(
+                local_moment(date, time, false, zone)
+                    .unwrap_err()
+                    .to_string(),
+                crate::i18n::message("errors.time_ambiguous", &[])
+            );
+        }
+        let minute = local_moment("2026-01-01", "12:30", false, zone).unwrap();
+        assert_eq!(
+            local_moment("2026-01-01", "12:30:45", false, zone).unwrap(),
+            minute + 45000
+        );
+        assert!(local_moment("2026-01-01", "24:00", false, zone).is_err());
+        assert_eq!(
+            local_moment("2026-01-01", "24:00", true, zone).unwrap(),
+            local_moment("2026-01-02", "00:00", false, zone).unwrap()
+        );
+        assert!(local_moment("2026-01-01", "24:00:01", true, zone).is_err());
+        for time in [
+            "12:30:60",
+            "12:30:99",
+            "12:30:x1",
+            "1:00",
+            "12:30:001",
+            "invalid",
+        ] {
+            assert!(
+                local_moment("2026-01-01", time, true, zone).is_err(),
+                "{time}"
+            );
+        }
+    }
     fn range(from: &str, through: &str, timezone: &str) -> Range {
         Range::new(&Request {
             from: from.into(),

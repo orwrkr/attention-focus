@@ -44,5 +44,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0036](0036-single-exe-release.md) | accepted | One EXE as the release, with licenses inside it |
 | [0037](0037-info-marks-and-about.md) | accepted | Info marks for explanations, and an About button |
 | [0038](0038-microsoft-runtime-and-file-properties.md) | accepted | Microsoft runtime terms, license wording and file properties |
+| [0039](0039-history-correction.md) | accepted | Correcting history by hand |
 
-Next number: `0039`. Template: `templates/ADR.md` from the repository root.
+Next number: `0040`. Template: `templates/ADR.md` from the repository root.

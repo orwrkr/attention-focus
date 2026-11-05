@@ -27,6 +27,8 @@ The examples show invented projects.
 - **Reports.** See totals by project, task and day for any period, in any time zone. Periods can
   follow the current day. Export to CSV or Markdown.
 - **Charts.** A timeline of when you worked, columns of how much per day, and your weekly rhythm.
+- **Corrections.** Right-click an interval on the timeline or in the session list to edit or delete
+  it, or add one you missed. Intervals never overlap, and every change is kept in the history file.
 - **Light and dark themes** that follow Windows automatically, or the one you choose.
 - **Thirteen languages**, following Windows or your choice: English, Russian, German, French,
   Spanish, Portuguese (Brazil), Italian, Polish, Turkish, Chinese (Simplified), Japanese, Korean

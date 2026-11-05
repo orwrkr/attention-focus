@@ -5,7 +5,7 @@ use rusqlite::{Connection, Transaction, params};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path, time::Duration};
 
-pub(super) const SCHEMA_VERSION: i64 = 4;
+pub(super) const SCHEMA_VERSION: i64 = 5;
 
 /// Project identity before schema four: source ID, source path and source folder name.
 pub type LegacyProject = (i64, String, String);
@@ -240,6 +240,23 @@ pub(super) fn upgrade(connection: &mut Connection, path: &Path) -> Result<()> {
         }
         let tx = connection.transaction()?;
         upgrade_to_application_projects(&tx)?;
+        tx.commit()?;
+    }
+    if version < 5 {
+        if version == 4 {
+            backup_before_upgrade(connection, path, "focus-before-v5-")?;
+        }
+        let tx = connection.transaction()?;
+        tx.execute_batch(
+            "CREATE TABLE focus_session_edits(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            action TEXT NOT NULL CHECK(action IN ('create','update','delete')),
+            edited_ms INTEGER NOT NULL,
+            before TEXT,
+            after TEXT
+        ); PRAGMA user_version=5;",
+        )?;
         tx.commit()?;
     }
     Ok(())

@@ -5,13 +5,15 @@ Updated: 2026-11-05. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.24.2, built and verified but not yet run by the owner, and it keeps schema
-four. Production runs an earlier version until the owner replaces it. The application owns its
+Current release: 0.25.2, built and verified but not yet run by the owner, and it upgrades history
+to schema five. Production runs an earlier version until the owner replaces it. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
 Recent work:
 
+- T-0019: edit, delete and add intervals from menus on the timeline and session rows, with an audit
+  table and schema five (ADR-0039).
 - T-0042: neutral license wording in every language, aligned marks, complete file properties, and a
   notice for the statically linked Microsoft runtime (ADR-0038). MIT stays.
 - T-0041: an About button, and "i" marks with balloons in place of explanatory text (ADR-0037). Use
@@ -61,6 +63,7 @@ do not change the Windows app mode.
 - The project panel and note conversion in the running application (T-0035).
 - Real tray foreground behavior and a real midnight crossing (T-0031, T-0033).
 - The real upgrade to schema four is confirmed only by the running version and its backup file.
+- The real upgrade to schema five, which Production has not yet had (T-0019).
 - Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1` and `v0.24.2`, and the
   `v0.24.2` draft waits for the owner.
 - Whose license covers Visual Studio Enterprise on GitHub's runner (ADR-0038).
@@ -70,7 +73,7 @@ do not change the Windows app mode.
 ## Exact next step
 
 See [tasks/INDEX.md](../tasks/INDEX.md). Publishing is the owner's decision: T-0034 and then T-0037.
-T-0019 stays the next larger feature; research compatibility before any further migration.
+No larger feature is selected. Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires

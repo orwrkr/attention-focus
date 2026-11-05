@@ -20,7 +20,7 @@
 | [T-0016](T-0016-report-export.md) | done | CSV and Markdown Report Export | T-0005 |
 | [T-0017](T-0017-ui-state-and-daily-tray.md) | done | Restored UI State, Stable Resize and Daily Tray Total | T-0015 |
 | [T-0018](T-0018-window-counters-and-width.md) | done | Explicit Window Counters and Stable Width Limit | T-0017 |
-| [T-0019](T-0019-history-correction.md) | ready | History Correction and Manual Intervals | T-0018 |
+| [T-0019](T-0019-history-correction.md) | done | History Correction and Manual Intervals | T-0018 |
 | [T-0020](T-0020-ui-interaction-and-scroll.md) | done | Scroll Reflow, Window Edges and Selection Controls | T-0018 |
 | [T-0021](T-0021-tracking-motion.md) | done | Calm Tracking Activity Indicators | T-0020 |
 | [T-0022](T-0022-startup-window-recovery.md) | done | Recover Collapsed Startup Windows | T-0021 |
@@ -50,6 +50,5 @@ Task template: `templates/TASK.md` from the repository root.
 Next check: the project panel (T-0035), native tray activation (T-0031) and a real midnight
 crossing (T-0032, T-0033) in Development, using fresh desktop permission.
 Next steps: publishing through [T-0034](T-0034-public-release-readiness.md) and then
-[T-0037](T-0037-code-signing.md) needs the owner. [T-0019](T-0019-history-correction.md) stays the next
-larger feature. T-0002 remains a separate desktop acceptance gate and does not authorize disruptive
+[T-0037](T-0037-code-signing.md) needs the owner. T-0002 remains a separate desktop acceptance gate and does not authorize disruptive
 system tests.

@@ -7,6 +7,7 @@ pub mod export;
 pub mod fonts;
 pub mod i18n;
 pub mod icons;
+pub mod interval_dialog;
 #[cfg(windows)]
 pub mod lifecycle;
 pub mod motion;

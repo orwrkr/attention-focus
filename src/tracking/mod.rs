@@ -8,6 +8,7 @@ use std::{
 
 mod catalog;
 mod engine;
+mod history_edit;
 mod migrate;
 mod store;
 mod worker;
@@ -174,7 +175,23 @@ impl Snapshot {
             .map_or(0, |r| r.order)
     }
 }
+#[derive(Clone, Debug)]
+pub struct IntervalEdit {
+    pub id: Option<i64>,
+    /// The start and end that the interface showed for `id`.
+    pub recorded: Option<(i64, i64)>,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub activity: Activity,
+    pub timezone: String,
+}
 pub enum Command {
+    SaveInterval(IntervalEdit),
+    DeleteInterval {
+        id: i64,
+        /// The start and end that the interface showed.
+        recorded: (i64, i64),
+    },
     Toggle,
     Start(Activity),
     Stop,

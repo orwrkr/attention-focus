@@ -7,11 +7,20 @@ pub struct TimePicker {
     draft: Option<(u8, u8)>,
 }
 fn parse(text: &str, end: bool) -> Option<(u8, u8)> {
-    let (hour, minute) = text.split_once(':')?;
+    let (hour, rest) = text.split_once(':')?;
+    let minute = match rest.split_once(':') {
+        Some((minute, seconds)) if seconds.len() == 2 && seconds.parse::<u8>().ok()? < 60 => minute,
+        Some(_) => return None,
+        None => rest,
+    };
     let (hour, minute) = (hour.parse::<u8>().ok()?, minute.parse::<u8>().ok()?);
     ((hour < 24 && minute < 60) || (end && hour == 24 && minute == 0)).then_some((hour, minute))
 }
 impl TimePicker {
+    #[cfg(test)]
+    pub(crate) fn draft_for_test(&self) -> Option<(u8, u8)> {
+        self.draft
+    }
     pub fn show(&mut self, ui: &mut egui::Ui, text: &mut String, id: &str, end: bool) -> bool {
         let mut changed = false;
         let mut open = false;

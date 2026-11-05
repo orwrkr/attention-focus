@@ -11,6 +11,9 @@
 - **Reports.** Time by project, task and day for any period and time zone, to the minute. Periods
   can follow the current day. Charts show a timeline, days and a weekly rhythm. Open reports
   refresh on their own, and export to CSV and Markdown.
+- **Correcting history.** Finished intervals can be edited or deleted, and missed ones added, from
+  a menu on the timeline and on session rows. Intervals never overlap, and every change is kept
+  in an audit table (ADR-0039).
 - **Calm interface.** Window placement, sections, filters and note drafts are restored without
   restarting tracking. Stay on top and sign-in startup are optional. Motion is restrained and
   follows Windows settings. Hide to tray and Exit stay visible above scrolling content. Light
@@ -38,7 +41,6 @@ why. Earlier versions of this file list the individual requirements.
 
 ## Deferred
 
-- Correcting recorded sessions and adding missed intervals by hand (T-0019).
 - Global shortcuts, an installer, and an automatic updater.
 - Renaming tasks with their history.
 - Real Windows validation of sleep, multi-monitor geometry and clean machines (T-0002).

@@ -6,6 +6,627 @@ use std::{
     time::{Duration, Instant},
 };
 use worker::command_moment;
+
+mod history_correction {
+    use super::*;
+    use rusqlite::params;
+    use serde_json::Value;
+
+    fn edit(id: Option<i64>, start: i64, end: i64) -> IntervalEdit {
+        IntervalEdit {
+            id,
+            recorded: None,
+            start_ms: start,
+            end_ms: end,
+            activity: Activity::default(),
+            timezone: "UTC".into(),
+        }
+    }
+    fn audit(store: &Store) -> Vec<(String, i64, Option<Value>, Option<Value>)> {
+        store
+            .connection
+            .prepare("SELECT action,edited_ms,before,after FROM focus_session_edits ORDER BY id")
+            .unwrap()
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .unwrap()
+            .map(|r| {
+                let (a, ms, before, after) = r.unwrap();
+                (
+                    a,
+                    ms,
+                    before.map(|s| serde_json::from_str(&s).unwrap()),
+                    after.map(|s| serde_json::from_str(&s).unwrap()),
+                )
+            })
+            .collect()
+    }
+    fn history(store: &Store) -> Vec<String> {
+        stored_text(
+            &store.connection,
+            "SELECT json_object('id',id,'start',started_ms,'end',ended_ms,'checkpoint',checkpoint_ms,'elapsed',elapsed_ms,'state',state,'activity',activity,'reason',end_reason) FROM focus_sessions ORDER BY id",
+        )
+    }
+    fn insert(store: &Store, start: i64, end: Option<i64>, state: &str) -> i64 {
+        store.connection.execute("INSERT INTO focus_sessions(started_ms,ended_ms,checkpoint_ms,elapsed_ms,state,activity,end_reason) VALUES(?1,?2,COALESCE(?2,?1),COALESCE(?2-?1,0),?3,'{\"project\":null,\"note\":\"\"}','stop')", params![start, end, state]).unwrap();
+        store.connection.last_insert_rowid()
+    }
+    fn catalog_activity(store: &mut Store) -> Activity {
+        store.add_projects(&["Example".into()]).unwrap();
+        let id = store.catalog().unwrap()[0].id;
+        store.add_tasks(id, &["Task".into()]).unwrap();
+        Activity {
+            project: Some(Project {
+                id,
+                title: "Example".into(),
+                task: Some("Task".into()),
+            }),
+            note: "Note".into(),
+        }
+    }
+
+    #[test]
+    fn schema_four_upgrade_backs_up_every_row_once_and_is_atomic_on_failure() {
+        for fail in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("focus.sqlite3");
+            let store = Store::open(&path).unwrap();
+            insert(&store, 100, Some(200), "stopped");
+            insert(&store, 300, Some(400), "interrupted");
+            let before = history(&store);
+            store
+                .connection
+                .execute_batch("DROP TABLE focus_session_edits; PRAGMA user_version=4;")
+                .unwrap();
+            if fail {
+                store
+                    .connection
+                    .execute_batch("CREATE TABLE focus_session_edits(conflict TEXT);")
+                    .unwrap();
+            }
+            drop(store);
+            if fail {
+                assert!(Store::open(&path).is_err());
+                let connection = Connection::open(&path).unwrap();
+                assert_eq!(
+                    connection
+                        .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                        .unwrap(),
+                    4
+                );
+                assert_eq!(history(&Store { connection }), before);
+            } else {
+                let store = Store::open(&path).unwrap();
+                assert_eq!(history(&store), before);
+                assert_eq!(
+                    store
+                        .connection
+                        .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                        .unwrap(),
+                    5
+                );
+                assert!(audit(&store).is_empty());
+                drop(store);
+                Store::open(&path).unwrap();
+            }
+            let backups = backup_files(dir.path(), "focus-before-v5-");
+            assert_eq!(backups.len(), 1);
+            let backup = Store {
+                connection: Connection::open(&backups[0]).unwrap(),
+            };
+            assert_eq!(history(&backup), before);
+            assert_eq!(
+                backup
+                    .connection
+                    .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                4
+            );
+        }
+    }
+    #[test]
+    fn every_older_numbered_schema_reaches_five_and_fresh_history_needs_no_backup() {
+        for version in 1..=3 {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("focus.sqlite3");
+            legacy_database(
+                &path,
+                version,
+                &[(
+                    100,
+                    Some(200),
+                    100,
+                    "stopped",
+                    legacy_activity(1, "example", "Example", None),
+                )],
+            );
+            let store = Store::open(&path).unwrap();
+            assert_eq!(
+                store
+                    .connection
+                    .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                5
+            );
+            assert_eq!(store.snapshot().unwrap().total_ms, 100);
+            assert!(audit(&store).is_empty());
+            assert_eq!(backup_files(dir.path(), "focus-before-").len(), 1);
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        assert!(audit(&store).is_empty());
+        assert!(backup_files(dir.path(), "focus-before-").is_empty());
+    }
+    #[test]
+    fn manual_add_rejects_bad_order_future_and_every_positive_overlap_but_allows_touching() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        for (start, end, key) in [
+            (200, 100, "errors.interval_order"),
+            (100, 100, "errors.interval_order"),
+            (100, 1001, "errors.interval_future"),
+        ] {
+            assert_eq!(
+                store
+                    .save_interval(&edit(None, start, end), 1000)
+                    .unwrap_err()
+                    .to_string(),
+                crate::i18n::message(key, &[])
+            );
+        }
+        let saved = insert(&store, 200, Some(300), "stopped");
+        insert(&store, 400, Some(500), "interrupted");
+        insert(&store, 600, None, "running");
+        insert(&store, 150, Some(150), "stopped");
+        let original = history(&store);
+        for (start, end) in [(250, 350), (450, 550), (650, 750)] {
+            assert!(
+                store
+                    .save_interval(&edit(None, start, end), 1000)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("overlaps")
+            );
+            assert_eq!(history(&store), original);
+            assert!(audit(&store).is_empty());
+        }
+        let conflict = store
+            .save_interval(&edit(None, 100, 900), 1000)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            conflict.contains("00:00:00"),
+            "seconds appear in the conflict"
+        );
+        store.save_interval(&edit(None, 100, 200), 1000).unwrap();
+        store.save_interval(&edit(None, 300, 400), 1000).unwrap();
+        assert_eq!(audit(&store).len(), 2);
+        assert_eq!(saved, 1);
+    }
+    #[test]
+    fn overlap_names_the_earliest_conflict_with_seconds_in_the_requested_zone() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        let start = instant("2026-10-27T12:00:11Z");
+        insert(&store, start + 60000, Some(start + 90000), "stopped");
+        insert(&store, start, Some(start + 30000), "stopped");
+        let mut addition = edit(None, start - 1000, start + 100000);
+        addition.timezone = "America/New_York".into();
+        let error = store
+            .save_interval(&addition, start + 200000)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error,
+            crate::i18n::message(
+                "errors.interval_overlap",
+                &[
+                    ("start", "2026-10-27 08:00:11 -04:00"),
+                    ("end", "2026-10-27 08:00:41 -04:00")
+                ]
+            )
+        );
+        addition.timezone = "invalid-zone".into();
+        assert!(
+            store
+                .save_interval(&addition, start + 200000)
+                .unwrap_err()
+                .to_string()
+                .contains("overlaps"),
+            "an unknown display zone cannot bypass overlap validation"
+        );
+        assert!(audit(&store).is_empty());
+    }
+    #[test]
+    fn manual_add_refreshes_both_daily_totals_and_count_without_selection_or_recent_use() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let chosen = catalog_activity(&mut engine.store);
+        engine
+            .apply(Some(Command::Start(chosen.clone())), at(0))
+            .unwrap();
+        engine.apply(Some(Command::Stop), at(100)).unwrap();
+        let before = engine.snapshot(at(1000)).unwrap();
+        let recent = stored_text(
+            &engine.store.connection,
+            "SELECT json_object('key',activity_key,'order',used_order) FROM focus_recent ORDER BY used_order",
+        );
+        let mut addition = edit(None, at(200).wall_ms, at(500).wall_ms);
+        addition.activity = chosen;
+        engine
+            .apply(Some(Command::SaveInterval(addition)), at(1000))
+            .unwrap();
+        let after = engine.snapshot(at(1000)).unwrap();
+        assert_eq!(
+            (
+                after.total_ms,
+                after.completed,
+                after.daily_project_ms,
+                after.daily_all_ms
+            ),
+            (400, 2, Some(400), Some(400))
+        );
+        assert_eq!(after.activity, before.activity);
+        assert_eq!(
+            stored_text(
+                &engine.store.connection,
+                "SELECT json_object('key',activity_key,'order',used_order) FROM focus_recent ORDER BY used_order"
+            ),
+            recent
+        );
+        let edits = audit(&engine.store);
+        assert_eq!(edits.len(), 1);
+        assert_eq!(
+            (&edits[0].0, edits[0].1, edits[0].2.as_ref()),
+            (&"create".into(), at(1000).wall_ms, None)
+        );
+        assert_eq!(edits[0].3.as_ref().unwrap()["end_reason"], "manual");
+        drop(engine);
+        let store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        assert_eq!(store.snapshot().unwrap().total_ms, 400);
+        assert_eq!(audit(&store).len(), 1);
+        let mut engine = Engine::new(store, at(1000));
+        engine
+            .apply(Some(Command::Start(Activity::default())), at(1000))
+            .unwrap();
+        assert!(engine.snapshot(at(1000)).unwrap().running);
+    }
+    #[test]
+    fn activity_only_edit_keeps_legacy_overlap_elapsed_and_exact_boundaries_and_audits_both_sides()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        let id = insert(&store, 101, Some(299), "stopped");
+        insert(&store, 150, Some(350), "stopped");
+        store
+            .connection
+            .execute(
+                "UPDATE focus_sessions SET elapsed_ms=170,checkpoint_ms=280 WHERE id=?1",
+                [id],
+            )
+            .unwrap();
+        let before = history(&store);
+        let mut correction = edit(Some(id), 101, 299);
+        correction.activity.note = "Corrected note".into();
+        store.save_interval(&correction, 1000).unwrap();
+        let row: Value = serde_json::from_str(&history(&store)[0]).unwrap();
+        assert_eq!(
+            (
+                row["start"].as_i64(),
+                row["end"].as_i64(),
+                row["elapsed"].as_i64(),
+                row["checkpoint"].as_i64()
+            ),
+            (Some(101), Some(299), Some(170), Some(280))
+        );
+        let edits = audit(&store);
+        assert_eq!(edits[0].0, "update");
+        assert_eq!(edits[0].2.as_ref().unwrap()["activity"]["note"], "");
+        assert_eq!(
+            edits[0].3.as_ref().unwrap()["activity"]["note"],
+            "Corrected note"
+        );
+        store.save_interval(&correction, 1000).unwrap();
+        assert_eq!(audit(&store).len(), 1, "a no-op has no audit");
+        assert_ne!(history(&store), before);
+        correction.end_ms = 300;
+        assert!(
+            store.save_interval(&correction, 1000).is_err(),
+            "the worker compares boundaries with the stored row"
+        );
+    }
+    #[test]
+    fn boundary_edit_uses_wall_length_keeps_reason_and_preserves_unknown_snapshot_json_exactly() {
+        for catalog_change in ["rename", "archive", "delete"] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+            let activity = catalog_activity(&mut store);
+            let project = activity.project.as_ref().unwrap().id;
+            let id = insert(&store, 100, Some(200), "stopped");
+            let text = format!("  {}  ", serde_json::to_string(&activity).unwrap());
+            store.connection.execute("UPDATE focus_sessions SET activity=?1,elapsed_ms=90,end_reason='switch' WHERE id=?2",params![text,id]).unwrap();
+            match catalog_change {
+                "rename" => store.rename_project(project, "New name").unwrap(),
+                "archive" => store.set_project_archived(project, true).unwrap(),
+                _ => {
+                    store
+                        .connection
+                        .execute("DELETE FROM focus_projects WHERE id=?1", [project])
+                        .unwrap();
+                }
+            }
+            let mut correction = edit(Some(id), 101, 202);
+            correction.activity = activity;
+            store.save_interval(&correction, 1000).unwrap();
+            assert_eq!(
+                stored_text(&store.connection, "SELECT activity FROM focus_sessions"),
+                vec![text]
+            );
+            let row: Value = serde_json::from_str(&history(&store)[0]).unwrap();
+            assert_eq!(row["elapsed"], 101);
+            assert_eq!(row["checkpoint"], 202);
+            assert_eq!(row["reason"], "switch");
+        }
+    }
+    #[test]
+    fn changed_activity_uses_catalog_title_and_accepts_archived_finished_and_unicode() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        let mut activity = catalog_activity(&mut store);
+        let id = activity.project.as_ref().unwrap().id;
+        // Synthetic Unicode project and note exercise user data without prose fixtures.
+        let title = "Example \u{4e2d}\u{1f331}";
+        store.rename_project(id, title).unwrap();
+        store.set_project_archived(id, true).unwrap();
+        store.set_task_done(id, "Task", true).unwrap();
+        activity.note = "Note \u{6458}\u{8981} \u{1f331}".into();
+        let mut addition = edit(None, 100, 200);
+        addition.activity = activity.clone();
+        store.save_interval(&addition, 1000).unwrap();
+        let row = history(&store);
+        let snapshot: Value = serde_json::from_str(&row[0]).unwrap();
+        let saved: Activity = serde_json::from_str(snapshot["activity"].as_str().unwrap()).unwrap();
+        assert_eq!(saved.project.unwrap().title, title);
+        assert_eq!(saved.note, activity.note);
+        assert_eq!(snapshot["reason"], "manual");
+        assert_eq!(
+            audit(&store)[0].3.as_ref().unwrap()["activity"]["note"],
+            activity.note
+        );
+        for unknown_task in [false, true] {
+            let mut bad = edit(Some(1), 100, 200);
+            bad.activity = activity.clone();
+            if unknown_task {
+                bad.activity.project.as_mut().unwrap().task = Some("Missing".into());
+            } else {
+                bad.activity.project.as_mut().unwrap().id += 1;
+            }
+            assert_eq!(
+                store.save_interval(&bad, 1000).unwrap_err().to_string(),
+                crate::i18n::message("errors.interval_activity", &[])
+            );
+            assert_eq!(history(&store), row);
+            assert_eq!(audit(&store).len(), 1);
+        }
+    }
+    #[test]
+    fn locked_or_missing_rows_refuse_save_and_delete_without_any_write() {
+        for state in ["running", "interrupted", "missing"] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+            let id = if state == "missing" {
+                99
+            } else {
+                insert(&store, 100, Some(200), state)
+            };
+            let before = history(&store);
+            let expected = crate::i18n::message(
+                if state == "missing" {
+                    "errors.interval_missing"
+                } else {
+                    "errors.interval_locked"
+                },
+                &[],
+            );
+            assert_eq!(
+                store
+                    .save_interval(&edit(Some(id), 100, 200), 1000)
+                    .unwrap_err()
+                    .to_string(),
+                expected
+            );
+            assert_eq!(
+                store
+                    .delete_interval(id, (0, 0), 1000)
+                    .unwrap_err()
+                    .to_string(),
+                expected
+            );
+            assert_eq!(history(&store), before);
+            assert!(audit(&store).is_empty());
+        }
+    }
+    #[test]
+    fn deletion_refreshes_totals_and_releases_the_catalog_while_audit_keeps_the_old_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut engine = engine(dir.path());
+        let activity = catalog_activity(&mut engine.store);
+        let project = activity.project.as_ref().unwrap().id;
+        let mut addition = edit(None, at(100).wall_ms, at(500).wall_ms);
+        addition.activity = activity;
+        engine
+            .apply(Some(Command::SaveInterval(addition)), at(1000))
+            .unwrap();
+        assert!(engine.store.delete_project(project).is_err());
+        assert_eq!(engine.snapshot(at(1000)).unwrap().daily_all_ms, Some(400));
+        engine
+            .apply(
+                Some(Command::DeleteInterval {
+                    id: 1,
+                    recorded: (at(100).wall_ms, at(500).wall_ms),
+                }),
+                at(1000),
+            )
+            .unwrap();
+        let state = engine.snapshot(at(1000)).unwrap();
+        assert_eq!(
+            (
+                state.total_ms,
+                state.completed,
+                state.daily_project_ms,
+                state.daily_all_ms
+            ),
+            (0, 0, Some(0), Some(0))
+        );
+        assert!(history(&engine.store).is_empty());
+        let edits = audit(&engine.store);
+        assert_eq!(edits[1].0, "delete");
+        assert_eq!(edits[1].2, edits[0].3);
+        assert!(edits[1].3.is_none());
+        engine.store.delete_project(project).unwrap();
+    }
+    #[test]
+    fn a_reused_id_does_not_let_a_stale_view_change_another_interval() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        insert(&store, 100, Some(200), "stopped");
+        store.delete_interval(1, (100, 200), 1000).unwrap();
+        store.save_interval(&edit(None, 300, 400), 1000).unwrap();
+        let before = history(&store);
+        let edits = audit(&store).len();
+        let mut stale = edit(Some(1), 110, 190);
+        stale.recorded = Some((100, 200));
+        for result in [
+            store.save_interval(&stale, 1000),
+            store.delete_interval(1, (100, 200), 1000),
+        ] {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                crate::i18n::message("errors.interval_missing", &[])
+            );
+        }
+        assert_eq!(history(&store), before);
+        assert_eq!(audit(&store).len(), edits);
+    }
+    #[test]
+    fn a_note_change_keeps_the_recorded_title_and_needs_no_valid_boundaries() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+        let recorded = Activity {
+            project: Some(crate::tracking::Project {
+                id: 9,
+                title: "Recorded title".into(),
+                task: Some("Task that left the list".into()),
+            }),
+            note: String::new(),
+        };
+        store
+            .connection
+            .execute(
+                "INSERT INTO focus_sessions(started_ms,checkpoint_ms,ended_ms,elapsed_ms,state,activity) VALUES(500,5000,5000,0,'stopped',?1)",
+                [serde_json::to_string(&recorded).unwrap()],
+            )
+            .unwrap();
+        let mut changed = edit(Some(1), 500, 5000);
+        changed.activity = Activity {
+            note: "Corrected note".into(),
+            ..recorded.clone()
+        };
+        // The stored end lies after this clock reading, which must not block a note.
+        store.save_interval(&changed, 1000).unwrap();
+        let stored: Activity = serde_json::from_str(
+            &stored_text(&store.connection, "SELECT activity FROM focus_sessions")[0],
+        )
+        .unwrap();
+        assert_eq!(stored, changed.activity);
+        // A different task must still come from the list.
+        changed.activity.project.as_mut().unwrap().task = Some("Other".into());
+        assert!(store.save_interval(&changed, 1000).is_err());
+    }
+    #[test]
+    fn audit_failure_rolls_back_add_edit_and_delete() {
+        for action in ["add", "edit", "delete"] {
+            let dir = tempfile::tempdir().unwrap();
+            let mut store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+            insert(&store, 100, Some(200), "stopped");
+            let before = history(&store);
+            store
+                .connection
+                .execute_batch("ALTER TABLE focus_session_edits RENAME TO unavailable_audit;")
+                .unwrap();
+            let result = match action {
+                "add" => store.save_interval(&edit(None, 300, 400), 1000),
+                "edit" => store.save_interval(&edit(Some(1), 101, 201), 1000),
+                _ => store.delete_interval(1, (100, 200), 1000),
+            };
+            assert!(result.is_err(), "{action}");
+            assert_eq!(history(&store), before, "{action}");
+            assert!(
+                stored_text(&store.connection, "SELECT action FROM unavailable_audit").is_empty()
+            );
+        }
+    }
+    #[test]
+    fn manual_midnight_is_one_row_and_two_chart_segments_and_keeps_running_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let midnight = instant("2026-10-27T00:00:00Z");
+        let clock = Clock {
+            anchor_ms: midnight,
+        };
+        let mut engine = clocked_engine(dir.path(), clock, "UTC");
+        engine
+            .apply(
+                Some(Command::Start(Activity::default())),
+                clock.moment(midnight + 1000),
+            )
+            .unwrap();
+        let started = engine.started.unwrap();
+        engine
+            .apply(
+                Some(Command::SaveInterval(edit(
+                    None,
+                    midnight - 10000,
+                    midnight,
+                ))),
+                clock.moment(midnight + 2000),
+            )
+            .unwrap();
+        assert_eq!(engine.started.unwrap().wall_ms, started.wall_ms);
+        assert_eq!(engine.started.unwrap().mono_ms, started.mono_ms);
+        engine
+            .apply(Some(Command::Stop), clock.moment(midnight + 2000))
+            .unwrap();
+        engine
+            .apply(
+                Some(Command::SaveInterval(edit(
+                    Some(2),
+                    midnight - 10000,
+                    midnight + 500,
+                ))),
+                clock.moment(midnight + 3000),
+            )
+            .unwrap();
+        let mut request = whole_day("2026-10-26", "UTC");
+        request.through = "2026-10-27".into();
+        let report = engine
+            .store
+            .report(&request, clock.moment(midnight + 3000), 0)
+            .unwrap();
+        assert_eq!(report.range.days[0].saved_ms, 10000);
+        assert_eq!(report.range.days[1].saved_ms, 1500);
+        let chart = report.chart.unwrap();
+        let segments: Vec<_> = chart.segments.iter().filter(|s| s.session == 2).collect();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].elapsed_ms + segments[1].elapsed_ms, 10500);
+        assert_eq!(chart.sessions[&2].start_ms, midnight - 10000);
+    }
+}
 #[test]
 fn all_project_today_combines_projects_and_unassigned_without_double_counting_live_time() {
     let dir = tempfile::tempdir().unwrap();
@@ -2103,7 +2724,7 @@ fn schema_three_upgrade_turns_recorded_activities_into_projects_and_keeps_histor
             .connection
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        4
+        SCHEMA_VERSION
     );
     let state = store.snapshot().unwrap();
     let project = |title: &str| {

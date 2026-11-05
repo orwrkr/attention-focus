@@ -291,7 +291,45 @@ numbers, so nothing depends on the pointer.
 Each project keeps an automatic color across periods. With more than eight active projects,
 two can share a color: the chart gives it to the larger, and the smaller joins a neutral
 **Other**, while hover still names it. Timeline and By day cover up to 92 days and say so
-for longer periods; Weekly rhythm has no such limit. A chart never changes recorded time.
+for longer periods; Weekly rhythm has no such limit. Looking at a chart never changes recorded
+time; only the choices below do.
+
+# Correct recorded time
+
+Right-click a block on **Timeline**, or a session under **Sessions**, and choose **Edit…**,
+**Delete…** or **Add interval…**. Right-click empty space on **Timeline** to add an interval at
+that time. Without a mouse, use **Add interval…** at the top of **Sessions**, and **Edit…** and
+**Delete…** inside an expanded session. The other chart views have no menu, because their marks
+are not single intervals. A block crossing midnight is one interval, so the menu on either part
+acts on all of it.
+
+## Edit or add an interval
+
+Choose the start and end, the project, the task and an optional note. Enter times as `HH:MM` or
+`HH:MM:SS`, in the time zone selected for the report, which the dialog names. An end can also be
+`24:00`. A time you leave untouched keeps its exact recorded value, seconds included. The dialog
+shows the duration now and after saving. **Save** applies the change, and **Cancel** or Esc leaves
+everything as it was.
+
+- Only finished intervals can change. Stop a running interval first, and accept interrupted
+  time first.
+- An interval cannot end in the future.
+- Intervals cannot overlap, though they can touch. A message names the interval in the way, and
+  no other interval moves by itself.
+- A local time that a daylight-saving change skips or repeats is refused.
+- After you change a start or end, the duration is the time between them. Changing only the
+  project, task or note leaves the times alone.
+- The lists include archived projects and finished tasks, since they may be what was true then.
+  A project or task you do not change keeps its recorded name.
+
+## Delete an interval
+
+**Delete…** shows the interval and asks for confirmation. It then leaves reports, totals and
+exports, and the application has no undo.
+
+Every change is also recorded in the history file, in the `focus_session_edits` table, with the
+values before and after. It stays on this computer, and the application does not show it. Exports
+contain the corrected values, and added intervals have the end reason `manual`.
 
 # Export CSV and Markdown
 
@@ -428,6 +466,10 @@ recorded after the upgrade are not in it.
 2. Replace `attention-focus.exe` with the new file. Keeping the same folder keeps sign-in startup.
 3. Start the EXE. Your production data remains in the fixed data directory.
 
+Some versions upgrade the history file when they first start, and make a backup beside it before
+they do. An older version then refuses that file. Returning to it means restoring the backup, which
+loses what was recorded since.
+
 The app version appears in the window header, Windows file properties, this guide and its
 filename. Each release's `release.json` records the version and SHA-256 hashes.
 No asset files or third-party runtime DLLs need to be copied beside the EXE.
@@ -470,7 +512,7 @@ the main window boundary do not animate. Motion never changes the recorded time.
 
 ## What is not included yet
 
-Manual time correction, global shortcuts,
+Global shortcuts,
 an installer, and an automatic in-app updater are not implemented. Real Windows tray,
 sleep/lock, multi-monitor geometry, and clean-machine compatibility still have manual
 acceptance checks outstanding. Unit tests and simulated notifications do not prove

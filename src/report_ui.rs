@@ -2,6 +2,7 @@
 use crate::{
     date_picker::Calendar,
     i18n::{message, message_plural, paragraph, paragraph_colored, t, tf, tooltip, user},
+    interval_dialog::{self, Action, DeleteConfirmation, Dialog, Outcome},
     presentation::duration,
     reports, tracking,
     ui_support::{info, info_after_header, with_info},
@@ -14,6 +15,12 @@ use std::{
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 pub struct Panel {
+    dialog: Option<Dialog>,
+    deletion: Option<DeleteConfirmation>,
+    outgoing: Vec<tracking::Command>,
+    catalog: Vec<tracking::CatalogProject>,
+    interval_pending: bool,
+    outbox_busy: bool,
     request: reports::Request,
     report: Option<reports::Report>,
     pending: bool,
@@ -53,6 +60,12 @@ impl Default for Panel {
         }
         zones.sort_unstable_by_key(|name| (name != "UTC", name.clone()));
         Self {
+            dialog: None,
+            deletion: None,
+            outgoing: Vec::new(),
+            catalog: Vec::new(),
+            interval_pending: false,
+            outbox_busy: false,
             request: reports::Request::default(),
             report: None,
             pending: false,
@@ -103,6 +116,139 @@ fn group_project(group: &reports::Group) -> std::borrow::Cow<'_, str> {
     }
 }
 impl Panel {
+    pub fn take_commands(&mut self) -> Vec<tracking::Command> {
+        std::mem::take(&mut self.outgoing)
+    }
+    pub fn interval_in_flight(&self) -> bool {
+        self.interval_pending
+    }
+    pub fn set_outbox_busy(&mut self, busy: bool) {
+        self.outbox_busy = busy;
+    }
+    pub fn interval_committed(&mut self) {
+        self.dialog = None;
+        self.deletion = None;
+        self.interval_pending = false;
+        self.dirty = true;
+        // A query queued before this write cannot satisfy the new report generation. The last
+        // report stays until the next one arrives, so the page does not lose its scroll position.
+        self.sent_request = None;
+    }
+    pub fn interval_rejected(&mut self, error: &str) -> bool {
+        if !self.interval_pending {
+            return false;
+        }
+        self.interval_pending = false;
+        // A failure after the write also arrives here, so the report may have changed.
+        self.dirty = true;
+        if let Some(dialog) = &mut self.dialog {
+            dialog.saving = false;
+            dialog.error = Some(error.into());
+        }
+        if let Some(dialog) = &mut self.deletion {
+            dialog.saving = false;
+            dialog.error = Some(error.into());
+        }
+        true
+    }
+    /// The last half hour, as a starting point when no place on the chart was chosen.
+    fn recent_draft(timezone: &str) -> Dialog {
+        let end = jiff::Timestamp::now().as_millisecond() / 60_000 * 60_000;
+        Dialog::add(end - 1_800_000, end, timezone)
+    }
+    fn interval_action(&mut self, action: Action) {
+        if self.interval_pending {
+            return;
+        }
+        let timezone = self
+            .report
+            .as_ref()
+            .map_or(&self.request.timezone, |r| &r.range.request.timezone)
+            .clone();
+        match action {
+            Action::Edit(id) | Action::Delete(id) => {
+                let record = self
+                    .report
+                    .as_ref()
+                    .and_then(|report| {
+                        report
+                            .chart
+                            .as_ref()
+                            .and_then(|chart| chart.sessions.get(&id))
+                            .or_else(|| {
+                                report
+                                    .history
+                                    .iter()
+                                    .find(|r| r.record.id == id)
+                                    .map(|r| &r.record)
+                            })
+                    })
+                    .cloned();
+                if let Some(record) = record.filter(|r| r.state == reports::State::Saved) {
+                    if matches!(action, Action::Edit(_)) {
+                        self.dialog = Some(Dialog::edit(record, &timezone));
+                    } else {
+                        self.deletion = Some(DeleteConfirmation::new(record, &timezone));
+                    }
+                }
+            }
+            Action::Add(at) => {
+                let draft = at.and_then(|(day, start, end)| {
+                    let date = &self.report.as_ref()?.range.days.get(day)?.date;
+                    let time = |minute: f32| {
+                        let seconds = (minute * 60.0).floor() as u32;
+                        if seconds.is_multiple_of(60) {
+                            format!("{:02}:{:02}", seconds / 3600, seconds / 60 % 60)
+                        } else {
+                            format!(
+                                "{:02}:{:02}:{:02}",
+                                seconds / 3600,
+                                seconds / 60 % 60,
+                                seconds % 60
+                            )
+                        }
+                    };
+                    Some(Dialog::add_local(date, &time(start), &time(end), &timezone))
+                });
+                self.dialog = Some(draft.unwrap_or_else(|| Self::recent_draft(&timezone)));
+            }
+            Action::AddAfter(id) => {
+                let now = jiff::Timestamp::now().as_millisecond() / 60_000 * 60_000;
+                let start = self
+                    .report
+                    .as_ref()
+                    .and_then(|report| report.chart.as_ref()?.sessions.get(&id))
+                    .filter(|record| record.state == reports::State::Saved)
+                    .map(|record| (record.end_ms + 59_999) / 60_000 * 60_000)
+                    .filter(|start| *start + 60_000 <= now);
+                self.dialog = Some(match start {
+                    Some(start) => Dialog::add(start, (start + 1_800_000).min(now), &timezone),
+                    None => Self::recent_draft(&timezone),
+                });
+            }
+        }
+    }
+    fn show_intervals(&mut self, ctx: &egui::Context, ready: bool) {
+        let busy = !ready || self.outbox_busy || self.interval_pending;
+        let outcome = if let Some(dialog) = &mut self.dialog {
+            dialog.show(ctx, &self.catalog, busy)
+        } else if let Some(dialog) = &mut self.deletion {
+            dialog.show(ctx, busy)
+        } else {
+            Outcome::None
+        };
+        match outcome {
+            Outcome::Cancel => {
+                self.dialog = None;
+                self.deletion = None;
+            }
+            Outcome::Send(command) => {
+                self.interval_pending = true;
+                self.outgoing.push(command);
+            }
+            Outcome::None => {}
+        }
+    }
     pub fn take_export(&mut self) -> Option<(crate::export::Format, reports::Request)> {
         self.export_request
             .take()
@@ -163,6 +309,7 @@ impl Panel {
         }
     }
     pub fn tracking_changed(&mut self, state: &tracking::Snapshot, committed: bool, wall_ms: i64) {
+        self.catalog = state.projects.clone();
         self.project_colors.update(&state.projects);
         // Totals show current project names, so a rename must refresh a report on screen.
         let titles: Vec<_> = state
@@ -291,6 +438,7 @@ impl Panel {
         ready: bool,
     ) {
         let now = Instant::now();
+        let mut interval_action = None;
         let response = egui::CollapsingHeader::new(t("reports.title"))
             // The identity of the header stays fixed when the language changes.
             .id_salt("Focus history and reports")
@@ -479,7 +627,8 @@ impl Panel {
                         paragraph_colored(ui, ui.visuals().error_fg_color, error);
                     }
                     if let Some(report) = &self.report {
-                        Self::results(ui, report, &mut self.chart_view, &self.project_colors);
+                        interval_action =
+                            Self::results(ui, report, &mut self.chart_view, &self.project_colors);
                     } else {
                         paragraph(ui, &message("reports.loads_automatically", &[]));
                     }
@@ -498,13 +647,18 @@ impl Panel {
                     deadline.saturating_duration_since(now)
                 }));
         }
+        if let Some(action) = interval_action {
+            self.interval_action(action);
+        }
+        self.show_intervals(ui.ctx(), ready);
     }
     fn results(
         ui: &mut egui::Ui,
         report: &reports::Report,
         chart_view: &mut crate::charts::View,
         project_colors: &crate::charts::ProjectColors,
-    ) {
+    ) -> Option<Action> {
+        let mut action = None;
         let request = &report.range.request;
         paragraph(
             ui,
@@ -562,7 +716,11 @@ impl Panel {
                 .default_open(true)
                 .show(ui, |ui| {
                     crate::i18n::mirrored(ui, |ui| {
-                        crate::charts::show(ui, chart, chart_view, project_colors);
+                        if let Some(next) =
+                            crate::charts::show(ui, chart, chart_view, project_colors)
+                        {
+                            action = Some(next);
+                        }
                     });
                 });
         }
@@ -636,6 +794,9 @@ impl Panel {
         ))
         .id_salt("Sessions")
         .show(ui, |ui| {
+            if ui.button(t("reports.interval_add")).clicked() {
+                action = Some(Action::Add(None));
+            }
             crate::ui_support::inner_area("session-history", 360.0).show(ui, |ui| {
                 for row in &report.history {
                     let record = &row.record;
@@ -679,6 +840,7 @@ impl Panel {
                             ));
                             let reason = match record.reason.as_str() {
                                 "stop" => message("reports.reason.stop", &[]),
+                                "manual" => message("reports.reason.manual", &[]),
                                 "switch" => message("reports.reason.switch", &[]),
                                 "day_boundary" => message("reports.reason.day_boundary", &[]),
                                 "exit" => message("reports.reason.exit", &[]),
@@ -695,6 +857,20 @@ impl Panel {
                             };
                             if record.state != reports::State::Running {
                                 ui.label(tf("reports.ended", &[("reason", &reason)]));
+                            }
+                            if let Some(next) =
+                                interval_dialog::buttons(ui, record.id, record.state)
+                            {
+                                action = Some(next);
+                            }
+                        });
+                        row.header_response.context_menu(|ui| {
+                            if let Some(next) = interval_dialog::menu(
+                                ui,
+                                Some((record.id, record.state)),
+                                Action::AddAfter(record.id),
+                            ) {
+                                action = Some(next);
                             }
                         });
                         // This list scrolls on its own, inside the body that follows the focus.
@@ -713,6 +889,7 @@ impl Panel {
         if report.matching_sessions == 0 {
             ui.label(t("reports.no_sessions"));
         }
+        action
     }
 }
 
@@ -721,6 +898,289 @@ mod tests {
     use super::*;
     use eframe::Storage;
     use std::sync::mpsc;
+
+    #[test]
+    fn interval_commit_discards_a_report_reply_that_was_already_in_flight() {
+        let mut panel = fixed();
+        let (sender, receiver) = mpsc::sync_channel(8);
+        let now = Instant::now();
+        let wall = panel.request.bounds().unwrap().0;
+        panel.tick_at(&sender, true, now, wall);
+        receiver.try_recv().unwrap();
+        let id = panel.request_id;
+        let old = response(&panel.request);
+        panel.interval_pending = true;
+        panel.interval_committed();
+        assert!(panel.dirty);
+        panel.receive(id, Ok(old));
+        assert!(
+            panel.report.is_none(),
+            "a matching filter is insufficient after a write"
+        );
+        panel.tick_at(&sender, true, now, wall);
+        assert!(matches!(receiver.try_recv(),Ok(tracking::Command::Report {id:new,..}) if new!=id));
+        let fresh = response(&panel.request);
+        panel.receive(panel.request_id, Ok(fresh));
+        assert!(panel.report.is_some());
+    }
+    fn editable_panel(count: i64) -> Panel {
+        let mut panel = fixed();
+        let begin = panel.request.bounds().unwrap().0;
+        let records = (1..=count)
+            .map(|id| reports::Record {
+                id,
+                start_ms: begin + id * 60000,
+                end_ms: begin + (id + 1) * 60000,
+                elapsed_ms: 60000,
+                state: reports::State::Saved,
+                activity: tracking::Activity {
+                    note: "Original note".into(),
+                    ..Default::default()
+                },
+                reason: "manual".into(),
+            })
+            .collect();
+        panel.report = Some(reports::compute(
+            reports::Range::new(&panel.request).unwrap(),
+            records,
+            begin,
+        ));
+        panel
+    }
+    #[test]
+    fn a_commit_keeps_the_last_report_on_screen_until_the_next_one_arrives() {
+        let mut panel = editable_panel(1);
+        panel.interval_pending = true;
+        panel.interval_committed();
+        assert!(panel.report.is_some() && panel.dirty);
+        panel.dirty = false;
+        panel.interval_pending = true;
+        assert!(panel.interval_rejected("Synthetic failure after the write"));
+        assert!(panel.dirty, "a failed reply may still follow a write");
+    }
+    #[test]
+    fn adding_from_an_interval_starts_where_that_interval_ends() {
+        let mut panel = editable_panel(1);
+        panel.interval_action(Action::AddAfter(1));
+        let mut harness = crate::interval_dialog::test_ui::Harness::default();
+        harness.frame(vec![], |ui| panel.show_intervals(ui.ctx(), true));
+        let output = harness.frame(vec![], |ui| panel.show_intervals(ui.ctx(), true));
+        let texts = crate::interval_dialog::test_ui::texts(&output);
+        assert!(texts.iter().any(|(t, _)| t == "00:02"));
+        assert!(texts.iter().any(|(t, _)| t == "00:32"));
+        assert!(texts.iter().any(|(t, _)| t == "2026-10-01"));
+    }
+    #[test]
+    fn chart_actions_resolve_full_records_beyond_the_history_limit_and_prefill_empty_space() {
+        let mut panel = editable_panel(201);
+        let report = panel.report.as_ref().unwrap();
+        assert!(!report.history.iter().any(|h| h.record.id == 1));
+        let original = report.chart.as_ref().unwrap().sessions[&1].clone();
+        panel.interval_action(Action::Edit(1));
+        assert_eq!(
+            panel
+                .dialog
+                .as_ref()
+                .unwrap()
+                .original
+                .as_ref()
+                .unwrap()
+                .start_ms,
+            original.start_ms
+        );
+        panel.dialog = None;
+        panel.interval_action(Action::Add(Some((0, 780.0, 810.0))));
+        let mut harness = crate::interval_dialog::test_ui::Harness::default();
+        harness.frame(vec![], |ui| panel.show_intervals(ui.ctx(), true));
+        let output = harness.frame(vec![], |ui| panel.show_intervals(ui.ctx(), true));
+        let texts = crate::interval_dialog::test_ui::texts(&output);
+        assert!(texts.iter().any(|(t, _)| t == "13:00"));
+        assert!(texts.iter().any(|(t, _)| t == "13:30"));
+        assert!(texts.iter().any(|(t, _)| t == "2026-10-01"));
+        assert!(panel.take_commands().is_empty());
+    }
+    #[test]
+    fn modal_survives_a_closed_reports_header_rejection_preserves_text_and_commit_closes_it() {
+        use crate::interval_dialog::test_ui::{Harness, pointer, position, texts};
+        let mut panel = editable_panel(1);
+        panel.interval_action(Action::Edit(1));
+        let (sender, _receiver) = mpsc::sync_channel(8);
+        let mut harness = Harness::default();
+        let frame = |harness: &mut Harness, panel: &mut Panel, events| {
+            harness.frame(events, |ui| panel.show(ui, &sender, true))
+        };
+        frame(&mut harness, &mut panel, vec![]);
+        let output = frame(&mut harness, &mut panel, vec![]);
+        assert!(
+            texts(&output)
+                .iter()
+                .any(|(text, _)| text == "Edit interval")
+        );
+        // Type into the real note field, then reject the submitted correction.
+        let note = position(&output, "Original note");
+        frame(
+            &mut harness,
+            &mut panel,
+            pointer(note, true, egui::PointerButton::Primary),
+        );
+        frame(
+            &mut harness,
+            &mut panel,
+            pointer(note, false, egui::PointerButton::Primary),
+        );
+        frame(
+            &mut harness,
+            &mut panel,
+            vec![egui::Event::Text(" typed".into())],
+        );
+        let output = frame(&mut harness, &mut panel, vec![]);
+        let save = position(&output, "Save");
+        panel.set_outbox_busy(true);
+        frame(
+            &mut harness,
+            &mut panel,
+            pointer(save, true, egui::PointerButton::Primary),
+        );
+        frame(
+            &mut harness,
+            &mut panel,
+            pointer(save, false, egui::PointerButton::Primary),
+        );
+        assert!(panel.take_commands().is_empty());
+        panel.set_outbox_busy(false);
+        frame(&mut harness, &mut panel, vec![]);
+        frame(
+            &mut harness,
+            &mut panel,
+            pointer(save, true, egui::PointerButton::Primary),
+        );
+        frame(
+            &mut harness,
+            &mut panel,
+            pointer(save, false, egui::PointerButton::Primary),
+        );
+        let commands = panel.take_commands();
+        assert_eq!(commands.len(), 1);
+        assert!(
+            matches!(&commands[0],tracking::Command::SaveInterval(edit) if edit.activity.note.contains("typed"))
+        );
+        assert!(panel.interval_in_flight());
+        assert!(panel.interval_rejected("Synthetic rejection"));
+        let output = frame(&mut harness, &mut panel, vec![]);
+        let text = texts(&output);
+        assert!(text.iter().any(|(t, _)| t.contains("typed")));
+        assert!(text.iter().any(|(t, _)| t == "Synthetic rejection"));
+        assert!(!panel.interval_in_flight());
+        assert!(!panel.interval_rejected("Unrelated rejection"));
+        panel.dirty = false;
+        panel.interval_pending = true;
+        panel.interval_committed();
+        assert!(panel.dialog.is_none() && panel.dirty);
+    }
+    #[test]
+    fn session_row_menu_and_expanded_buttons_open_the_same_editor_and_confirmation() {
+        use crate::interval_dialog::test_ui::{Harness, pointer, position, texts};
+        for context_menu in [false, true] {
+            let mut panel = editable_panel(1);
+            let mut harness = Harness::default();
+            harness.height = 1800.0;
+            let frame = |harness: &mut Harness, panel: &mut Panel, events| {
+                harness.frame(events, |ui| {
+                    let action = Panel::results(
+                        ui,
+                        panel.report.as_ref().unwrap(),
+                        &mut panel.chart_view,
+                        &panel.project_colors,
+                    );
+                    if let Some(action) = action {
+                        panel.interval_action(action);
+                    }
+                    panel.show_intervals(ui.ctx(), true);
+                })
+            };
+            for _ in 0..3 {
+                frame(&mut harness, &mut panel, vec![]);
+            }
+            let output = frame(&mut harness, &mut panel, vec![]);
+            let sessions = position(&output, "Sessions (1)");
+            frame(
+                &mut harness,
+                &mut panel,
+                pointer(sessions, true, egui::PointerButton::Primary),
+            );
+            frame(
+                &mut harness,
+                &mut panel,
+                pointer(sessions, false, egui::PointerButton::Primary),
+            );
+            for _ in 0..4 {
+                frame(&mut harness, &mut panel, vec![]);
+            }
+            let output = frame(&mut harness, &mut panel, vec![]);
+            assert!(texts(&output).iter().any(|(t, _)| t == "Add interval…"));
+            let row = texts(&output)
+                .into_iter()
+                .find(|(text, _)| text.ends_with("| Saved"))
+                .unwrap()
+                .1
+                .center();
+            let button = if context_menu {
+                egui::PointerButton::Secondary
+            } else {
+                egui::PointerButton::Primary
+            };
+            frame(&mut harness, &mut panel, pointer(row, true, button));
+            frame(&mut harness, &mut panel, pointer(row, false, button));
+            for _ in 0..4 {
+                frame(&mut harness, &mut panel, vec![]);
+            }
+            let output = frame(&mut harness, &mut panel, vec![]);
+            let edit = position(&output, "Edit…");
+            frame(
+                &mut harness,
+                &mut panel,
+                pointer(edit, true, egui::PointerButton::Primary),
+            );
+            frame(
+                &mut harness,
+                &mut panel,
+                pointer(edit, false, egui::PointerButton::Primary),
+            );
+            assert_eq!(
+                panel.dialog.as_ref().unwrap().original.as_ref().unwrap().id,
+                1
+            );
+            assert!(panel.take_commands().is_empty());
+            panel.dialog = None;
+            for _ in 0..4 {
+                frame(&mut harness, &mut panel, vec![]);
+            }
+            if context_menu {
+                frame(&mut harness, &mut panel, pointer(row, true, button));
+                frame(&mut harness, &mut panel, pointer(row, false, button));
+            }
+            for _ in 0..4 {
+                frame(&mut harness, &mut panel, vec![]);
+            }
+            let output = frame(&mut harness, &mut panel, vec![]);
+            let delete = position(&output, "Delete…");
+            frame(
+                &mut harness,
+                &mut panel,
+                pointer(delete, true, egui::PointerButton::Primary),
+            );
+            frame(
+                &mut harness,
+                &mut panel,
+                pointer(delete, false, egui::PointerButton::Primary),
+            );
+            assert!(panel.deletion.is_some());
+            assert!(
+                panel.take_commands().is_empty(),
+                "opening confirmation never deletes"
+            );
+        }
+    }
 
     #[derive(Default)]
     struct MemoryStorage(std::collections::HashMap<String, String>);

@@ -1,6 +1,7 @@
 //! Graphical report views, drawn with the egui painter from the report's own numbers.
 use crate::{
     i18n::{message, message_plural, paint, paragraph, t, tf, tp, user},
+    interval_dialog::{self, Action},
     presentation::hours_minutes,
     reports::{Chart, ChartDay, ChartSegment, ChartSeries, State},
     tracking::CatalogProject,
@@ -346,12 +347,32 @@ fn outline_hovered(painter: &egui::Painter, rect: Rect, ink: Ink) {
     );
 }
 
-fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
+#[derive(Clone)]
+enum Target {
+    Interval(i64),
+    Empty(usize, f32),
+}
+/// A new draft starts on a five-minute boundary and stops before the next mark or day end.
+pub(crate) fn empty_interval(day: usize, minute: f32, segments: &[ChartSegment]) -> (f32, f32) {
+    let on_day = || segments.iter().filter(|s| s.day == day);
+    let previous = on_day()
+        .filter(|s| s.end_minute <= minute)
+        .map(|s| s.end_minute.ceil())
+        .fold(0.0, f32::max);
+    let next = on_day()
+        .filter(|s| s.start_minute >= minute)
+        .map(|s| s.start_minute.floor())
+        .fold(1440.0, f32::min);
+    let start = ((minute.clamp(0.0, 1439.0) / 5.0).floor() * 5.0).max(previous);
+    (start, (start + 30.0).min(next))
+}
+fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) -> Option<Action> {
+    let mut action = None;
     let rows = chart.days.len();
     // Tall enough for a whole month without a second scroll bar.
     crate::ui_support::inner_area("chart-timeline", 490.0).show(ui, |ui| {
         let size = vec2(ui.available_width(), Timeline::height(rows));
-        let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+        let (rect, response) = ui.allocate_exact_size(size, Sense::CLICK);
         let painter = ui.painter_at(rect);
         let width_of = |text: String| painter.layout_no_wrap(text, small(), ink.muted).size().x;
         let compact = rows > Timeline::COMPACT_ROWS;
@@ -435,7 +456,75 @@ fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
                 );
             }
         }
-        if let Some(pointer) = response.hover_pos()
+        let target_id = response.id;
+        if response.secondary_clicked()
+            && let Some(pointer) = response.interact_pointer_pos()
+        {
+            let target = if let Some(segment) = layout.at(pointer, &chart.segments) {
+                Some(Target::Interval(segment.session))
+            } else if pointer.x >= layout.x(0.0)
+                && pointer.x <= layout.x(1440.0)
+                && pointer.y >= layout.top
+            {
+                let day = ((pointer.y - layout.top) / layout.row) as usize;
+                (day < rows).then(|| {
+                    Target::Empty(
+                        day,
+                        ((pointer.x - layout.x(0.0)) / (layout.x(1440.0) - layout.x(0.0)) * 1440.0)
+                            .clamp(0.0, 1439.0),
+                    )
+                })
+            } else {
+                None
+            };
+            ui.data_mut(|data| {
+                data.remove::<Target>(target_id);
+                if let Some(target) = target {
+                    data.insert_temp(target_id, target);
+                }
+            });
+        }
+        let target = ui.data(|data| data.get_temp::<Target>(target_id));
+        response.context_menu(|ui| {
+            let (interval, add) = match &target {
+                Some(Target::Interval(id)) => (
+                    chart.sessions.get(id).map(|r| (*id, r.state)),
+                    Action::AddAfter(*id),
+                ),
+                Some(Target::Empty(day, minute)) => {
+                    let (start, end) = empty_interval(*day, *minute, &chart.segments);
+                    (None, Action::Add(Some((*day, start, end))))
+                }
+                None => (None, Action::Add(None)),
+            };
+            action = interval_dialog::menu(ui, interval, add);
+        });
+        let menu_open = response.context_menu_opened();
+        if menu_open {
+            match target {
+                Some(Target::Interval(id)) => {
+                    for segment in chart.segments.iter().filter(|s| s.session == id) {
+                        outline_hovered(&painter, layout.mark(segment), ink);
+                    }
+                }
+                Some(Target::Empty(day, minute)) => {
+                    let (start, end) = empty_interval(day, minute, &chart.segments);
+                    outline_hovered(
+                        &painter,
+                        Rect::from_min_max(
+                            egui::pos2(layout.x(start), layout.row_top(day)),
+                            egui::pos2(layout.x(end), layout.row_top(day) + layout.bar),
+                        ),
+                        ink,
+                    );
+                }
+                None => {}
+            }
+        } else {
+            ui.data_mut(|data| data.remove::<Target>(target_id));
+        }
+        if !menu_open
+            && let Some(pointer) = response.hover_pos()
             && let Some(segment) = layout.at(pointer, &chart.segments)
         {
             outline_hovered(&painter, layout.mark(segment), ink);
@@ -460,6 +549,7 @@ fn timeline(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink) {
             });
         }
     });
+    action
 }
 
 /// Pure geometry of the columns by day.
@@ -963,7 +1053,13 @@ fn legend(ui: &mut egui::Ui, chart: &Chart, styles: &Styles, ink: Ink, view: Vie
 }
 
 /// The selectable views, their shared legend and the chart itself.
-pub fn show(ui: &mut egui::Ui, chart: &Chart, view: &mut View, colors: &ProjectColors) {
+pub fn show(
+    ui: &mut egui::Ui,
+    chart: &Chart,
+    view: &mut View,
+    colors: &ProjectColors,
+) -> Option<Action> {
+    let mut action = None;
     ui.horizontal_wrapped(|ui| {
         for (value, label) in [
             (View::Timeline, t("charts.timeline")),
@@ -977,10 +1073,15 @@ pub fn show(ui: &mut egui::Ui, chart: &Chart, view: &mut View, colors: &ProjectC
                 *view = value;
             }
         }
+        if *view == View::Timeline && !chart.too_long {
+            crate::ui_support::info(ui, &message("charts.timeline_hint", &[]), &[]);
+        }
     });
     if chart.series.is_empty() {
         ui.label(t("charts.no_time"));
-        return;
+        if *view != View::Timeline || chart.days.is_empty() || chart.too_long {
+            return None;
+        }
     }
     if chart.too_long && *view != View::Rhythm {
         paragraph(
@@ -991,7 +1092,7 @@ pub fn show(ui: &mut egui::Ui, chart: &Chart, view: &mut View, colors: &ProjectC
                 &[],
             ),
         );
-        return;
+        return None;
     }
     let ink = Ink::new(ui);
     let current = *view;
@@ -1012,13 +1113,14 @@ pub fn show(ui: &mut egui::Ui, chart: &Chart, view: &mut View, colors: &ProjectC
             legend(ui, chart, &styles, ink, current);
             ui.add_space(4.0);
             if current == View::Timeline {
-                timeline(ui, chart, &styles, ink);
+                action = timeline(ui, chart, &styles, ink);
             } else {
                 columns(ui, chart, &styles, ink);
             }
         }
         View::Rhythm => rhythm(ui, chart, ink),
     }
+    action
 }
 
 #[cfg(test)]
@@ -1039,6 +1141,7 @@ mod tests {
     }
     fn segment(day: usize, start_minute: f32, end_minute: f32) -> ChartSegment {
         ChartSegment {
+            session: day as i64 + 1,
             day,
             start_minute,
             end_minute,
@@ -1070,6 +1173,7 @@ mod tests {
         rhythm[0][9] = 3_600_000;
         rhythm[1][14] = 1_800_000;
         Chart {
+            sessions: BTreeMap::new(),
             days: vec![
                 day("Mon 26 Oct", "Mon 26", 3_600_000, 1_800_000),
                 day("Tue 27 Oct", "Tue 27", 7_200_000, 3_600_000),
@@ -1367,6 +1471,7 @@ mod tests {
         view: View,
         colors: ProjectColors,
         width: f32,
+        actions: Vec<Action>,
     }
     impl Harness {
         fn new(chart: Chart, view: View) -> Self {
@@ -1378,10 +1483,12 @@ mod tests {
                 view,
                 colors,
                 width: 700.0,
+                actions: Vec::new(),
             }
         }
         fn frame(&mut self, events: Vec<egui::Event>, time: f64) -> egui::FullOutput {
             let (chart, view, colors) = (&self.chart, &mut self.view, &self.colors);
+            let actions = &mut self.actions;
             let mut output = self.context.run_ui(
                 egui::RawInput {
                     time: Some(time),
@@ -1389,7 +1496,11 @@ mod tests {
                     events,
                     ..Default::default()
                 },
-                |ui| show(ui, chart, view, colors),
+                |ui| {
+                    if let Some(action) = show(ui, chart, view, colors) {
+                        actions.push(action);
+                    }
+                },
             );
             output.textures_delta.clear();
             output
@@ -1419,6 +1530,155 @@ mod tests {
                     _ => None,
                 })
                 .collect()
+        }
+    }
+
+    #[test]
+    fn empty_interval_rounds_down_and_stops_at_the_next_segment_or_midnight() {
+        assert_eq!(empty_interval(0, 787.9, &[]), (785.0, 815.0));
+        assert_eq!(empty_interval(0, 1439.9, &[]), (1435.0, 1440.0));
+        assert_eq!(
+            empty_interval(0, 787.9, &[segment(0, 800.0, 900.0)]),
+            (785.0, 800.0)
+        );
+        assert_eq!(
+            empty_interval(0, 787.9, &[segment(1, 800.0, 900.0)]),
+            (785.0, 815.0)
+        );
+        // A rounded start must not reach back into the interval before it.
+        assert_eq!(
+            empty_interval(0, 787.9, &[segment(0, 700.0, 786.5)]),
+            (787.0, 817.0)
+        );
+    }
+    #[test]
+    fn a_day_without_any_sessions_still_offers_an_add_menu() {
+        use crate::interval_dialog::test_ui::{pointer, position};
+        let mut chart = sample_chart();
+        chart.series.clear();
+        chart.segments.clear();
+        let mut harness = Harness::new(chart, View::Timeline);
+        harness.frame(vec![], 0.0);
+        let output = harness.frame(vec![], 0.2);
+        let axis = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::LineSegment { points, .. }
+                    if points[0].x == points[1].x && (points[1].y - points[0].y).abs() > 20.0 =>
+                {
+                    Some(points[0])
+                }
+                _ => None,
+            })
+            .expect("An empty day retains its time axis");
+        let target = axis + vec2(30.0, 12.0);
+        harness.frame(pointer(target, true, egui::PointerButton::Secondary), 0.4);
+        harness.frame(pointer(target, false, egui::PointerButton::Secondary), 0.6);
+        harness.frame(vec![], 0.8);
+        let output = harness.frame(vec![], 1.0);
+        let at = position(&output, "Add interval…");
+        harness.frame(pointer(at, true, egui::PointerButton::Primary), 1.2);
+        harness.frame(pointer(at, false, egui::PointerButton::Primary), 1.4);
+        assert!(matches!(
+            harness.actions.as_slice(),
+            [Action::Add(Some((0, _, _)))]
+        ));
+    }
+
+    fn interactive_chart() -> Chart {
+        let mut chart = sample_chart();
+        chart.segments[1].end_minute = 930.0;
+        for segment in &chart.segments {
+            let mut record = crate::interval_dialog::test_ui::record();
+            record.id = segment.session;
+            record.state = segment.state;
+            chart.sessions.insert(record.id, record);
+        }
+        chart
+    }
+    #[test]
+    fn timeline_menu_keeps_the_right_clicked_interval_when_the_pointer_moves() {
+        use crate::interval_dialog::test_ui::{pointer, position, texts};
+        let mut harness = Harness::new(interactive_chart(), View::Timeline);
+        harness.frame(vec![], 0.0);
+        let output = harness.frame(vec![], 0.2);
+        let marks = Harness::first_series_marks(&output);
+        let target = marks[0].center();
+        harness.frame(pointer(target, true, egui::PointerButton::Secondary), 0.4);
+        harness.frame(pointer(target, false, egui::PointerButton::Secondary), 0.6);
+        harness.frame(vec![], 0.8);
+        let output = harness.frame(vec![egui::Event::PointerMoved(marks[1].center())], 1.0);
+        let labels = texts(&output);
+        assert!(labels.iter().any(|(text, _)| text == "Edit…"));
+        assert!(
+            !labels.iter().any(|(text, _)| text.contains("09:00 to")),
+            "no hover tooltip while the menu is open"
+        );
+        let at = position(&output, "Edit…");
+        harness.frame(pointer(at, true, egui::PointerButton::Primary), 1.2);
+        harness.frame(pointer(at, false, egui::PointerButton::Primary), 1.4);
+        assert_eq!(harness.actions, vec![Action::Edit(1)]);
+    }
+    #[test]
+    fn timeline_empty_space_prefills_its_day_and_running_marks_cannot_be_changed() {
+        use crate::interval_dialog::test_ui::{pointer, position, texts};
+        let mut harness = Harness::new(interactive_chart(), View::Timeline);
+        harness.frame(vec![], 0.0);
+        let output = harness.frame(vec![], 0.2);
+        let verticals: Vec<_> = output
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::LineSegment { points, .. }
+                    if points[0].x == points[1].x && (points[1].y - points[0].y).abs() > 20.0 =>
+                {
+                    Some(points[0].x)
+                }
+                _ => None,
+            })
+            .collect();
+        let first = verticals.iter().copied().fold(f32::MAX, f32::min);
+        let last = verticals.iter().copied().fold(0.0, f32::max);
+        let target = egui::pos2(
+            first + (last - first) * 787.9 / 1440.0,
+            Harness::first_series_marks(&output)[0].center().y,
+        );
+        harness.frame(pointer(target, true, egui::PointerButton::Secondary), 0.4);
+        harness.frame(pointer(target, false, egui::PointerButton::Secondary), 0.6);
+        harness.frame(vec![], 0.8);
+        let output = harness.frame(vec![], 1.0);
+        assert!(!texts(&output).iter().any(|(text, _)| text == "Edit…"));
+        let at = position(&output, "Add interval…");
+        harness.frame(pointer(at, true, egui::PointerButton::Primary), 1.2);
+        harness.frame(pointer(at, false, egui::PointerButton::Primary), 1.4);
+        assert_eq!(harness.actions, vec![Action::Add(Some((0, 785.0, 815.0)))]);
+
+        let mut chart = interactive_chart();
+        chart.segments[0].state = State::Running;
+        chart.sessions.get_mut(&1).unwrap().state = State::Running;
+        let mut harness = Harness::new(chart, View::Timeline);
+        harness.frame(vec![], 0.0);
+        let output = harness.frame(vec![], 0.2);
+        // Use the pure geometry for the running mark; it is intentionally not a solid series mark.
+        let target = egui::pos2(
+            first + (last - first) * 570.0 / 1440.0,
+            Harness::first_series_marks(&output)[0].center().y - 28.0,
+        );
+        harness.frame(pointer(target, true, egui::PointerButton::Secondary), 0.4);
+        harness.frame(pointer(target, false, egui::PointerButton::Secondary), 0.6);
+        harness.frame(vec![], 0.8);
+        let output = harness.frame(vec![], 1.0);
+        assert!(
+            texts(&output)
+                .iter()
+                .any(|(text, _)| text == "Stop this interval to change it.")
+        );
+        for label in ["Edit…", "Delete…"] {
+            let at = position(&output, label);
+            harness.frame(pointer(at, true, egui::PointerButton::Primary), 1.2);
+            harness.frame(pointer(at, false, egui::PointerButton::Primary), 1.4);
+            assert!(harness.actions.is_empty());
         }
     }
 
@@ -1685,7 +1945,10 @@ mod tests {
                     .shapes
                     .iter()
                     .filter_map(|shape| match &shape.shape {
-                        egui::Shape::LineSegment { points, .. } if points[0].x == points[1].x => {
+                        egui::Shape::LineSegment { points, .. }
+                            if points[0].x == points[1].x
+                                && (points[1].y - points[0].y).abs() > 20.0 =>
+                        {
                             Some(points[0].x)
                         }
                         _ => None,

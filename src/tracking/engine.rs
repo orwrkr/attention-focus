@@ -190,6 +190,10 @@ impl Engine {
             .map(|start| now.mono_ms.saturating_sub(start.mono_ms));
         let tick = command.is_none();
         match command {
+            Some(Command::SaveInterval(edit)) => self.store.save_interval(&edit, now.wall_ms)?,
+            Some(Command::DeleteInterval { id, recorded }) => {
+                self.store.delete_interval(id, recorded, now.wall_ms)?;
+            }
             Some(Command::Start(activity)) => {
                 if self.started.is_some() {
                     return Err(reject("errors.already_running").into());

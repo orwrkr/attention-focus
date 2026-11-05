@@ -62,6 +62,31 @@ fn require_project(connection: &Connection, id: i64) -> Result<()> {
         .map(|_| ())
         .ok_or_else(|| reject("errors.project_missing").into())
 }
+/// Corrections may use archived projects and finished tasks, but must use catalog titles.
+pub(super) fn history_activity(connection: &Connection, activity: &Activity) -> Result<Activity> {
+    let mut activity = activity.clone();
+    if let Some(project) = &mut activity.project {
+        project.title = connection
+            .query_row(
+                "SELECT title FROM focus_projects WHERE id=?1",
+                [project.id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| reject("errors.interval_activity"))?;
+        if let Some(task) = &project.task {
+            let exists: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM focus_tasks WHERE project_id=?1 AND title=?2)",
+                params![project.id, task],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                return Err(reject("errors.interval_activity").into());
+            }
+        }
+    }
+    Ok(activity)
+}
 /// Rewrite one stored activity when it belongs to the project.
 fn retitled(text: &str, id: i64, title: &str) -> Result<Option<String>> {
     let mut activity: Activity = serde_json::from_str(text)?;

@@ -722,6 +722,9 @@ impl eframe::App for Desktop {
                     self.state = state;
                     self.ready = true;
                     if completed {
+                        if self.reports.interval_in_flight() {
+                            self.reports.interval_committed();
+                        }
                         self.projects_panel.committed();
                         self.command_finished();
                     }
@@ -729,7 +732,9 @@ impl eframe::App for Desktop {
                 Action::Tracking(tracking::Event::Rejected(error)) => {
                     self.projects_panel.rejected();
                     self.command_finished();
-                    self.show_error(ctx, error);
+                    if !self.reports.interval_rejected(&error) {
+                        self.show_error(ctx, error);
+                    }
                 }
                 Action::Tracking(tracking::Event::Error(error)) => self.show_error(ctx, error),
                 Action::Tracking(tracking::Event::ExitReady) => {
@@ -1115,7 +1120,14 @@ impl eframe::App for Desktop {
                     for change in changes {
                         self.command(change);
                     }
+                    self.reports.set_outbox_busy(self.outbox.busy());
                     self.reports.show(ui, &self.commands, self.ready);
+                    // A dialog waiting for a reply that will never come could not be closed.
+                    for command in self.reports.take_commands() {
+                        if let Err(error) = self.outbox.send(command) {
+                            self.reports.interval_rejected(&error);
+                        }
+                    }
                     if let Some((format, request)) = self.reports.take_export() {
                         let directory = self.directory.clone();
                         let root = self.storage_root.clone();
