@@ -69,8 +69,7 @@ normal history. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for release packa
 
 ## Project status
 
-This is a personal project in active development. Editing recorded time and global shortcuts
-are not implemented yet. Windows tray, sleep and multi-monitor behavior is checked by hand,
+This is a personal project in active development. Global shortcuts are not implemented yet. Windows tray, sleep and multi-monitor behavior is checked by hand,
 not exhaustively, and compatibility with a clean Windows installation has not been verified.
 
 Contributions and bug reports are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) and

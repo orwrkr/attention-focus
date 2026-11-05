@@ -61,5 +61,6 @@ Microsoft C runtime statically, so the application should say so and ask (ADR-00
 
 ## Handoff
 
+When signing takes effect, update the README section and the signing note on the project site (T-0043).
 Follow the owner steps. Do not create the repository, push, tag or publish without an explicit
 instruction. Prepared application answers can be kept in the ignored `local/` directory.

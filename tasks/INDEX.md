@@ -44,6 +44,7 @@
 | [T-0040](T-0040-single-exe-release.md) | done | One EXE as the Release | T-0039 |
 | [T-0041](T-0041-info-marks-and-about.md) | done | Info Marks and an About Button | T-0040 |
 | [T-0042](T-0042-license-wording-and-file-properties.md) | done | License Wording, Microsoft Terms and File Properties | T-0041 |
+| [T-0043](T-0043-project-site.md) | done | Project Site | T-0034 for going live |
 
 Task template: `templates/TASK.md` from the repository root.
 

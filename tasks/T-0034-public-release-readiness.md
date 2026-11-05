@@ -67,7 +67,8 @@ scan of all history for personal paths and addresses before the first push found
 2. Make the repository public, and enable private vulnerability reporting, which `SECURITY.md`
    relies on and which needs a public repository.
 3. Push a version tag, check the draft release from the release workflow and publish it.
-4. Continue with the code signing steps in T-0037.
+4. Set Settings, Pages, Source to GitHub Actions, and run the Pages workflow (T-0043).
+5. Continue with the code signing steps in T-0037.
 
 ## Trimming
 

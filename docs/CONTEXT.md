@@ -12,6 +12,8 @@ project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of
 
 Recent work:
 
+- T-0043: a static project site in `site/`, deployed by GitHub Pages once the repository is public
+  (ADR-0040).
 - T-0019: edit, delete and add intervals from menus on the timeline and session rows, with an audit
   table and schema five (ADR-0039).
 - T-0042: neutral license wording in every language, aligned marks, complete file properties, and a

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>Attention Focus</title>
+  <meta name="description" content="A small Windows tray application that records the time you choose to spend on projects and tasks. It stays on your computer, with no accounts, network access or telemetry.">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-row">
+      <a class="brand" href="./"><img src="icon.png" alt="" width="28" height="28"> Attention Focus</a>
+      <nav aria-label="Project">
+        <a href="https://github.com/orwrkr/attention-focus/blob/main/docs/user-guide.md">Guide</a>
+        <a href="https://github.com/orwrkr/attention-focus">Source</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <h1>Know where your time went.</h1>
+        <p class="lead">A small Windows tray application that records the time you choose to spend on projects
+          and tasks. Pick an activity, start the timer, and see where your time went.</p>
+        <p class="actions">
+          <a class="button primary" href="https://github.com/orwrkr/attention-focus/releases/latest">Download for Windows</a>
+          <a class="button" href="https://github.com/orwrkr/attention-focus">View the source</a>
+        </p>
+        <p class="meta">Windows x64 · one EXE, no installer · MIT License</p>
+      </div>
+    </section>
+
+    <section class="shots wrap" aria-label="Screenshots">
+      <figure>
+        <img src="images/tracking.png" alt="The main window in the dark theme, with the current interval and today's time" loading="lazy">
+        <figcaption>The current interval and today's time.</figcaption>
+      </figure>
+      <figure>
+        <img src="images/charts.png" alt="A week of tracked sessions on the timeline chart, in the light theme" loading="lazy">
+        <figcaption>A week on the timeline. The examples show invented projects.</figcaption>
+      </figure>
+    </section>
+
+    <section class="wrap privacy">
+      <h2>It stays on your computer</h2>
+      <p>There are no accounts, network access or telemetry, and it does not watch your screen or keyboard or
+        score your productivity. Time is what you declare, not what a program guesses. History and settings
+        live in your Windows profile, in SQLite and text files.</p>
+    </section>
+
+    <section class="wrap">
+      <h2>What it does</h2>
+      <ul class="features">
+        <li><strong>Tray first.</strong> Double-click the tray icon to start or stop, click to open the window,
+          and hover to see the current session and today's time.</li>
+        <li><strong>One-click switching.</strong> Changing project or task saves the old interval and starts the
+          next at the same moment, so nothing is lost or counted twice.</li>
+        <li><strong>Handles interruptions.</strong> Locking Windows, sleep and shutdown stop the timer without
+          resuming on their own.</li>
+        <li><strong>Reports and charts.</strong> Totals by project, task and day for any period and time zone, a
+          timeline, columns per day and your weekly rhythm. Export to CSV or Markdown.</li>
+        <li><strong>Corrections.</strong> Edit or delete an interval, or add one you missed. Intervals never
+          overlap, and every change is kept in the history file.</li>
+        <li><strong>Thirteen languages</strong> and light and dark themes, following Windows or your choice.</li>
+      </ul>
+    </section>
+
+    <section class="wrap install">
+      <h2>Install</h2>
+      <ol>
+        <li>Download <code>attention-focus.exe</code> from the
+          <a href="https://github.com/orwrkr/attention-focus/releases/latest">latest release</a>.</li>
+        <li>Put it in a folder you will keep, and run it. That one file is the whole application.</li>
+      </ol>
+      <p class="note">The EXE is not code-signed yet, so Windows SmartScreen may warn about it the first time.
+        Choose <em>More info</em>, then <em>Run anyway</em>, if you trust the download. Each release lists the
+        SHA-256 hash of every file in <code>release.json</code>.</p>
+    </section>
+  </main>
+
+  <footer class="wrap foot">
+    <p>Attention Focus is distributed under the
+      <a href="https://github.com/orwrkr/attention-focus/blob/main/LICENSE">MIT License</a>.
+      It includes third-party components under their own licenses.</p>
+    <p>This site sets no cookies and loads nothing from other servers.
+      <a href="https://github.com/orwrkr/attention-focus/issues">Report a problem</a>.</p>
+  </footer>
+</body>
+</html>
