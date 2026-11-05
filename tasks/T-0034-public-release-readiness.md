@@ -63,8 +63,8 @@ The repository `orwrkr/attention-focus` became public on 2026-11-06, by the owne
 scan of all history for personal paths and addresses before the first push found nothing.
 
 1. Done: GitHub reports signed commits as verified.
-2. Done: the repository is public. Still to do: enable private vulnerability reporting
-   (Settings, Security), which `SECURITY.md` relies on; on 2026-11-06 the API reported it disabled.
+2. Done: the repository is public, and the owner enabled private vulnerability reporting, Dependabot
+   and CodeQL; the first alerts are handled in T-0045.
 3. Add the site link to the application in a new version (T-0044).
 4. Push that version's tag, check the draft release from the release workflow and publish it.
 5. Only then set Settings, Pages, Source to GitHub Actions, and run the Pages workflow (T-0043).

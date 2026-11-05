@@ -46,5 +46,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0038](0038-microsoft-runtime-and-file-properties.md) | accepted | Microsoft runtime terms, license wording and file properties |
 | [0039](0039-history-correction.md) | accepted | Correcting history by hand |
 | [0040](0040-project-site.md) | accepted | A static project site on GitHub Pages |
+| [0041](0041-dependency-and-code-scanning.md) | accepted | Dependency and code scanning on GitHub |
 
-Next number: `0041`. Template: `templates/ADR.md` from the repository root.
+Next number: `0042`. Template: `templates/ADR.md` from the repository root.
