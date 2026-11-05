@@ -1032,10 +1032,25 @@ impl eframe::App for Desktop {
                                 ui.strong("Attention Focus");
                                 ui.weak(&version);
                             });
+                            let site = ui
+                                .link(i18n::t("main.site"))
+                                .on_hover_text(attention_focus::SITE);
                             self.notices.show(ui);
+                            site.clicked()
                         });
                         if reveal_panel {
                             about.response.scroll_to_me(Some(egui::Align::Min));
+                        }
+                        if about.inner
+                            && let Err(error) = platform::open_in_browser(attention_focus::SITE)
+                        {
+                            self.show_error(
+                                &ctx,
+                                i18n::message(
+                                    "errors.site_not_opened",
+                                    &[("error", &error.to_string())],
+                                ),
+                            );
                         }
                         ui.separator();
                     } else {

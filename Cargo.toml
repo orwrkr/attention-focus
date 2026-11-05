@@ -1,11 +1,12 @@
 [package]
 name = "attention-focus"
-version = "0.25.2"
+version = "0.26.0"
 edition = "2024"
 rust-version = "1.99"
 description = "Local Windows tray application for tracking time spent focusing on projects and tasks"
 license = "MIT"
 repository = "https://github.com/orwrkr/attention-focus"
+homepage = "https://orwrkr.github.io/attention-focus/"
 publish = false
 
 [dependencies]

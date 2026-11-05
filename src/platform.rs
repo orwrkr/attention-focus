@@ -104,6 +104,47 @@ pub fn show_error_box(message: &str) {
     }
 }
 
+/// Hand an address to the default browser. Nothing is downloaded by this process.
+pub fn open_in_browser(address: &str) -> io::Result<()> {
+    use windows_sys::Win32::{
+        System::Com::{
+            COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize,
+        },
+        UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
+    };
+    let wide = |text: &str| text.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+    let (verb, address) = (wide("open"), wide(address));
+    // The shell may pass the address to a COM extension, which needs COM on this thread. A thread
+    // that already has it keeps its mode, and only a successful call here is balanced.
+    let initialized = unsafe {
+        CoInitializeEx(
+            std::ptr::null(),
+            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as _,
+        )
+    };
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            address.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    } as usize;
+    if initialized >= 0 {
+        unsafe { CoUninitialize() };
+    }
+    // Values above 32 mean success, and smaller ones are the shell's error codes.
+    if result > 32 {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "the Windows shell returned code {result}"
+        )))
+    }
+}
+
 pub struct Instance(HANDLE);
 
 /// Named object within this Windows session, unique to the user and runtime profile.

@@ -7,6 +7,10 @@ use std::{
 };
 use worker::command_moment;
 
+/// How long a test waits for the worker. A passing test returns as soon as the event arrives; the
+/// limit only stops a hang, and a busy CI runner once needed more than five seconds to open the store.
+const WORKER_WAIT: Duration = Duration::from_secs(60);
+
 mod history_correction {
     use super::*;
     use rusqlite::params;
@@ -2454,12 +2458,12 @@ fn worker_exit_and_lifecycle_confirmation_follow_commit() {
         let _ = events.send(event);
     });
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::State(_)
     ));
     commands.send(Command::Start(activity("First"))).unwrap();
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::Committed(Snapshot { running: true, .. })
     ));
     let (done, saved) = std::sync::mpsc::sync_channel(1);
@@ -2470,20 +2474,20 @@ fn worker_exit_and_lifecycle_confirmation_follow_commit() {
             done: Some(done),
         })
         .unwrap();
-    saved.recv_timeout(Duration::from_secs(5)).unwrap();
+    saved.recv_timeout(WORKER_WAIT).unwrap();
     // Windows interruptions did not come from the interface, so they finish no command of its.
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::State(Snapshot { running: false, .. })
     ));
     commands.send(Command::Start(activity("Next"))).unwrap();
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::Committed(Snapshot { running: true, .. })
     ));
     commands.send(Command::Exit).unwrap();
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::ExitReady
     ));
     assert_eq!(Store::open(&path).unwrap().snapshot().unwrap().completed, 2);
@@ -2551,12 +2555,12 @@ fn invalid_report_does_not_block_stop_or_acknowledge_a_tracking_command() {
         let _ = events.send(event);
     });
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::State(_)
     ));
     commands.send(Command::Start(Activity::default())).unwrap();
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::Committed(_)
     ));
     commands
@@ -2572,24 +2576,24 @@ fn invalid_report_does_not_block_stop_or_acknowledge_a_tracking_command() {
         })
         .unwrap();
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::Report {
             id: 42,
             result: Err(_)
         }
     ));
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::State(Snapshot { running: true, .. })
     ));
     commands.send(Command::Stop).unwrap();
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::Committed(Snapshot { running: false, .. })
     ));
     commands.send(Command::Exit).unwrap();
     assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(5)).unwrap(),
+        receiver.recv_timeout(WORKER_WAIT).unwrap(),
         Event::ExitReady
     ));
 }
@@ -3327,7 +3331,7 @@ fn refused_interface_commands_answer_once_and_later_commands_still_work() {
     let commands = spawn(dir.path().join("focus.sqlite3"), move |event| {
         let _ = events.send(event);
     });
-    let timeout = Duration::from_secs(5);
+    let timeout = WORKER_WAIT;
     assert!(matches!(
         receiver.recv_timeout(timeout).unwrap(),
         Event::State(_)

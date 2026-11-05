@@ -30,6 +30,10 @@ pub mod tracking;
 pub mod tray_interaction;
 pub mod ui_support;
 
+/// The project site, linked from About. The application never fetches it: a click hands the
+/// address to the default browser.
+pub const SITE: &str = env!("CARGO_PKG_HOMEPAGE");
+
 /// Verify bundled SQLite persistence without leaving application data behind.
 pub fn sqlite_probe() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let directory = tempfile::tempdir()?;
@@ -59,6 +63,17 @@ mod tests {
     #[test]
     fn sqlite_survives_close_and_reopen() {
         assert_eq!(super::sqlite_probe().unwrap(), "Storage ready");
+    }
+
+    #[test]
+    fn the_site_is_the_pages_address_of_the_repository() {
+        // GitHub Pages serves a repository `owner/name` at `https://owner.github.io/name/`.
+        let repository = env!("CARGO_PKG_REPOSITORY");
+        let (owner, name) = repository
+            .strip_prefix("https://github.com/")
+            .and_then(|path| path.split_once('/'))
+            .unwrap();
+        assert_eq!(super::SITE, format!("https://{owner}.github.io/{name}/"));
     }
 }
 pub mod date_picker;

@@ -59,13 +59,12 @@ by the owner's decision.
 
 These need the owner, in this order:
 
-The repository `orwrkr/attention-focus` exists and is private for now, by the owner's decision. A
+The repository `orwrkr/attention-focus` became public on 2026-11-06, by the owner's decision. A
 scan of all history for personal paths and addresses before the first push found nothing.
 
-1. Add the SSH signing key to the GitHub account as a signing key, if it is not there yet,
-   so signed commits show as Verified. The local token cannot read this setting.
-2. Make the repository public, and enable private vulnerability reporting, which `SECURITY.md`
-   relies on and which needs a public repository.
+1. Done: GitHub reports signed commits as verified.
+2. Done: the repository is public. Still to do: enable private vulnerability reporting
+   (Settings, Security), which `SECURITY.md` relies on; on 2026-11-06 the API reported it disabled.
 3. Add the site link to the application in a new version (T-0044).
 4. Push that version's tag, check the draft release from the release workflow and publish it.
 5. Only then set Settings, Pages, Source to GitHub Actions, and run the Pages workflow (T-0043).

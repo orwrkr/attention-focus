@@ -443,8 +443,10 @@ move or reset this data. Development history is never copied into Production aut
 
 `attention-focus.exe` is the whole application. Icons, fonts, SQLite, the C runtime and the
 license texts are inside it, so a copy of the file carries them. To read them, click **About**,
-then **Licenses**. No Rust, Python, .NET, Node, or WebView2 installation is needed. Windows system components and a
-working graphics driver are required. Clean-machine compatibility is still being verified.
+then **Licenses**. **Project site** in the same panel opens the project's web page in your default
+browser; the application itself does not connect to the internet. No Rust, Python, .NET, Node,
+or WebView2 installation is needed. Windows system components and a working graphics driver are
+required. Clean-machine compatibility is still being verified.
 
 ## Protect and back up your data
 

@@ -32,6 +32,12 @@ and works at phone width.
 
 **English only**, like other project content. Translated pages need a new instruction.
 
+**The application links to it.** About shows **Project site**, which hands the address to the default
+browser through the Windows shell (`ShellExecuteW`). The application still makes no requests itself, and
+no browser-opening crate is added. The address is the `homepage` field of the Cargo manifest, and a test
+derives it from the repository address. The release with the link is published before Pages is enabled,
+so the link never points at a site that the downloaded version does not know (T-0044).
+
 ## Alternatives
 
 - Firebase Hosting: works with a private repository, but needs a Google project, a deployment token in
