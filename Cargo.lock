@@ -118,7 +118,7 @@ version = "0.26.1"
 dependencies = [
  "eframe",
  "jiff",
- "miniz_oxide 0.8.9",
+ "miniz_oxide 0.9.1",
  "raw-window-handle",
  "rusqlite",
  "serde",
