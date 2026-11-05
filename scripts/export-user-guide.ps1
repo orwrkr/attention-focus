@@ -13,6 +13,6 @@ Assert-ReleasePath $paths $pdf
 & $python (Join-Path $PSScriptRoot 'export_user_guide.py') --output $pdf
 if ($LASTEXITCODE -ne 0) { throw 'PDF export failed. Run scripts/setup-docs.ps1 or set ATTENTION_FOCUS_PYTHON.' }
 Publish-PackageFile $paths $pdf (Join-Path $paths.Directory "User-Guide-$version.pdf")
-# Every managed PDF update refreshes the production archive without another user step.
+# Every managed PDF update refreshes the release folder without another user step.
 & (Join-Path $PSScriptRoot 'package-production.ps1')
-if (-not $?) { throw 'PDF exported but production archive refresh failed.' }
+if (-not $?) { throw 'PDF exported but release folder refresh failed.' }

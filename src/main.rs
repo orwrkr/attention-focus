@@ -65,6 +65,7 @@ struct Desktop {
     theme: egui::ThemePreference,
     language: i18n::Choice,
     fonts: Fallbacks,
+    notices: attention_focus::notices::Panel,
     motion_epoch: Instant,
     tray_level: Option<(bool, u8)>,
     running_icons: Vec<Icon>,
@@ -340,6 +341,7 @@ impl Desktop {
             theme,
             language,
             fonts,
+            notices: attention_focus::notices::Panel::default(),
         }
     }
 
@@ -979,6 +981,9 @@ impl eframe::App for Desktop {
                             ui.separator();
                             ui.strong(i18n::t("settings.startup"));
                             self.startup.show(ui);
+                            ui.separator();
+                            ui.strong(i18n::t("settings.about"));
+                            self.notices.show(ui);
                         });
                         if reveal_settings {
                             settings.response.scroll_to_me(Some(egui::Align::Min));

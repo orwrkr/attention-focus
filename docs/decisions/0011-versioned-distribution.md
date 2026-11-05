@@ -1,7 +1,8 @@
 # ADR-0011: Neutral Icons and Versioned Distribution
 
 Date: 2026-10-27.
-Status: accepted.
+Status: superseded in part by [ADR-0036](0036-single-exe-release.md), for the ZIP, its contents
+and the separate notices file.
 Basis: explicit user request.
 
 ## Decision

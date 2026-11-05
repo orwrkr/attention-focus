@@ -33,10 +33,11 @@ python ./scripts/test_release_tools.py
 ```
 
 The only distributed executable is `dist/AttentionFocus/attention-focus.exe`. The main
-build also creates `target/debug/attention-focus.exe` for testing, the guide PDF, notices,
-manifest, and `dist/AttentionFocus-VERSION-windows-x64.zip`. The ZIP contains exactly
-the EXE, User-Guide-VERSION.pdf, THIRD-PARTY-NOTICES.txt, and release.json under a
-versioned root directory. No databases, settings, logs, PDBs, or build tools are shipped.
+build also creates `target/debug/attention-focus.exe` for testing, the guide PDF, and the
+release folder `dist/AttentionFocus-VERSION/`. That folder contains exactly the EXE,
+User-Guide-VERSION.pdf and release.json, the three files a GitHub release attaches. Only the
+EXE is needed to run, and it holds the license notices (ADR-0036). No databases, settings,
+logs, PDBs, or build tools are shipped.
 The final PE import audit found only Windows system
 libraries and no separately shipped runtime or SQLite DLL (see T-0006).
 The build script consumes Cargo's main release artifact and publishes it atomically.
@@ -49,21 +50,26 @@ Runtime requirements on a clean Windows machine have not yet been verified; do n
 describe this build as universally portable.
 
 Cargo.toml is the version authority. FileVersion is major.minor.patch.0; ProductVersion
-is the package version (with -dev for debug). The header, PDF, manifest, and archive
-identify the version. After archiving a version, changed production source/guide/build
+is the package version (with -dev for debug). The header, PDF, manifest, and release folder
+identify the version. After releasing a version, changed production source/guide/build
 inputs require a version bump and scripts/build.ps1. A build stamp ties the EXE to its
 inputs; packaging refuses a stale EXE or a renamed version around old binaries.
-scripts/build.ps1 automatically refreshes/verifies the ZIP after publishing outputs.
-scripts/export-user-guide.ps1 also refreshes the ZIP; package-production.ps1 explicitly
-repackages current prepared outputs. verify-release.ps1 verifies hashes, member allowlist,
-source fingerprint, both EXEs' metadata, and every embedded neutral icon size. Old
-versioned ZIPs are release history. There is still one canonical loose production EXE.
+scripts/build.ps1 automatically refreshes/verifies the folder after publishing outputs.
+scripts/export-user-guide.ps1 also refreshes it; package-production.ps1 explicitly
+rebuilds it from current prepared outputs. verify-release.ps1 verifies hashes, the file
+allowlist, source fingerprint, both EXEs' metadata, and every embedded neutral icon size. Older
+folders and ZIPs are release history. There is still one canonical loose production EXE.
 Development-only scripts/dev.ps1 builds do not touch production or require its closure.
 
 The guide source is docs/user-guide.md, exported by scripts/export_user_guide.py using
 ReportLab and actual generated icon artwork. Review every PDF page after guide/layout
-changes. THIRD-PARTY-NOTICES.txt includes resolved Windows runtime crates, embedded font
-attributions, and Rust standard-library notices. See third-party/README.md for provenance.
+changes.
+
+`third-party/THIRD-PARTY-NOTICES.txt` includes resolved Windows runtime crates, embedded font
+attributions, and Rust standard-library notices. The EXE embeds it and shows it in Settings.
+scripts/build.ps1 regenerates it before compiling, and CI fails when it is out of date. After
+changing dependencies or the toolchain, run `python scripts/release_tools.py update-notices`
+and commit the result. See third-party/README.md for provenance.
 
 ## Runtime files and data
 
@@ -147,5 +153,5 @@ Signing stays off until the repository has the secret `SIGNPATH_API_TOKEN` and t
 `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG` and `SIGNPATH_SIGNING_POLICY_SLUG`. Then the
 workflow submits the unsigned EXE and waits up to an hour for a person to approve it in SignPath.
 With the `release-signing` policy, `scripts/use-signed-exe.ps1` installs the signed copy and
-rebuilds the archive. With any other policy, such as `test-signing`, the package stays unsigned.
+rebuilds the release folder. With any other policy, such as `test-signing`, the EXE stays unsigned.
 See [ADR-0033](decisions/0033-release-workflow-and-signing.md) and T-0037.

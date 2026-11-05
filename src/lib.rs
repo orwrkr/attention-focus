@@ -11,6 +11,7 @@ pub mod icons;
 pub mod lifecycle;
 pub mod motion;
 pub mod note_memory;
+pub mod notices;
 pub mod outbox;
 pub mod paths;
 #[cfg(windows)]

@@ -18,11 +18,11 @@
    For documentation, check links, task status consistency, English-only compliance,
    encoding, and `git diff --check`. Review prose as well as scanning scripts:
    Latin characters alone do not prove that content is English.
-   For production changes, bump an already archived Cargo version, then use
-   scripts/build.ps1 to build both EXEs and refresh the guide/notices/ZIP automatically.
+   For production changes, bump an already released Cargo version, then use
+   scripts/build.ps1 to build both EXEs and refresh the guide, notices and release folder.
    Run scripts/verify-release.ps1 and review all PDF pages when the guide/layout changes.
-   Use export-user-guide.ps1 for PDF re-export with automatic archive refresh. Never
-   hand off a production change with an outdated archive. See ADR-0011.
+   Use export-user-guide.ps1 for PDF re-export with automatic folder refresh. Never
+   hand off a production change with an outdated folder. See ADR-0011 and ADR-0036.
 6. **Save the result.** Update the task card, index, and context. Commit only relevant
    files locally, then report the result and limitations.
 

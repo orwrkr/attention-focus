@@ -20,7 +20,7 @@ appears only when there is such time. A `CLAUDE.md` now imports `AGENTS.md`.
 - [x] Settings offers Same as Windows and each language by its own name; the choice survives a restart.
 - [x] Same as Windows follows the Windows preference order, then English.
 - [x] The list sets Same as Windows apart, then shows languages in character table order (test; the
-  owner's request after 0.22.0, not viewed in the real window).
+  owner's request after 0.22.0, viewed in the real window during T-0040).
 - [x] Every user-visible string in the running interface comes from `locales/`.
 - [x] Plural forms follow each language's rules.
 - [x] Chinese, Japanese, Korean and Arabic use fonts included with Windows, also for user data.

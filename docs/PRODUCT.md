@@ -22,8 +22,8 @@
   Polish, Turkish, Chinese (Simplified), Japanese, Korean and Arabic, selectable, following the
   Windows language by default and falling back to English. The guide and exports stay in English.
 - **Releases.** A Rust implementation under the MIT License. English-only project content.
-  Consistent version metadata, and a versioned ZIP holding the EXE, an English guide
-  PDF and the required notices. Main builds also produce the development EXE.
+  Consistent version metadata, and one EXE that holds the required notices, published with an
+  English guide PDF and a manifest of hashes. Main builds also produce the development EXE.
 - **Public project.** A public GitHub repository named `attention-focus`, and free code signing
   through SignPath Foundation once the project qualifies (T-0037).
 

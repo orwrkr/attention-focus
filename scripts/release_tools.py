@@ -7,14 +7,15 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import struct
 import subprocess
 import tempfile
 import tomllib
-import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 TARGET="x86_64-pc-windows-msvc"
+NOTICES="third-party/THIRD-PARTY-NOTICES.txt"
 
 def version(root: Path=ROOT) -> str:
     value=tomllib.loads((root/"Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
@@ -26,7 +27,7 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 def fingerprint(root: Path=ROOT) -> str:
-    paths=[root/"Cargo.toml",root/"Cargo.lock",root/"build.rs",root/".cargo/config.toml",root/"docs/user-guide.md",root/"LICENSE",root/"rust-toolchain.toml"]
+    paths=[root/"Cargo.toml",root/"Cargo.lock",root/"build.rs",root/".cargo/config.toml",root/"docs/user-guide.md",root/"LICENSE",root/"rust-toolchain.toml",root/NOTICES]
     paths+=list((root/"src").rglob("*.rs"))
     paths+=list((root/"locales").glob("*.json"))
     paths+=list((root/"scripts").glob("*.py"))+list((root/"scripts").glob("*.ps1"))+[root/"scripts/requirements-docs.txt"]
@@ -37,15 +38,13 @@ def fingerprint(root: Path=ROOT) -> str:
             digest.update(path.relative_to(root).as_posix().encode());digest.update(b"\0");digest.update(path.read_bytes());digest.update(b"\0")
     return digest.hexdigest()
 
-def archive_path(root: Path=ROOT) -> Path:
-    return root/"dist"/f"AttentionFocus-{version(root)}-windows-x64.zip"
+def release_dir(root: Path=ROOT) -> Path:
+    return root/"dist"/f"AttentionFocus-{version(root)}"
 
 def check_version(root: Path=ROOT) -> None:
-    archive=archive_path(root)
-    if archive.exists():
-        with zipfile.ZipFile(archive) as z:
-            old=json.loads(z.read(f"AttentionFocus-{version(root)}/release.json"))
-        if old["source_fingerprint"]!=fingerprint(root):
+    released=release_dir(root)/"release.json"
+    if released.exists():
+        if json.loads(released.read_bytes())["source_fingerprint"]!=fingerprint(root):
             raise ValueError("Production inputs changed for an already packaged version. Bump Cargo.toml version before publishing.")
 
 class TextOnly(html.parser.HTMLParser):
@@ -57,7 +56,7 @@ class TextOnly(html.parser.HTMLParser):
     def handle_data(self,data):
         if not self.hidden and data.strip():self.parts.append(data.strip())
 
-def notices(output: Path) -> None:
+def generate_notices() -> str:
     metadata=json.loads(subprocess.check_output(["cargo","metadata","--offline","--locked","--format-version","1","--filter-platform",TARGET],cwd=ROOT))
     nodes={n["id"]:n for n in metadata["resolve"]["nodes"]};packages={p["id"]:p for p in metadata["packages"]}
     root=metadata["resolve"]["root"];seen=set();todo=[root]
@@ -68,7 +67,7 @@ def notices(output: Path) -> None:
         todo.extend(dep["pkg"] for dep in nodes[item]["deps"] if any(k["kind"] is None for k in dep["dep_kinds"]))
     overrides=json.loads((ROOT/"third-party/license-overrides/sources.json").read_text(encoding="utf-8"))
     license_text=(ROOT/"LICENSE").read_text(encoding="utf-8").strip()
-    parts=[f"Attention Focus {version()} - License and Third-Party Notices", "Attention Focus is distributed under the following license:", license_text, "\n"+"="*76, "The licenses below cover the listed third-party components only. No application runtime files are supplied by this text."]
+    parts=["Attention Focus - License and Third-Party Notices", "Attention Focus is distributed under the following license:", license_text, "\n"+"="*76, "The licenses below cover the listed third-party components only. No application runtime files are supplied by this text."]
     count=0
     for item in sorted(seen,key=lambda x:(packages[x]["name"],packages[x]["version"])):
         if item==root:continue
@@ -98,9 +97,19 @@ def notices(output: Path) -> None:
     if not rust_notice.is_file():raise ValueError("Rust standard-library notices are missing from the installed toolchain.")
     parser=TextOnly();parser.feed(rust_notice.read_text(encoding="utf-8"))
     parts.extend(["\n"+"="*76,"Rust standard library",subprocess.check_output(["rustc","--version"],text=True).strip(),"\n".join(parser.parts)])
-    output.parent.mkdir(parents=True,exist_ok=True)
-    output.write_text("\n".join(parts)+"\n",encoding="utf-8",newline="\n")
     print(f"Notices generated for {count} Windows runtime packages, bundled fonts, and Rust standard library.")
+    return "\n".join(parts)+"\n"
+
+def update_notices() -> None:
+    """The EXE embeds this tracked file, so it must be current before compiling."""
+    path=ROOT/NOTICES;text=generate_notices()
+    if not path.exists() or path.read_bytes()!=text.encode("utf-8"):
+        path.write_bytes(text.encode("utf-8"))
+        print(f"{NOTICES} changed; commit it with the dependency change.")
+
+def check_notices() -> None:
+    if (ROOT/NOTICES).read_bytes()!=generate_notices().encode("utf-8"):
+        raise ValueError(f"{NOTICES} is out of date. Run: python scripts/release_tools.py update-notices")
 
 def safe_file(path: Path,root: Path) -> None:
     if not path.absolute().is_relative_to(root.absolute()) or not path.resolve().is_relative_to(root.resolve()):raise ValueError("Package path is outside the project.")
@@ -109,60 +118,66 @@ def safe_file(path: Path,root: Path) -> None:
         if current.is_symlink() or (hasattr(current,"is_junction") and current.is_junction()):raise ValueError(f"Linked package path is unsupported: {current.name}")
         current=current.parent
 
+def payload(root: Path=ROOT) -> list[str]:
+    """What a release publishes: the program, which holds its own notices, and its guide."""
+    return ["attention-focus.exe",f"User-Guide-{version(root)}.pdf"]
+
 def manifest(root: Path=ROOT) -> dict:
     v=version(root);directory=root/"dist/AttentionFocus"
-    names=["attention-focus.exe",f"User-Guide-{v}.pdf","THIRD-PARTY-NOTICES.txt"]
     files={}
-    for name in names:
+    for name in payload(root):
         path=directory/name;safe_file(path,root)
         if not path.is_file() or path.stat().st_size==0:raise ValueError(f"Required production file is missing or empty: {name}")
         files[name]={"sha256":sha(path),"bytes":path.stat().st_size}
     built=json.loads((root/"target/production-build.json").read_bytes())
     if built!={"version":v,"source_fingerprint":fingerprint(root),"exe_sha256":files["attention-focus.exe"]["sha256"]}:
         raise ValueError("Production EXE/build inputs do not match the build stamp. Run scripts/build.ps1.")
-    return {"format":1,"product":"Attention Focus","version":v,"file_version":v+".0","platform":"windows-x64","source_fingerprint":built["source_fingerprint"],"files":files}
+    return {"format":2,"product":"Attention Focus","version":v,"file_version":v+".0","platform":"windows-x64","source_fingerprint":built["source_fingerprint"],"files":files}
 
 def stamp(root: Path=ROOT) -> None:
     data={"version":version(root),"source_fingerprint":fingerprint(root),"exe_sha256":sha(root/"dist/AttentionFocus/attention-focus.exe")}
     (root/"target/production-build.json").write_text(json.dumps(data,sort_keys=True)+"\n",encoding="utf-8",newline="\n")
 
 def pack(root: Path=ROOT) -> Path:
+    """Builds the release folder aside and swaps it in, so a failure keeps the previous one."""
     check_version(root)
-    data=manifest(root);v=data["version"];directory=root/"dist/AttentionFocus";archive=archive_path(root)
-    safe_file(archive,root);safe_file(directory/"release.json",root)
-    content=(json.dumps(data,indent=2,sort_keys=True)+"\n").encode()
-    fd,temporary=tempfile.mkstemp(prefix="package-",suffix=".zip",dir=root/"target")
-    os.close(fd)
+    data=manifest(root);source=root/"dist/AttentionFocus";target=release_dir(root)
+    safe_file(target,root)
+    allowed={*data["files"],"release.json"}
+    if target.exists():
+        unexpected=sorted(p.name for p in target.iterdir() if p.name not in allowed)
+        if unexpected:raise ValueError(f"Unexpected files in the release folder: {unexpected}")
+    staging=Path(tempfile.mkdtemp(prefix="release-",dir=root/"target"))
+    previous=target.with_name(target.name+".previous")
     try:
-        with zipfile.ZipFile(temporary,"w",compression=zipfile.ZIP_DEFLATED,compresslevel=9) as z:
-            for name in sorted(data["files"]):
-                info=zipfile.ZipInfo(f"AttentionFocus-{v}/{name}",date_time=(2020,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
-                z.writestr(info,(directory/name).read_bytes())
-            info=zipfile.ZipInfo(f"AttentionFocus-{v}/release.json",date_time=(2020,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED;z.writestr(info,content)
-        with zipfile.ZipFile(temporary) as z:
-            if z.testzip():raise ValueError("Archive integrity check failed.")
-            expected={f"AttentionFocus-{v}/{name}" for name in [*data["files"],"release.json"]}
-            if set(z.namelist())!=expected:raise ValueError("Unexpected archive members.")
-            for name,entry in data["files"].items():
-                if hashlib.sha256(z.read(f"AttentionFocus-{v}/{name}")).hexdigest()!=entry["sha256"]:raise ValueError("Archive hash mismatch.")
-        os.replace(temporary,archive)
-        (directory/"release.json").write_bytes(content)
+        for name,entry in data["files"].items():
+            shutil.copyfile(source/name,staging/name)
+            if sha(staging/name)!=entry["sha256"]:raise ValueError("Copied file hash mismatch.")
+        (staging/"release.json").write_bytes((json.dumps(data,indent=2,sort_keys=True)+"\n").encode())
+        replacing=target.exists()
+        if replacing:
+            # An interrupted swap can leave this behind, and Windows will not replace it.
+            if previous.exists():shutil.rmtree(previous)
+            os.replace(target,previous)
+        try:
+            os.replace(staging,target)
+        except OSError:
+            if replacing:os.replace(previous,target)
+            raise
+        if replacing:shutil.rmtree(previous)
     finally:
-        Path(temporary).unlink(missing_ok=True)
-    print(archive)
-    return archive
+        shutil.rmtree(staging,ignore_errors=True)
+    print(target)
+    return target
 
 def verify(root: Path=ROOT) -> None:
-    current=manifest(root)
-    with zipfile.ZipFile(archive_path(root)) as z:
-        data=json.loads(z.read(f"AttentionFocus-{version(root)}/release.json"))
-        if data!=current:raise ValueError("Production archive is stale. Rebuild the package.")
-        expected={f"AttentionFocus-{version(root)}/{name}" for name in [*data["files"],"release.json"]}
-        if set(z.namelist())!=expected or z.testzip():raise ValueError("Archive contents failed validation.")
-        for name,entry in data["files"].items():
-            if hashlib.sha256(z.read(f"AttentionFocus-{version(root)}/{name}")).hexdigest()!=entry["sha256"]:raise ValueError("Archive hash mismatch.")
-    if json.loads((root/"dist/AttentionFocus/release.json").read_bytes())!=current:raise ValueError("Loose release manifest is stale.")
-    print("Production ZIP verified: exact allowlist, current source fingerprint, member hashes, and release manifest.")
+    current=manifest(root);target=release_dir(root)
+    data=json.loads((target/"release.json").read_bytes())
+    if data!=current:raise ValueError("Release folder is stale. Run scripts/build.ps1.")
+    if {p.name for p in target.iterdir()}!={*data["files"],"release.json"}:raise ValueError("Release folder contents failed validation.")
+    for name,entry in data["files"].items():
+        if sha(target/name)!=entry["sha256"]:raise ValueError("Release file hash mismatch.")
+    print("Release folder verified: exact allowlist, current source fingerprint, file hashes, and manifest.")
 
 def verify_icons(root: Path=ROOT) -> None:
     candidates=[p for mode in ("release","debug") for p in (root/"target"/mode/"build").glob("attention-focus-*/out/icon-version.txt") if p.read_text(encoding="utf-8").strip()==version(root)]
@@ -177,14 +192,13 @@ def verify_icons(root: Path=ROOT) -> None:
         print(f"Verified {count} neutral icon resource sizes: {icon_name}")
 
 if __name__=="__main__":
-    parser=argparse.ArgumentParser();parser.add_argument("command",choices=["version","fingerprint","check-version","notices","stamp","package","verify","verify-icons"]);parser.add_argument("--output",type=Path)
+    parser=argparse.ArgumentParser();parser.add_argument("command",choices=["version","fingerprint","check-version","update-notices","check-notices","stamp","package","verify","verify-icons"])
     args=parser.parse_args()
     if args.command=="version":print(version())
     elif args.command=="fingerprint":print(fingerprint())
     elif args.command=="check-version":check_version()
-    elif args.command=="notices":
-        if args.output is None:parser.error("notices requires --output")
-        notices(args.output)
+    elif args.command=="update-notices":update_notices()
+    elif args.command=="check-notices":check_notices()
     elif args.command=="package":pack()
     elif args.command=="stamp":stamp()
     elif args.command=="verify-icons":verify_icons()

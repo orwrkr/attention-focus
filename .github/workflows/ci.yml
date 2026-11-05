@@ -18,12 +18,17 @@ jobs:
           persist-credentials: false
       - name: Install the pinned toolchain
         run: rustup toolchain install
+      # The license notices are generated offline, so every Windows package must be present.
+      - name: Download the dependencies
+        run: cargo fetch --locked --target x86_64-pc-windows-msvc
       - name: Check formatting
         run: cargo fmt --check
       - name: Run Clippy
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run tests
         run: cargo test --locked
+      - name: Check the embedded license notices
+        run: python ./scripts/release_tools.py check-notices
       - name: Test packaging tools
         run: python ./scripts/test_release_tools.py
       - name: Test release output rules

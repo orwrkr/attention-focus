@@ -28,7 +28,7 @@ threat model, as is replacing the application's files or directory links while i
 
 ## Release integrity
 
-Each release archive includes `release.json` with SHA-256 hashes of its files. Releases are built
+Each release publishes `release.json` with SHA-256 hashes of its files. Releases are built
 from source by the [release workflow](.github/workflows/release.yml) on GitHub-hosted runners.
 Release executables are not code-signed yet, so Windows SmartScreen may show a warning. See the
 [code signing policy](README.md#code-signing-policy).

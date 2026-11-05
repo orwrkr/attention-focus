@@ -12,3 +12,7 @@ The notices generator also collects license/notice files from resolved Windows r
 dependencies, bundled font attribution files, and Rust standard-library notices from
 the installed toolchain. Build-only Python tools are not shipped as application runtimes.
 If a dependency has no available license input, packaging fails rather than omitting it.
+
+Its output is `THIRD-PARTY-NOTICES.txt` in this directory. It is generated, so do not edit it;
+run `python scripts/release_tools.py update-notices`. The application embeds this file and
+shows it in Settings, which is how each copy of the EXE carries these texts (ADR-0036).

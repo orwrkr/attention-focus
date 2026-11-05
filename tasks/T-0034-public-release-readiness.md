@@ -18,8 +18,8 @@ by the owner's decision.
 
 ## Must resolve before publishing
 
-- [x] **License.** MIT, decided by the owner. `LICENSE`, the Cargo manifest and the top of the
-  notices file in every release archive carry it.
+- [x] **License.** MIT, decided by the owner. `LICENSE`, the Cargo manifest and the licenses
+  shown inside the application carry it.
 - [x] **Commit author email.** Kept, decided by the owner.
 - [x] **Commit signing.** Earlier commits are unsigned and stay that way, as rewriting history
   was not requested. New commits are signed with the owner's existing SSH signing key, through

@@ -1,4 +1,4 @@
-# Installs the signed copy of the EXE that scripts/build.ps1 published, then rebuilds the archive.
+# Installs the signed copy of the EXE that scripts/build.ps1 published, then the release folder.
 param([Parameter(Mandatory)] [string] $SignedExe)
 $ErrorActionPreference = 'Stop'
 $signature = Get-AuthenticodeSignature -LiteralPath $SignedExe
@@ -17,5 +17,5 @@ Assert-OutputUnlocked $paths $paths.Output
 [IO.File]::Copy($SignedExe, $paths.Output, $true)
 & $python (Join-Path $PSScriptRoot 'release_tools.py') stamp
 if ($LASTEXITCODE -ne 0) { throw 'Production build stamp could not be written.' }
-& (Join-Path $PSScriptRoot 'package-production.ps1') -UsePreparedNotices
-if (-not $?) { throw 'Production archive refresh failed.' }
+& (Join-Path $PSScriptRoot 'package-production.ps1')
+if (-not $?) { throw 'Release folder refresh failed.' }

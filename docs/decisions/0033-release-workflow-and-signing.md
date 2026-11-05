@@ -1,7 +1,8 @@
 # ADR-0033: Release Workflow and Free Code Signing
 
 Date: 2026-11-04.
-Status: accepted.
+Status: accepted. [ADR-0036](0036-single-exe-release.md) replaces the archive it mentions with a
+release folder; the signing path is unchanged.
 Basis: explicit user request to use the free SignPath option.
 
 ## Context

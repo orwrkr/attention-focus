@@ -41,6 +41,7 @@
 | [T-0037](T-0037-code-signing.md) | blocked | Free Code Signing Through SignPath Foundation | T-0034; first public release |
 | [T-0038](T-0038-scroll-bars-themes-settings.md) | done | Scroll Bars, Themes and Interval Setting | T-0036 |
 | [T-0039](T-0039-interface-languages.md) | done | Interface Languages | T-0038 |
+| [T-0040](T-0040-single-exe-release.md) | done | One EXE as the Release | T-0039 |
 
 Task template: `templates/TASK.md` from the repository root.
 

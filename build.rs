@@ -5,7 +5,15 @@ fn main() {
     println!("cargo:rerun-if-changed=src/icons.rs");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=third-party/THIRD-PARTY-NOTICES.txt");
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    // The notices travel inside the EXE, and repeat the same license texts many times.
+    let notices = std::fs::read("third-party/THIRD-PARTY-NOTICES.txt").unwrap();
+    std::fs::write(
+        out.join("notices.deflate"),
+        miniz_oxide::deflate::compress_to_vec(&notices, 9),
+    )
+    .unwrap();
     for (name, state) in [
         ("app", icons::State::App),
         ("app-development", icons::State::AppDevelopment),

@@ -9,7 +9,7 @@ watch your screen or keyboard, score productivity, or use the network.
 
 ## Start in three steps
 
-1. Extract the production ZIP to a folder and run `attention-focus.exe`.
+1. Put `attention-focus.exe` in a folder you will keep, and run it.
 2. Open **Projects**, type a project name, and click **Add projects**.
 3. Choose the project and optionally a task, then click **Start tracking**.
 
@@ -402,12 +402,11 @@ Each contains `focus.sqlite3` for history and projects, and `window.ron` for pla
 Stay on top. SQLite may create journal files in the same folder. Moving the EXE does not
 move or reset this data. Development history is never copied into Production automatically.
 
-## What to keep in the extracted folder
+## What the application needs
 
-The package contains the EXE, this PDF, license notices, and a release manifest.
-Only the EXE is needed to run. Icons, fonts, SQLite, and the C runtime are embedded.
-Keep the notices when redistributing the package. No Rust, Python, .NET, Node, or
-WebView2 installation is needed to run the app. Windows system components and a
+`attention-focus.exe` is the whole application. Icons, fonts, SQLite, the C runtime and the
+license texts are inside it, so a copy of the file carries them. To read them, click
+**Licenses** in **Settings**. No Rust, Python, .NET, Node, or WebView2 installation is needed. Windows system components and a
 working graphics driver are required. Clean-machine compatibility is still being verified.
 
 ## Protect and back up your data
@@ -427,11 +426,11 @@ recorded after the upgrade are not in it.
 
 1. Exit Production through its window or tray menu. Close an older development build
    too if you intend to replace that development EXE.
-2. Extract the new versioned production ZIP and use its `attention-focus.exe`.
+2. Replace `attention-focus.exe` with the new file. Keeping the same folder keeps sign-in startup.
 3. Start the EXE. Your production data remains in the fixed data directory.
 
-The app version appears in the window header, Windows file properties, this guide,
-and the ZIP/PDF filenames. `release.json` records the package version and SHA-256 hashes.
+The app version appears in the window header, Windows file properties, this guide and its
+filename. Each release's `release.json` records the version and SHA-256 hashes.
 No asset files or third-party runtime DLLs need to be copied beside the EXE.
 
 <!-- pagebreak -->

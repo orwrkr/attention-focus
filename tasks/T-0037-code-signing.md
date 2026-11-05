@@ -17,7 +17,7 @@ applying, and then the owner's application and SignPath's approval.
 - [x] MIT license, no proprietary components, and releases that describe their purpose.
 - [x] `.github/workflows/release.yml`: builds through `scripts/build.ps1`, drafts a release from a
   matching tag and submits signing only when configured.
-- [x] `scripts/use-signed-exe.ps1`: installs only a validly signed EXE, then rebuilds the archive.
+- [x] `scripts/use-signed-exe.ps1`: installs only a validly signed EXE, then rebuilds the release output.
 - [x] `.github/signpath/artifact-configuration.xml`: the configuration to enter in SignPath.
 - [x] "Code signing policy" section in README and in release notes, with roles and privacy.
 

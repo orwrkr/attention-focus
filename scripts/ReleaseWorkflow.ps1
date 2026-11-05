@@ -18,7 +18,8 @@ function Assert-OutputUnlocked([hashtable] $Paths, [string] $Path) {
 }
 
 function Assert-PackageOutputs([hashtable] $Paths, [string] $Version) {
-    foreach ($path in @((Join-Path $Paths.Directory "User-Guide-$Version.pdf"),(Join-Path $Paths.Directory 'THIRD-PARTY-NOTICES.txt'),(Join-Path $Paths.Directory 'release.json'),(Join-Path $Paths.Root "dist/AttentionFocus-$Version-windows-x64.zip"))) {
+    $folder = Join-Path $Paths.Root "dist/AttentionFocus-$Version"
+    foreach ($path in @((Join-Path $Paths.Directory "User-Guide-$Version.pdf"),(Join-Path $folder 'attention-focus.exe'),(Join-Path $folder "User-Guide-$Version.pdf"),(Join-Path $folder 'release.json'))) {
         Assert-OutputUnlocked $Paths $path
     }
 }

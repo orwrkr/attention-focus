@@ -35,9 +35,9 @@ The examples show invented projects.
 
 ## Install
 
-Windows x64 only. Download `AttentionFocus-VERSION-windows-x64.zip` from
-[Releases](../../releases), extract it, and run `attention-focus.exe`. Only the EXE is needed;
-the archive also contains a PDF guide, license notices and a `release.json` with file hashes.
+Windows x64 only. Download `attention-focus.exe` from [Releases](../../releases), put it in a
+folder you will keep, and run it. That one file is the whole application. Each release also
+offers a PDF guide and a `release.json` with file hashes.
 
 The EXE is not code-signed yet, so Windows SmartScreen may warn about it the first time. Choose
 **More info**, then **Run anyway**, if you trust the download. See the
@@ -83,7 +83,7 @@ and [tasks](tasks/INDEX.md) keeps the work history.
 Release executables are not code-signed yet. The project intends to apply for the free signing
 that [SignPath Foundation](https://signpath.org) offers to open source projects, which needs a
 first public release. This section will say so when signing is in effect. Until then, the
-`release.json` file in each archive lists the SHA-256 hash of every file.
+`release.json` file in each release lists the SHA-256 hash of every file.
 
 Releases are built from this repository's source by the
 [release workflow](.github/workflows/release.yml) on GitHub-hosted runners. Once signing is in
@@ -95,4 +95,6 @@ effect, a person approves each signature.
 
 ## License
 
-[MIT](LICENSE). Release archives include notices for third-party components.
+[MIT](LICENSE). The application shows the licenses of its third-party components under
+**Settings**; the same text is in
+[third-party/THIRD-PARTY-NOTICES.txt](third-party/THIRD-PARTY-NOTICES.txt).

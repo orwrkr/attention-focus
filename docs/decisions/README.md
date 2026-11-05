@@ -16,7 +16,7 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0008](0008-attributed-session-engine.md) | accepted | Attributed sessions, migration, and lifecycle |
 | [0009](0009-focus-reports.md) | accepted | Date-range focus reports and timezone accounting |
 | [0010](0010-runtime-profiles.md) | accepted | Independent production/development and pinned actions |
-| [0011](0011-versioned-distribution.md) | accepted | Neutral status icons and versioned production packages |
+| [0011](0011-versioned-distribution.md) | superseded in part | Neutral status icons and versioned production packages |
 | [0012](0012-immediate-activity-changes.md) | accepted | Immediate interval changes and durable recent pickers |
 | [0013](0013-live-reports-and-desktop-controls.md) | accepted | Live reports, calendars, timezone list, and window controls |
 | [0014](0014-minute-ranges-and-status-lights.md) | accepted | Minute boundaries, relevant refresh, and tray status lights |
@@ -41,5 +41,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0033](0033-release-workflow-and-signing.md) | accepted | Release workflow and free code signing |
 | [0034](0034-scroll-bars-and-themes.md) | accepted | One scroll bar style and selectable themes |
 | [0035](0035-interface-languages.md) | accepted | Interface languages and right-to-left text |
+| [0036](0036-single-exe-release.md) | accepted | One EXE as the release, with licenses inside it |
 
-Next number: `0036`. Template: `templates/ADR.md` from the repository root.
+Next number: `0037`. Template: `templates/ADR.md` from the repository root.
