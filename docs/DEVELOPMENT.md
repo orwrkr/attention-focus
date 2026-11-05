@@ -66,7 +66,7 @@ ReportLab and actual generated icon artwork. Review every PDF page after guide/l
 changes.
 
 `third-party/THIRD-PARTY-NOTICES.txt` includes resolved Windows runtime crates, embedded font
-attributions, and Rust standard-library notices. The EXE embeds it and shows it in Settings.
+attributions, and Rust standard-library notices. The EXE embeds it and shows it under About.
 scripts/build.ps1 regenerates it before compiling, and CI fails when it is out of date. After
 changing dependencies or the toolchain, run `python scripts/release_tools.py update-notices`
 and commit the result. See third-party/README.md for provenance.

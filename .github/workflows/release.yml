@@ -112,7 +112,7 @@ jobs:
           or telemetry.
 
           Windows x64 only. Download \`attention-focus.exe\`, put it in a folder you will keep, and run
-          it. That one file is the whole application. Its licenses are under Settings.
+          it. That one file is the whole application. Its licenses are under About.
 
           [Code signing policy](https://github.com/$GITHUB_REPOSITORY#code-signing-policy)
           EOF

@@ -42,5 +42,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0034](0034-scroll-bars-and-themes.md) | accepted | One scroll bar style and selectable themes |
 | [0035](0035-interface-languages.md) | accepted | Interface languages and right-to-left text |
 | [0036](0036-single-exe-release.md) | accepted | One EXE as the release, with licenses inside it |
+| [0037](0037-info-marks-and-about.md) | accepted | Info marks for explanations, and an About button |
 
-Next number: `0037`. Template: `templates/ADR.md` from the repository root.
+Next number: `0038`. Template: `templates/ADR.md` from the repository root.

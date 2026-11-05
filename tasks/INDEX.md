@@ -42,6 +42,7 @@
 | [T-0038](T-0038-scroll-bars-themes-settings.md) | done | Scroll Bars, Themes and Interval Setting | T-0036 |
 | [T-0039](T-0039-interface-languages.md) | done | Interface Languages | T-0038 |
 | [T-0040](T-0040-single-exe-release.md) | done | One EXE as the Release | T-0039 |
+| [T-0041](T-0041-info-marks-and-about.md) | done | Info Marks and an About Button | T-0040 |
 
 Task template: `templates/TASK.md` from the repository root.
 

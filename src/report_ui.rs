@@ -1,11 +1,10 @@
 //! Report controls; database access remains on the tracking worker.
 use crate::{
     date_picker::Calendar,
-    i18n::{
-        message, message_plural, paragraph, paragraph_colored, paragraph_weak, t, tf, tooltip, user,
-    },
+    i18n::{message, message_plural, paragraph, paragraph_colored, t, tf, tooltip, user},
     presentation::duration,
     reports, tracking,
+    ui_support::{info, info_after_header, with_info},
 };
 use eframe::egui;
 use std::{
@@ -83,7 +82,7 @@ impl Default for Panel {
         }
     }
 }
-/// The hint under the period buttons, in logical order.
+/// The explanation of the period buttons, in logical order.
 fn period_hint(preset: Option<usize>, timezone: &str) -> String {
     match preset {
         Some(1) => message("reports.period_today_hint", &[("timezone", timezone)]),
@@ -391,18 +390,16 @@ impl Panel {
                             self.edited(now);
                         }
                         ui.horizontal_wrapped(|ui| {
+                            let mut presets = Vec::new();
                             for (label, days) in [
                                 (t("reports.today"), 1),
                                 (t("reports.last_7_days"), 7),
                                 (t("reports.last_30_days"), 30),
                             ] {
-                                if ui
-                                    .add(
-                                        egui::Button::new(label)
-                                            .selected(self.preset == Some(days)),
-                                    )
-                                    .clicked()
-                                {
+                                let preset = ui.add(
+                                    egui::Button::new(label).selected(self.preset == Some(days)),
+                                );
+                                if preset.clicked() {
                                     match reports::Request::recent(days, &self.request.timezone) {
                                         Ok(request) => {
                                             self.request = request;
@@ -418,6 +415,7 @@ impl Panel {
                                         }
                                     }
                                 }
+                                presets.push(preset);
                             }
                             let custom = ui.add(
                                 egui::Button::new(t("reports.custom"))
@@ -426,12 +424,26 @@ impl Panel {
                             if tooltip(custom, &message("reports.custom_hint", &[])).clicked() {
                                 self.preset = None;
                             }
-                            if ui.button(t("reports.refresh")).clicked() {
+                            let presets: Vec<_> = presets.iter().collect();
+                            info(
+                                ui,
+                                &period_hint(self.preset, &self.request.timezone),
+                                &presets,
+                            );
+                            let refresh = ui.button(t("reports.refresh"));
+                            let status = if self.pending {
+                                message("reports.updating", &[])
+                            } else if self.growing {
+                                message("reports.auto_refresh", &[])
+                            } else {
+                                message("reports.auto_refresh_paused", &[])
+                            };
+                            info(ui, &status, &[&refresh]);
+                            if refresh.clicked() {
                                 self.debounce = None;
                                 self.dirty = true;
                             }
                         });
-                        paragraph_weak(ui, &period_hint(self.preset, &self.request.timezone));
                     });
                     if !ready {
                         ui.label(t("reports.history_unavailable"));
@@ -463,16 +475,6 @@ impl Panel {
                     if let Some(text) = &self.export_message {
                         paragraph(ui, text);
                     }
-                    paragraph_weak(
-                        ui,
-                        &if self.pending {
-                            message("reports.updating", &[])
-                        } else if self.growing {
-                            message("reports.auto_refresh", &[])
-                        } else {
-                            message("reports.auto_refresh_paused", &[])
-                        },
-                    );
                     if let Some(error) = &self.error {
                         paragraph_colored(ui, ui.visuals().error_fg_color, error);
                     }
@@ -532,17 +534,19 @@ impl Panel {
             "reports.saved_focus",
             &[("duration", &duration(report.saved_ms))],
         ));
-        let running = ui.label(tf(
-            "reports.running_now",
-            &[("duration", &duration(report.running_ms))],
-        ));
-        tooltip(running, &message("reports.running_now_hint", &[]));
+        with_info(ui, &message("reports.running_now_hint", &[]), |ui| {
+            ui.label(tf(
+                "reports.running_now",
+                &[("duration", &duration(report.running_ms))],
+            ))
+        });
         if report.review_ms > 0 {
-            let interrupted = ui.label(tf(
-                "reports.interrupted",
-                &[("duration", &duration(report.review_ms))],
-            ));
-            tooltip(interrupted, &message("reports.interrupted_hint", &[]));
+            with_info(ui, &message("reports.interrupted_hint", &[]), |ui| {
+                ui.label(tf(
+                    "reports.interrupted",
+                    &[("duration", &duration(report.review_ms))],
+                ))
+            });
         }
         // Exports carry the English diagnostics; the interface describes the same sessions itself.
         for id in &report.invalid_sessions {
@@ -626,16 +630,12 @@ impl Panel {
                 });
             });
         // The text holds a count and is translated, so it cannot identify the section.
-        egui::CollapsingHeader::new(tf(
+        let sessions = egui::CollapsingHeader::new(tf(
             "reports.sessions",
             &[("count", &report.matching_sessions.to_string())],
         ))
         .id_salt("Sessions")
         .show(ui, |ui| {
-            if report.matching_sessions > report.history.len() {
-                paragraph(ui, &message("reports.showing_recent", &[]));
-            }
-            paragraph(ui, &message("reports.clipped_hint", &[]));
             crate::ui_support::inner_area("session-history", 360.0).show(ui, |ui| {
                 for row in &report.history {
                     let record = &row.record;
@@ -701,6 +701,11 @@ impl Panel {
                 }
             });
         });
+        let mut hint = message("reports.clipped_hint", &[]);
+        if report.matching_sessions > report.history.len() {
+            hint = format!("{}\n{hint}", message("reports.showing_recent", &[]));
+        }
+        info_after_header(ui, &sessions.header_response, &hint);
         if report.matching_sessions == 0 {
             ui.label(t("reports.no_sessions"));
         }
@@ -865,7 +870,10 @@ mod tests {
             ]
         }
         let click = |panel: &mut Panel, label: &str| {
-            frame(panel, vec![]);
+            // A section that just opened shows only part of its body at first.
+            for _ in 0..8 {
+                frame(panel, vec![]);
+            }
             let output = frame(panel, vec![]);
             let pos = output
                 .shapes
@@ -1001,22 +1009,22 @@ mod tests {
         for _ in 0..6 {
             pass(&one, vec![]);
         }
-        let has = |texts: &[(String, egui::Rect)], wanted: &str| {
-            texts.iter().any(|(text, _)| text == wanted)
+        // A session row ends with its status, and shows only while the section is open.
+        let row_shown = |texts: &[(String, egui::Rect)]| {
+            let status = format!("| {}", message("reports.status_saved", &[]));
+            texts.iter().any(|(text, _)| text.ends_with(&status))
         };
-        let hint = message("reports.clipped_hint", &[]);
         assert!(
-            has(&pass(&one, vec![]), &hint),
+            row_shown(&pass(&one, vec![])),
             "the click opens the section"
         );
         let two = report_with(2);
         pass(&two, vec![]);
-        assert!(has(&pass(&two, vec![]), &hint), "a new count keeps it open");
+        assert!(row_shown(&pass(&two, vec![])), "a new count keeps it open");
         crate::i18n::with_language(crate::i18n::Language::German, || {
-            let hint = message("reports.clipped_hint", &[]);
             pass(&two, vec![]);
             assert!(
-                has(&pass(&two, vec![]), &hint),
+                row_shown(&pass(&two, vec![])),
                 "a new language keeps it open"
             );
         });

@@ -1,5 +1,5 @@
 //! The license of the application and of every component it includes. The text travels inside
-//! the EXE and can be read in Settings, so the program can be distributed as one file; see ADR-0036.
+//! the EXE and can be read under About, so the program can be distributed as one file; see ADR-0036.
 use crate::i18n::{message, paragraph, t, unmirrored};
 use eframe::egui;
 use std::ops::Range;
@@ -75,11 +75,14 @@ pub struct Panel {
     contents: Option<Contents>,
 }
 impl Panel {
+    pub fn close(&mut self) {
+        self.contents = None;
+    }
     pub fn show(&mut self, ui: &mut egui::Ui) {
-        paragraph(ui, &message("settings.license_summary", &[]));
+        paragraph(ui, &message("main.license_summary", &[]));
         let open = self.contents.is_some();
         if ui
-            .add(egui::Button::new(t("settings.licenses")).selected(open))
+            .add(egui::Button::new(t("main.licenses")).selected(open))
             .clicked()
         {
             self.contents = (!open).then(Contents::new);

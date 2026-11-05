@@ -72,6 +72,7 @@ struct Desktop {
     drag_regions: platform::HeaderDragRegions,
     startup: attention_focus::startup_ui::Panel,
     settings_open: bool,
+    about_open: bool,
 }
 
 fn show_item_text(profile: Profile) -> String {
@@ -291,6 +292,7 @@ impl Desktop {
         };
         Self {
             settings_open: false,
+            about_open: false,
             startup: attention_focus::startup_ui::Panel::new(
                 profile,
                 context
@@ -386,56 +388,71 @@ impl Desktop {
     fn activity_picker(&mut self, ui: &mut egui::Ui) {
         let before = self.activity.project.clone();
         let split = self.state.change_mode == tracking::ChangeMode::NewInterval;
-        // The option lives in Settings, but this mode rewrites time, so it stays visible here.
+        // The option lives in Settings, but this mode rewrites time, so a mark says so here.
+        let mut hints = Vec::new();
         if !split {
-            i18n::paragraph(ui, &i18n::message("main.changes_reassign", &[]));
+            hints.push(i18n::message("main.changes_reassign", &[]));
         }
-        egui::ComboBox::from_id_salt("project")
-            .width(ui.available_width().min(320.0))
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .selected_text(self.activity.painted_label().into_owned())
-            .show_ui(ui, |ui| {
-                let search = ui.add(
-                    egui::TextEdit::singleline(&mut self.project_search)
-                        .hint_text(i18n::t("main.search_projects")),
-                );
-                i18n::tooltip(search, &i18n::message("main.search_projects_hint", &[]));
-                ui.separator();
-                let query = self.project_search.trim().to_lowercase();
-                let mut choices = vec![tracking::Activity::default()];
-                for project in self.state.projects.iter().filter(|p| {
-                    !p.archived && (query.is_empty() || p.title.to_lowercase().contains(&query))
-                }) {
-                    choices.push(tracking::Activity {
-                        project: Some(tracking::Project {
-                            id: project.id,
-                            title: project.title.clone(),
-                            task: None,
-                        }),
-                        note: String::new(),
-                    });
-                }
-                self.state.sort_projects(&mut choices);
-                for choice in choices {
-                    let selected = self.activity.project.as_ref().map(|p| p.id)
-                        == choice.project.as_ref().map(|p| p.id);
-                    let label = if choice.project.is_none() {
-                        egui::RichText::new(i18n::t("activity.unassigned_no_project"))
-                            .strong()
-                            .italics()
-                            .color(ui.visuals().hyperlink_color)
-                    } else {
-                        egui::RichText::new(choice.painted_label().into_owned())
-                    };
-                    if ui.selectable_label(selected, label).clicked() {
-                        if !selected {
-                            self.activity.project = choice.project;
-                            self.activity.note = self.note_memory.last(&self.activity.project);
-                        }
-                        ui.close();
+        if self.state.projects.iter().all(|project| project.archived) {
+            hints.push(i18n::message("main.add_projects_hint", &[]));
+        }
+        let mut project_picker = |ui: &mut egui::Ui| {
+            egui::ComboBox::from_id_salt("project")
+                .width(ui.available_width().min(320.0))
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .selected_text(self.activity.painted_label().into_owned())
+                .show_ui(ui, |ui| {
+                    let search = ui.add(
+                        egui::TextEdit::singleline(&mut self.project_search)
+                            .hint_text(i18n::t("main.search_projects")),
+                    );
+                    // Once there is text, a balloon would only cover the results.
+                    if self.project_search.is_empty() {
+                        i18n::tooltip(search, &i18n::message("main.search_projects_hint", &[]));
                     }
-                }
-            });
+                    ui.separator();
+                    let query = self.project_search.trim().to_lowercase();
+                    let mut choices = vec![tracking::Activity::default()];
+                    for project in self.state.projects.iter().filter(|p| {
+                        !p.archived && (query.is_empty() || p.title.to_lowercase().contains(&query))
+                    }) {
+                        choices.push(tracking::Activity {
+                            project: Some(tracking::Project {
+                                id: project.id,
+                                title: project.title.clone(),
+                                task: None,
+                            }),
+                            note: String::new(),
+                        });
+                    }
+                    self.state.sort_projects(&mut choices);
+                    for choice in choices {
+                        let selected = self.activity.project.as_ref().map(|p| p.id)
+                            == choice.project.as_ref().map(|p| p.id);
+                        let label = if choice.project.is_none() {
+                            egui::RichText::new(i18n::t("activity.unassigned_no_project"))
+                                .strong()
+                                .italics()
+                                .color(ui.visuals().hyperlink_color)
+                        } else {
+                            egui::RichText::new(choice.painted_label().into_owned())
+                        };
+                        if ui.selectable_label(selected, label).clicked() {
+                            if !selected {
+                                self.activity.project = choice.project;
+                                self.activity.note = self.note_memory.last(&self.activity.project);
+                            }
+                            ui.close();
+                        }
+                    }
+                })
+                .response
+        };
+        if hints.is_empty() {
+            project_picker(ui);
+        } else {
+            attention_focus::ui_support::with_info(ui, &hints.join("\n"), project_picker);
+        }
         if let Some(project) = &mut self.activity.project {
             egui::ComboBox::from_id_salt("task")
                 .selected_text(project.task.as_deref().map_or_else(
@@ -504,9 +521,6 @@ impl Desktop {
             && (!self.state.running || self.activity != self.state.activity)
         {
             i18n::paragraph(ui, &i18n::message("main.activity_unavailable", &[]));
-        }
-        if self.state.projects.iter().all(|project| project.archived) {
-            i18n::paragraph_weak(ui, &i18n::message("main.add_projects_hint", &[]));
         }
     }
 
@@ -799,13 +813,21 @@ impl eframe::App for Desktop {
         ui.painter()
             .rect_filled(ui.max_rect(), 0.0, ui.visuals().panel_fill);
         let mut drag_regions = Vec::new();
-        let mut reveal_settings = false;
+        let mut reveal_panel = false;
         // egui mirrors rows and text alignment under a layout that prefers the right side.
         let layout = egui::Layout::top_down(if i18n::current().is_rtl() {
             egui::Align::Max
         } else {
             egui::Align::Min
         });
+        let version = i18n::tf(
+            if self.profile == Profile::Development {
+                "main.version_development"
+            } else {
+                "main.version"
+            },
+            &[("version", env!("CARGO_PKG_VERSION"))],
+        );
         ui.with_layout(layout, |ui| {
             // Right-to-left text wraps through `i18n`, because egui would scramble the lines.
             if i18n::current().is_rtl() {
@@ -819,14 +841,7 @@ impl eframe::App for Desktop {
                     let heading = ui.horizontal(|ui| {
                         ui.set_min_width(ui.available_width());
                         ui.heading("Attention Focus");
-                        ui.weak(i18n::tf(
-                            if self.profile == Profile::Development {
-                                "main.version_development"
-                            } else {
-                                "main.version"
-                            },
-                            &[("version", env!("CARGO_PKG_VERSION"))],
-                        ));
+                        ui.weak(&version);
                     });
                     drag_regions.push(heading.response.rect);
                     // Translated labels can need a second row at the narrowest width.
@@ -855,15 +870,30 @@ impl eframe::App for Desktop {
                             .clicked()
                         {
                             self.settings_open = !self.settings_open;
-                            reveal_settings = self.settings_open;
+                            self.about_open = false;
+                            reveal_panel = self.settings_open;
                         }
                         if ui
-                            .add_enabled(
-                                self.tray.is_some(),
-                                egui::Button::new(i18n::t("main.hide_to_tray")),
-                            )
+                            .add(egui::Button::new(i18n::t("main.about")).selected(self.about_open))
                             .clicked()
                         {
+                            self.about_open = !self.about_open;
+                            self.settings_open = false;
+                            reveal_panel = self.about_open;
+                        }
+                        let hide = ui.add_enabled(
+                            self.tray.is_some(),
+                            egui::Button::new(i18n::t("main.hide_to_tray")),
+                        );
+                        if self.tray.is_some() {
+                            let hint = format!(
+                                "{}\n{}",
+                                i18n::message("main.tray_double_click", &[]),
+                                i18n::message("main.tray_click", &[]),
+                            );
+                            attention_focus::ui_support::info(ui, &hint, &[&hide]);
+                        }
+                        if hide.clicked() {
                             Self::hide(&ctx);
                         }
                         if ui
@@ -939,15 +969,20 @@ impl eframe::App for Desktop {
                             let enabled = self.ready && !self.outbox.busy();
                             let mut split_on_change =
                                 self.state.change_mode == tracking::ChangeMode::NewInterval;
-                            if ui
-                                .add_enabled(
-                                    enabled,
-                                    egui::Checkbox::new(
-                                        &mut split_on_change,
-                                        i18n::checkbox_label(ui, "settings.split_on_change"),
-                                    ),
-                                )
-                                .changed()
+                            if attention_focus::ui_support::with_info(
+                                ui,
+                                &i18n::message("settings.split_on_change_hint", &[]),
+                                |ui| {
+                                    ui.add_enabled(
+                                        enabled,
+                                        egui::Checkbox::new(
+                                            &mut split_on_change,
+                                            i18n::checkbox_label(ui, "settings.split_on_change"),
+                                        ),
+                                    )
+                                },
+                            )
+                            .changed()
                             {
                                 self.command(tracking::Command::SetChangeMode(
                                     if split_on_change {
@@ -957,38 +992,49 @@ impl eframe::App for Desktop {
                                     },
                                 ));
                             }
-                            i18n::paragraph_weak(
-                                ui,
-                                &i18n::message("settings.split_on_change_hint", &[]),
-                            );
                             let mut split = self.state.split_on_day;
-                            if ui
-                                .add_enabled(
-                                    enabled,
-                                    egui::Checkbox::new(
-                                        &mut split,
-                                        i18n::checkbox_label(ui, "settings.split_at_midnight"),
-                                    ),
-                                )
-                                .changed()
+                            if attention_focus::ui_support::with_info(
+                                ui,
+                                &i18n::message("settings.split_at_midnight_hint", &[]),
+                                |ui| {
+                                    ui.add_enabled(
+                                        enabled,
+                                        egui::Checkbox::new(
+                                            &mut split,
+                                            i18n::checkbox_label(ui, "settings.split_at_midnight"),
+                                        ),
+                                    )
+                                },
+                            )
+                            .changed()
                             {
                                 self.command(tracking::Command::SetSplitOnDay(split));
                             }
-                            i18n::paragraph_weak(
-                                ui,
-                                &i18n::message("settings.split_at_midnight_hint", &[]),
-                            );
                             ui.separator();
                             ui.strong(i18n::t("settings.startup"));
                             self.startup.show(ui);
-                            ui.separator();
-                            ui.strong(i18n::t("settings.about"));
-                            self.notices.show(ui);
                         });
-                        if reveal_settings {
+                        if reveal_panel {
                             settings.response.scroll_to_me(Some(egui::Align::Min));
                         }
                         ui.separator();
+                    }
+                    if self.about_open {
+                        let about = ui.group(|ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.heading(i18n::t("main.about"));
+                            ui.horizontal(|ui| {
+                                ui.strong("Attention Focus");
+                                ui.weak(&version);
+                            });
+                            self.notices.show(ui);
+                        });
+                        if reveal_panel {
+                            about.response.scroll_to_me(Some(egui::Align::Min));
+                        }
+                        ui.separator();
+                    } else {
+                        self.notices.close();
                     }
                     ui.label(
                         egui::RichText::new(if self.state.running {
@@ -1054,8 +1100,6 @@ impl eframe::App for Desktop {
                         i18n::paragraph_colored(ui, ui.visuals().error_fg_color, error);
                     }
                     ui.add_space(12.0);
-                    i18n::paragraph(ui, &i18n::message("main.tray_double_click", &[]));
-                    i18n::paragraph(ui, &i18n::message("main.tray_click", &[]));
                     let enabled = self.ready && !self.outbox.busy();
                     let changes = egui::CollapsingHeader::new(i18n::t("main.projects"))
                         // The identity of the header stays fixed when the language changes.

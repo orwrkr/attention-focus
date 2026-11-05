@@ -5,7 +5,6 @@ use crate::{
     tracking::Snapshot,
 };
 use eframe::egui::{self, Rect};
-use std::borrow::Cow;
 
 pub struct Response {
     pub toggle: bool,
@@ -58,14 +57,30 @@ fn cards(
             .show(ui, |ui| {
                 let body = |ui: &mut egui::Ui| {
                     ui.set_width(width);
-                    ui.set_min_height(120.0);
-                    ui.strong(
-                        [
-                            t("counters.current_interval"),
-                            t("counters.today_project"),
-                            t("counters.today_all"),
-                        ][index],
-                    );
+                    // The two cards under the first one have only their own rows to hold.
+                    ui.set_min_height(if wide || index == 0 { 120.0 } else { 84.0 });
+                    match index {
+                        0 => {
+                            ui.strong(t("counters.current_interval"));
+                        }
+                        1 => {
+                            crate::ui_support::with_info(
+                                ui,
+                                &i18n::message("counters.all_tasks_local_day", &[]),
+                                |ui| ui.strong(t("counters.today_project")),
+                            );
+                        }
+                        _ => {
+                            let hint = format!(
+                                "{}\n{}",
+                                i18n::message("counters.includes_unassigned", &[]),
+                                i18n::message("counters.all_tasks_local_day", &[]),
+                            );
+                            crate::ui_support::with_info(ui, &hint, |ui| {
+                                ui.strong(t("counters.today_all"))
+                            });
+                        }
+                    }
                     let value = [
                         Some(state.elapsed_ms),
                         state.daily_project_ms,
@@ -108,16 +123,8 @@ fn cards(
                             enabled,
                         )
                         .clicked();
-                    } else {
-                        ui.add(
-                            egui::Label::new(if index == 1 {
-                                state.activity.painted_label()
-                            } else {
-                                Cow::Borrowed(t("counters.includes_unassigned"))
-                            })
-                            .truncate(),
-                        );
-                        ui.weak(t("counters.all_tasks_local_day"));
+                    } else if index == 1 {
+                        ui.add(egui::Label::new(state.activity.painted_label()).truncate());
                     }
                 };
                 if mirrored {
@@ -333,7 +340,7 @@ mod tests {
                                 rect.right() <= edges.right() + 0.5,
                                 "right overflow at {width}"
                             );
-                            assert!(rect.height() >= 108.0);
+                            assert!(rect.height() >= 96.0);
                         }
                         assert!((response.bounds[0].left() - edges.left()).abs() < 0.5);
                         assert!((response.bounds[2].right() - edges.right()).abs() < 0.5);

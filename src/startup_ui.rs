@@ -1,6 +1,6 @@
 //! Startup preferences backed by actual per-user registration, never an assumed flag.
 use crate::{
-    i18n::{checkbox_label, message, paragraph, paragraph_colored, paragraph_weak, t},
+    i18n::{checkbox_label, message, paragraph, paragraph_colored, t},
     profiles::Profile,
     startup,
 };
@@ -68,15 +68,16 @@ impl Panel {
             self.apply(enabled);
         }
         let previous = self.tray;
-        if ui
-            .checkbox(&mut self.tray, checkbox_label(ui, "startup.in_tray"))
-            .changed()
+        let tray = &mut self.tray;
+        if crate::ui_support::with_info(ui, &message("startup.manual_launch_hint", &[]), |ui| {
+            ui.checkbox(tray, checkbox_label(ui, "startup.in_tray"))
+        })
+        .changed()
             && self.entry.is_some()
             && !self.apply(true)
         {
             self.tray = previous;
         }
-        paragraph_weak(ui, &message("startup.manual_launch_hint", &[]));
         if self.entry.is_some() && self.expected().ok().as_ref() != self.entry.as_ref() {
             paragraph(ui, &message("startup.points_elsewhere", &[]));
             if ui.button(t("startup.use_this_exe")).clicked() {

@@ -329,9 +329,6 @@ pub fn language_menu(ui: &mut egui::Ui, choice: &mut Choice, accent: egui::Color
 pub fn paragraph(ui: &mut egui::Ui, text: &str) -> egui::Response {
     paragraph_styled(ui, text, |text| text)
 }
-pub fn paragraph_weak(ui: &mut egui::Ui, text: &str) -> egui::Response {
-    paragraph_styled(ui, text, egui::RichText::weak)
-}
 pub fn paragraph_colored(ui: &mut egui::Ui, color: egui::Color32, text: &str) -> egui::Response {
     paragraph_styled(ui, text, |text| text.color(color))
 }
@@ -390,11 +387,16 @@ pub fn unmirrored<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) ->
         add(ui)
     }
 }
-/// A tooltip with logical text.
+/// A balloon with logical text, while the pointer rests on the widget or the keyboard focus is
+/// on it. A click does not give a button focus, so a balloon does not stay after one.
 pub fn tooltip(response: egui::Response, text: &str) -> egui::Response {
-    response.on_hover_ui(|ui| {
-        paragraph(ui, text);
-    })
+    if response.has_focus() {
+        egui::containers::Tooltip::for_widget(&response)
+            .show(|ui| crate::ui_support::balloon(ui, text));
+        response
+    } else {
+        response.on_hover_ui(|ui| crate::ui_support::balloon(ui, text))
+    }
 }
 
 /// Windows counts weekdays from Monday here, matching `reports`.

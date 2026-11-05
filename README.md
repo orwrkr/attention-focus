@@ -96,5 +96,5 @@ effect, a person approves each signature.
 ## License
 
 [MIT](LICENSE). The application shows the licenses of its third-party components under
-**Settings**; the same text is in
+**About**; the same text is in
 [third-party/THIRD-PARTY-NOTICES.txt](third-party/THIRD-PARTY-NOTICES.txt).

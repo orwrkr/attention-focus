@@ -5,15 +5,17 @@ Updated: 2026-11-05. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.23.0, built and verified but not yet run by the owner, and it keeps schema
+Current release: 0.24.0, built and verified but not yet run by the owner, and it keeps schema
 four. Production runs an earlier version until the owner replaces it. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
 Recent work:
 
-- T-0040: a release is one EXE that holds its licenses and shows them in Settings, with no ZIP
-  (ADR-0036). An installer is deferred.
+- T-0041: an About button, and "i" marks with balloons in place of explanatory text (ADR-0037). Use
+  `ui_support::with_info` for a new explanation.
+- T-0040: a release is one EXE that holds its licenses and shows them, with no ZIP (ADR-0036). An
+  installer is deferred.
 - T-0039: thirteen interface languages including Arabic (ADR-0035). Text is composed in logical
   order and painted for egui at the last moment; see `src/i18n.rs` before touching interface text.
 - T-0038: one scroll bar style, light, dark and system themes, the interval option in Settings
@@ -50,6 +52,7 @@ do not change the Windows app mode.
 - The theme following a change of the Windows app mode (T-0038).
 - Six languages in the real window, the tray in other languages, and typed Arabic or Chinese (T-0039).
 - Byte-identical notices on a hosted runner, shown by the next CI run (T-0040).
+- The marks that appear only in the change mode, with no projects or with interrupted time (T-0041).
 - The running interval and review outlines on charts in the real window (T-0036).
 - The project panel and note conversion in the running application (T-0035).
 - Real tray foreground behavior and a real midnight crossing (T-0031, T-0033).

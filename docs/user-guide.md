@@ -13,7 +13,8 @@ watch your screen or keyboard, score productivity, or use the network.
 2. Open **Projects**, type a project name, and click **Add projects**.
 3. Choose the project and optionally a task, then click **Start tracking**.
 
-You can also track **Unassigned focus** at any time, without adding a project.
+You can also track **Unassigned focus** at any time, without adding a project. A small **i**
+beside a label or control explains it: rest the pointer on it, or move to the control with Tab.
 
 ## Manage projects and tasks
 
@@ -29,15 +30,13 @@ Names can use any language; names already in the list are skipped. Expand a proj
 
 ## Recognize the icons
 
-The file, window, taskbar, Alt-Tab, and Task Manager use a neutral application logo.
-That logo identifies the application; it never means that tracking is running.
-The tray status icon and the window's **Tracking / Stopped** label indicate state.
+The file, window, taskbar, Alt-Tab, and Task Manager use a neutral logo, which never means
+that tracking is running. The tray status icon and the **Tracking / Stopped** label show state.
 
 <!-- icon-legend -->
 
-Development tray icons have a purple **D** badge. Hover over an icon to confirm its
-profile and status before using it. A purple application logo identifies the debug
-development build and is also independent of tracking state.
+Development tray icons have a purple **D** badge, and a purple logo identifies the debug
+build. Hover over a tray icon to confirm its profile and status before using it.
 
 <!-- pagebreak -->
 
@@ -248,7 +247,7 @@ fields to retry. An earlier valid result keeps its own period and snapshot label
   the main window moves it into Saved focus.
 
 Zero means no matching time, which can happen while tracking outside the filter; values
-under one second also display as zero. Hover on either label for its explanation.
+under one second also display as zero. The **i** beside either label explains it.
 These categories are never combined into a misleading finalized total.
 
 Visible expanded reports poll every two seconds only while active time can grow inside
@@ -405,8 +404,8 @@ move or reset this data. Development history is never copied into Production aut
 ## What the application needs
 
 `attention-focus.exe` is the whole application. Icons, fonts, SQLite, the C runtime and the
-license texts are inside it, so a copy of the file carries them. To read them, click
-**Licenses** in **Settings**. No Rust, Python, .NET, Node, or WebView2 installation is needed. Windows system components and a
+license texts are inside it, so a copy of the file carries them. To read them, click **About**,
+then **Licenses**. No Rust, Python, .NET, Node, or WebView2 installation is needed. Windows system components and a
 working graphics driver are required. Clean-machine compatibility is still being verified.
 
 ## Protect and back up your data

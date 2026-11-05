@@ -1,7 +1,8 @@
 # ADR-0036: One EXE as the Release
 
 Date: 2026-11-05.
-Status: accepted.
+Status: accepted. [ADR-0037](0037-info-marks-and-about.md) moves the licenses from Settings to an
+About button.
 Basis: explicit user request to ship a single EXE, with licenses embedded as far as is sufficient,
 and to leave an installer for later.
 
