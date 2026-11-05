@@ -97,4 +97,5 @@ effect, a person approves each signature.
 
 [MIT](LICENSE). The application shows the licenses of its third-party components under
 **About**; the same text is in
-[third-party/THIRD-PARTY-NOTICES.txt](third-party/THIRD-PARTY-NOTICES.txt).
+[third-party/THIRD-PARTY-NOTICES.txt](third-party/THIRD-PARTY-NOTICES.txt). Release executables also
+contain parts of the Microsoft C runtime under Microsoft's terms, which that text describes.

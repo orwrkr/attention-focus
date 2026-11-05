@@ -71,6 +71,9 @@ scripts/build.ps1 regenerates it before compiling, and CI fails when it is out o
 changing dependencies or the toolchain, run `python scripts/release_tools.py update-notices`
 and commit the result. See third-party/README.md for provenance.
 
+The EXE links the Microsoft C runtime statically, so a Microsoft fix reaches users only through a new
+release. Do not use Microsoft's names in a way that suggests its endorsement. See ADR-0038.
+
 ## Runtime files and data
 
 No asset files are required beside the EXE. Fonts, window/tray icons, shell icon,

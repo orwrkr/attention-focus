@@ -4,7 +4,7 @@
   "main.stay_on_top": "Поверх всех окон",
   "main.settings": "Настройки",
   "main.about": "О программе",
-  "main.license_summary": "Attention Focus — свободная программа под лицензией MIT. В неё входят компоненты с открытым исходным кодом под собственными лицензиями.",
+  "main.license_summary": "Attention Focus распространяется под лицензией MIT. В программу входят сторонние компоненты под их собственными лицензиями.",
   "main.licenses": "Лицензии",
   "main.hide_to_tray": "Свернуть в трей",
   "main.version": "v{version}",

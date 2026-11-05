@@ -6,6 +6,20 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=third-party/THIRD-PARTY-NOTICES.txt");
+    println!("cargo:rerun-if-changed=LICENSE");
+    // The copyright notice has one source, and shows in the window and in the file's properties.
+    let license = std::fs::read_to_string("LICENSE").unwrap();
+    let copyright = license
+        .lines()
+        .find(|line| line.starts_with("Copyright (c) "))
+        .expect("LICENSE must hold a copyright line")
+        .trim();
+    let holder = copyright
+        .trim_start_matches("Copyright (c) ")
+        .split_once(' ')
+        .expect("the copyright line must name a year and a holder")
+        .1;
+    println!("cargo:rustc-env=ATTENTION_FOCUS_COPYRIGHT={copyright}");
     let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     // The notices travel inside the EXE, and repeat the same license texts many times.
     let notices = std::fs::read("third-party/THIRD-PARTY-NOTICES.txt").unwrap();
@@ -40,6 +54,8 @@ fn main() {
                 .unwrap(),
             )
             .set("ProductName", "Attention Focus")
+            .set("CompanyName", holder)
+            .set("LegalCopyright", copyright)
             .set(
                 "FileDescription",
                 if development {

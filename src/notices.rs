@@ -6,6 +6,8 @@ use std::ops::Range;
 
 const COMPRESSED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/notices.deflate"));
 const NARROWEST_ROW: usize = 20;
+/// From `LICENSE`. Microsoft's terms for its runtime libraries ask for a visible notice; ADR-0038.
+const COPYRIGHT: &str = env!("ATTENTION_FOCUS_COPYRIGHT");
 
 /// A test confirms that the embedded data decompresses, so a release cannot reach the default.
 pub fn text() -> String {
@@ -79,6 +81,7 @@ impl Panel {
         self.contents = None;
     }
     pub fn show(&mut self, ui: &mut egui::Ui) {
+        ui.label(COPYRIGHT);
         paragraph(ui, &message("main.license_summary", &[]));
         let open = self.contents.is_some();
         if ui
@@ -138,12 +141,20 @@ mod tests {
             "SIL OPEN FONT LICENSE",
             "UBUNTU FONT LICENCE",
             "Rust standard library",
+            "Microsoft C and C++ runtime libraries",
             "unicode-bidi",
             "rusqlite",
             "egui",
         ] {
             assert!(text.contains(expected), "{expected}");
         }
+    }
+
+    #[test]
+    fn the_copyright_notice_comes_from_the_license() {
+        let license = include_str!("../LICENSE");
+        assert!(COPYRIGHT.starts_with("Copyright (c) "), "{COPYRIGHT}");
+        assert!(license.lines().any(|line| line.trim() == COPYRIGHT));
     }
 
     #[test]

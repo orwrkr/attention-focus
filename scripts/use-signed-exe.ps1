@@ -10,7 +10,7 @@ $version = Get-ReleaseVersion $python
 Assert-ProductionVersion $paths $version
 $built = (Get-Item -LiteralPath $paths.Output).VersionInfo
 $signed = (Get-Item -LiteralPath $SignedExe).VersionInfo
-foreach ($name in 'ProductName', 'ProductVersion', 'FileVersion', 'FileDescription') {
+foreach ($name in 'ProductName', 'ProductVersion', 'FileVersion', 'FileDescription', 'CompanyName', 'LegalCopyright') {
     if ($signed.$name -ne $built.$name) { throw "Refusing '$SignedExe': its $name differs from the built EXE." }
 }
 Assert-OutputUnlocked $paths $paths.Output

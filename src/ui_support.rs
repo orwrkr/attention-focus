@@ -117,10 +117,29 @@ fn paint_mark(ui: &egui::Ui, response: &egui::Response, text: &str, about: &[&eg
 /// the pointer rests on the mark, and while the keyboard focus is on the mark or on a control the
 /// explanation is about.
 pub fn info(ui: &mut egui::Ui, text: &str, about: &[&egui::Response]) -> egui::Response {
-    let size = egui::vec2(MARK_WIDTH, ui.spacing().interact_size.y);
+    let height = ui.spacing().interact_size.y;
+    mark_of_height(ui, height, text, about)
+}
+fn mark_of_height(
+    ui: &mut egui::Ui,
+    height: f32,
+    text: &str,
+    about: &[&egui::Response],
+) -> egui::Response {
+    let size = egui::vec2(MARK_WIDTH, height);
     let (_, response) = ui.allocate_exact_size(size, egui::Sense::focusable_noninteractive());
     paint_mark(ui, &response, text, about);
     response
+}
+/// The height whose middle is the middle of a control's first line. Controls and labels differ in
+/// height, so a mark takes the height of the one it stands beside.
+fn first_line_height(ui: &egui::Ui, control: &egui::Response) -> f32 {
+    let line = ui.text_style_height(&egui::TextStyle::Body);
+    if control.rect.height() < line * 1.5 {
+        control.rect.height()
+    } else {
+        line
+    }
 }
 
 /// A control or label followed by its mark. It wraps in the width that the mark leaves, and the
@@ -147,7 +166,8 @@ fn control_and_mark(
         let control = ui
             .allocate_ui_with_layout(egui::vec2(width, 0.0), layout, add)
             .inner;
-        let mark = info(ui, text, &[&control]);
+        let height = first_line_height(ui, &control);
+        let mark = mark_of_height(ui, height, text, &[&control]);
         (control, mark)
     })
     .inner
@@ -557,6 +577,76 @@ mod tests {
         }
         assert_eq!(last, context.memory(|memory| memory.focused()));
         assert!(offset.get() <= scrolled);
+    }
+
+    #[test]
+    fn marks_line_up_with_the_first_line_of_what_they_stand_beside() {
+        let results = std::cell::RefCell::new(Vec::new());
+        let context = egui::Context::default();
+        for pass in 0..3 {
+            results.borrow_mut().clear();
+            painted(&context, f64::from(pass), 380.0, vec![], |ui| {
+                let line = ui.text_style_height(&egui::TextStyle::Body);
+                let record = |name: &'static str, pair: (egui::Response, egui::Response)| {
+                    let (control, mark) = (pair.0.rect, pair.1.rect);
+                    let wanted = if control.height() < line * 1.5 {
+                        control.center().y
+                    } else {
+                        control.top() + line / 2.0
+                    };
+                    results.borrow_mut().push((
+                        name,
+                        control.height(),
+                        mark.center().y - wanted,
+                        line,
+                    ));
+                };
+                record(
+                    "label",
+                    control_and_mark(ui, "Hint", |ui| ui.label("Synthetic label")),
+                );
+                record(
+                    "strong",
+                    control_and_mark(ui, "Hint", |ui| ui.strong("Synthetic title")),
+                );
+                record(
+                    "button",
+                    control_and_mark(ui, "Hint", |ui| ui.button("Synthetic button")),
+                );
+                let mut checked = true;
+                record(
+                    "checkbox",
+                    control_and_mark(ui, "Hint", |ui| ui.checkbox(&mut checked, "Synthetic")),
+                );
+                record(
+                    "picker",
+                    control_and_mark(ui, "Hint", |ui| {
+                        egui::ComboBox::from_id_salt("synthetic")
+                            .selected_text("Synthetic")
+                            .show_ui(ui, |_| {})
+                            .response
+                    }),
+                );
+                let long = "A synthetic label long enough to need several lines ".repeat(3);
+                record(
+                    "wrapped",
+                    control_and_mark(ui, "Hint", |ui| ui.label(long.as_str())),
+                );
+                let mut wrapped = true;
+                record(
+                    "wrapped checkbox",
+                    control_and_mark(ui, "Hint", |ui| ui.checkbox(&mut wrapped, long.as_str())),
+                );
+            });
+        }
+        let results = results.borrow();
+        assert_eq!(results.len(), 7);
+        for (name, height, off, line) in results.iter() {
+            assert!(off.abs() <= 0.5, "{name}: {off} off, height {height}");
+            if name.starts_with("wrapped") {
+                assert!(*height > line * 1.5, "{name} wraps: {height}");
+            }
+        }
     }
 
     #[test]

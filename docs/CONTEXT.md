@@ -5,13 +5,15 @@ Updated: 2026-11-05. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.24.1, built and verified but not yet run by the owner, and it keeps schema
+Current release: 0.24.2, built and verified but not yet run by the owner, and it keeps schema
 four. Production runs an earlier version until the owner replaces it. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
 Recent work:
 
+- T-0042: neutral license wording in every language, aligned marks, complete file properties, and a
+  notice for the statically linked Microsoft runtime (ADR-0038). MIT stays.
 - T-0041: an About button, and "i" marks with balloons in place of explanatory text (ADR-0037). Use
   `ui_support::with_info` for a new explanation.
 - T-0040: a release is one EXE that holds its licenses and shows them, with no ZIP (ADR-0036). An

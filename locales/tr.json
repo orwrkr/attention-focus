@@ -4,7 +4,7 @@
   "main.stay_on_top": "Üstte tut",
   "main.settings": "Ayarlar",
   "main.about": "Hakkında",
-  "main.license_summary": "Attention Focus, MIT Lisansı ile sunulan özgür bir yazılımdır. Kendi lisanslarına sahip açık kaynak bileşenler içerir.",
+  "main.license_summary": "Attention Focus, MIT Lisansı kapsamında dağıtılır. Kendi lisanslarına tabi üçüncü taraf bileşenler içerir.",
   "main.licenses": "Lisanslar",
   "main.hide_to_tray": "Tepsiye gizle",
   "main.version": "v{version}",

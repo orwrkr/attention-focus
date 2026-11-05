@@ -96,6 +96,7 @@ def generate_notices() -> str:
     rust_notice=sysroot/"share/doc/rust/COPYRIGHT-library.html"
     if not rust_notice.is_file():raise ValueError("Rust standard-library notices are missing from the installed toolchain.")
     parser=TextOnly();parser.feed(rust_notice.read_text(encoding="utf-8"))
+    parts.extend(["\n"+"="*76,"Microsoft C and C++ runtime libraries",(ROOT/"third-party/microsoft-runtime-notice.txt").read_text(encoding="utf-8").strip()])
     parts.extend(["\n"+"="*76,"Rust standard library",subprocess.check_output(["rustc","--version"],text=True).strip(),"\n".join(parser.parts)])
     print(f"Notices generated for {count} Windows runtime packages, bundled fonts, and Rust standard library.")
     return "\n".join(parts)+"\n"

@@ -1,0 +1,19 @@
+This program is statically linked with parts of the Microsoft C and C++ runtime libraries: the
+Universal C Runtime from the Windows SDK, and the startup and runtime support libraries from
+Visual Studio. Copyright (c) Microsoft Corporation. All rights reserved.
+
+The MIT License and the other licenses in this text do not cover those parts. Microsoft licenses
+them to the developer of this program as Distributable Code under its own terms, which ask that
+you agree to the following as a condition of using or redistributing this program:
+
+- Use and redistribute those parts only as part of this program, and not as a separate offering.
+- Do not reverse engineer, decompile or disassemble them, except as far as applicable law allows
+  despite this limitation.
+- Do not remove or alter any Microsoft notice in them, or work around their technical limitations.
+- Do not run them on a platform other than the Microsoft operating system platform.
+- Do not use them in any way that is against the law, or in malicious or deceptive programs.
+- Require anyone you redistribute this program to, to agree to these same terms.
+
+Those parts come "as is", with no warranty. Microsoft did not develop this program and does not
+endorse it. If you build this program from source yourself, the terms of your own build tools
+apply to your build instead.

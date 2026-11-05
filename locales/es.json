@@ -4,7 +4,7 @@
   "main.stay_on_top": "Mantener visible",
   "main.settings": "Configuración",
   "main.about": "Acerca de",
-  "main.license_summary": "Attention Focus es software libre bajo la licencia MIT. Incluye componentes de código abierto con sus propias licencias.",
+  "main.license_summary": "Attention Focus se distribuye bajo la licencia MIT. Incluye componentes de terceros con sus propias licencias.",
   "main.licenses": "Licencias",
   "main.hide_to_tray": "Ocultar en la bandeja",
   "main.version": "v{version}",

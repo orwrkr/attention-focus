@@ -13,6 +13,9 @@ dependencies, bundled font attribution files, and Rust standard-library notices 
 the installed toolchain. Build-only Python tools are not shipped as application runtimes.
 If a dependency has no available license input, packaging fails rather than omitting it.
 
+`microsoft-runtime-notice.txt` is written for this project and joins that text, because the EXE
+links the Microsoft C runtime statically (ADR-0038).
+
 Its output is `THIRD-PARTY-NOTICES.txt` in this directory. It is generated, so do not edit it;
 run `python scripts/release_tools.py update-notices`. The application embeds this file and
 shows it under About, which is how each copy of the EXE carries these texts (ADR-0036).

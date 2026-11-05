@@ -56,6 +56,9 @@ Unverified, because signing needs a public project: a real signing request, the 
 `scripts/use-signed-exe.ps1` with a truly signed file, and the artifact configuration, which
 follows the SignPath documentation but has not been accepted by SignPath.
 
+SignPath's conditions forbid proprietary components and allow system libraries. The EXE links the
+Microsoft C runtime statically, so the application should say so and ask (ADR-0038).
+
 ## Handoff
 
 Follow the owner steps. Do not create the repository, push, tag or publish without an explicit
