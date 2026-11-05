@@ -34,7 +34,8 @@ Commits are signed with the owner's SSH key through an `includeIf` in the global
 configuration. The repository `orwrkr/attention-focus` exists on GitHub and is private for now,
 and the owner plans to make it public. CI passed there on its first run. Version tags start at
 `v0.1.0` and skip 0.20.0 to 0.24.0, whose commits hold the release workflow, so a tag would start a
-build. `v0.24.1` is the first release build: a draft, not published.
+build. `v0.24.1` was the first release build, and its draft was deleted because it had the old license
+wording. `v0.24.2` has the current draft, which is unsigned and not published.
 
 The ignored `local/` directory holds useful context that does not belong in a public repository:
 machine notes, prepared application answers, helper tools and retired logs. Clones do not have
@@ -60,8 +61,9 @@ do not change the Windows app mode.
 - The project panel and note conversion in the running application (T-0035).
 - Real tray foreground behavior and a real midnight crossing (T-0031, T-0033).
 - The real upgrade to schema four is confirmed only by the running version and its backup file.
-- Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1`, and the draft waits
-  for the owner.
+- Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1` and `v0.24.2`, and the
+  `v0.24.2` draft waits for the owner.
+- Whose license covers Visual Studio Enterprise on GitHub's runner (ADR-0038).
 - Multiple monitors and DPI combinations, real sleep/hibernate/logoff/shutdown, clean machines,
   native reduced-motion switching and hardware GPU use (T-0002).
 

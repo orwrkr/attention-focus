@@ -65,8 +65,22 @@ first line when that wraps.
 
 ## Consequences
 
-Because the runtime is linked statically, a Microsoft fix reaches users only through a new release.
+Because the runtime is linked statically, a Microsoft fix reaches users only through a new release,
+linked with an updated toolset or SDK. Windows Update does not change an existing EXE. The libraries
+come from Visual Studio and the Windows SDK on the build machine: GitHub refreshes its images weekly, and
+a local build needs them updated separately. System DLLs that the EXE calls still update with Windows.
 The owner takes on the indemnity in Microsoft's terms by distributing the EXE, whatever the notices
 say. SignPath's conditions forbid proprietary components but allow system libraries, so the
-application should mention the static runtime and ask. Whether the runner's Visual Studio Enterprise
-terms differ from those read here was not confirmed.
+application should mention the static runtime and ask.
+
+Release builds on `windows-latest` link the copies of `libcmt.lib` and `libvcruntime.lib` from the
+Visual Studio Enterprise 2026 that GitHub preinstalls, while the local copy is Community. Both sets of
+terms, read on 2026-11-05, have the same Build Devices clause and, apart from punctuation, the same
+distributable code section. That clause covers machines owned by the licensee, hosted on Azure "for
+you", or managed by an authorized outsourcer and "dedicated solely to your use". A runner is a virtual
+machine that GitHub provides in Azure, with software that GitHub installed, so the clause does not
+plainly describe it, and it does not say whose license applies. Microsoft's Visual Studio licensing
+guidance and GitHub's terms for Actions do not mention the case. GitHub, a Microsoft company, offers
+these images for building software, so the practical risk looks low, but no written permission was
+found. A local build under Community on the owner's machine avoids the question, but a release signed
+through SignPath is expected to come from the workflow (T-0037).

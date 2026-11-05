@@ -36,10 +36,15 @@ report lines, About with the copyright line, and the new text. Microsoft's terms
 Studio 2026 Community license document, the local Windows SDK 10.0.26100 and Windows licenses, and
 Microsoft Learn; ADR-0038 lists the findings.
 
-Unverified: the terms that apply to Visual Studio Enterprise on GitHub's runner; whether notice alone meets
-Microsoft's requirement that end users agree to terms, and whether static linking of `libcmt.lib` and
-`libvcruntime.lib` is covered, on which Microsoft has given no ruling; SignPath's view of the static
-runtime. The release workflow has not run for this version, and the 0.24.1 draft still has the old wording.
+The owner approved the push, the signed tag `v0.24.2`, and deleting the 0.24.1 draft, which had the old
+wording. CI and the release workflow passed on 2026-11-05 and produced an unsigned, unpublished draft. Its
+manifest matches its files, its source fingerprint equals the local build's, its EXE holds the tracked
+notices and the new wording, without the old, and its file properties match the local ones. The EXE and PDF
+are not byte-identical to the local ones, as they were built on another machine.
+
+Unverified: whose license covers Visual Studio Enterprise on GitHub's runner (ADR-0038); whether notice alone
+meets Microsoft's requirement that end users agree to terms, and whether static linking of `libcmt.lib` and
+`libvcruntime.lib` is covered, on which Microsoft has given no ruling; SignPath's view of the static runtime.
 
 ## Handoff
 
