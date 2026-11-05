@@ -50,8 +50,8 @@ With an empty `CARGO_HOME`, the workflow's `cargo fetch` followed by the offline
 that notices use also passed. An independent read of the workflow and scripts, checked against
 the SignPath documentation, found no verified defect.
 
-Unverified, because no tag has been pushed: the release workflow itself and hosted-runner
-assumptions such as the PDF dependencies. The CI workflow does run on the same kind of runner.
+The tag `v0.24.1` ran the release workflow on a hosted runner on 2026-11-05: the build, the PDF
+dependencies, verification and the draft release all passed, with the signing steps skipped.
 Unverified, because signing needs a public project: a real signing request, the successful path through
 `scripts/use-signed-exe.ps1` with a truly signed file, and the artifact configuration, which
 follows the SignPath documentation but has not been accepted by SignPath.

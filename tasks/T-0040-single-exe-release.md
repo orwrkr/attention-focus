@@ -40,9 +40,11 @@ over the text when the window cut the area off. Rows now wrap to the width, so t
 An independent review by another model family read the scripts, workflows, viewer and documents, and
 found no defects. It ran nothing, so it could not confirm the workflow behavior.
 
-Unverified: that the notices generated on a hosted runner match this machine byte for byte, which the
-next CI run shows; the release workflow itself, which needs a version tag; the dark theme and other
-scales in this view.
+Verified later, on 2026-11-05: the notices generated on a hosted runner match this machine byte for
+byte, in CI and in the release workflow of `v0.24.1`, whose EXE holds the same compressed text as the
+local build.
+
+Unverified: other scales in this view.
 
 The reading of the licenses in ADR-0036 is the project's, not legal advice.
 

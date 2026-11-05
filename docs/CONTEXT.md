@@ -32,7 +32,7 @@ Commits are signed with the owner's SSH key through an `includeIf` in the global
 configuration. The repository `orwrkr/attention-focus` exists on GitHub and is private for now,
 and the owner plans to make it public. CI passed there on its first run. Version tags start at
 `v0.1.0` and skip 0.20.0 to 0.24.0, whose commits hold the release workflow, so a tag would start a
-build. `v0.24.1` is the first release build.
+build. `v0.24.1` is the first release build: a draft, not published.
 
 The ignored `local/` directory holds useful context that does not belong in a public repository:
 machine notes, prepared application answers, helper tools and retired logs. Clones do not have
@@ -53,13 +53,13 @@ do not change the Windows app mode.
 
 - The theme following a change of the Windows app mode (T-0038).
 - Six languages in the real window, the tray in other languages, and typed Arabic or Chinese (T-0039).
-- Byte-identical notices on a hosted runner, shown by the next CI run (T-0040).
 - The marks that appear only in the change mode, with no projects or with interrupted time (T-0041).
 - The running interval and review outlines on charts in the real window (T-0036).
 - The project panel and note conversion in the running application (T-0035).
 - Real tray foreground behavior and a real midnight crossing (T-0031, T-0033).
 - The real upgrade to schema four is confirmed only by the running version and its backup file.
-- The release workflow, which needs a version tag (T-0037).
+- Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1`, and the draft waits
+  for the owner.
 - Multiple monitors and DPI combinations, real sleep/hibernate/logoff/shutdown, clean machines,
   native reduced-motion switching and hardware GPU use (T-0002).
 

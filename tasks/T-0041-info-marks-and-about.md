@@ -51,6 +51,10 @@ it moved. Scrolling backward with Shift+Tab, and within the session list, has on
 real-window check. The balloons of languages other than Russian, English and Arabic have tests only.
 No independent review was run on this change, which touches only the interface.
 
+`v0.24.1` then ran through the release workflow on a hosted runner, unsigned. The draft's files match
+their manifest and its source fingerprint matches the local build. Its EXE and PDF are not
+byte-identical to the local ones, and the cause was not examined. The PDF has the same nine pages.
+
 ## Handoff
 
 To explain something new, use `ui_support::with_info` or `info`, and keep text visible only when a
