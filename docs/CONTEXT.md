@@ -66,8 +66,8 @@ do not change the Windows app mode.
 - Real tray foreground behavior and a real midnight crossing (T-0031, T-0033).
 - The real upgrade to schema four is confirmed only by the running version and its backup file.
 - The real upgrade to schema five, which Production has not yet had (T-0019).
-- Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1` and `v0.24.2`, and the
-  `v0.24.2` draft waits for the owner.
+- Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1`, `v0.24.2` and
+  `v0.25.2`, and the `v0.25.2` draft waits for the owner.
 - Whose license covers Visual Studio Enterprise on GitHub's runner (ADR-0038).
 - Multiple monitors and DPI combinations, real sleep/hibernate/logoff/shutdown, clean machines,
   native reduced-motion switching and hardware GPU use (T-0002).
@@ -75,7 +75,8 @@ do not change the Windows app mode.
 ## Exact next step
 
 See [tasks/INDEX.md](../tasks/INDEX.md). Publishing is the owner's decision: T-0034 and then T-0037.
-No larger feature is selected. Research compatibility before any further migration.
+Once the repository is public, T-0044 adds a site link to the application for the next release, and the
+site goes live only after that release is published. No larger feature is selected. Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires

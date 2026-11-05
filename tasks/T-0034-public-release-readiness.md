@@ -66,9 +66,10 @@ scan of all history for personal paths and addresses before the first push found
    so signed commits show as Verified. The local token cannot read this setting.
 2. Make the repository public, and enable private vulnerability reporting, which `SECURITY.md`
    relies on and which needs a public repository.
-3. Push a version tag, check the draft release from the release workflow and publish it.
-4. Set Settings, Pages, Source to GitHub Actions, and run the Pages workflow (T-0043).
-5. Continue with the code signing steps in T-0037.
+3. Add the site link to the application in a new version (T-0044).
+4. Push that version's tag, check the draft release from the release workflow and publish it.
+5. Only then set Settings, Pages, Source to GitHub Actions, and run the Pages workflow (T-0043).
+6. Continue with the code signing steps in T-0037.
 
 ## Trimming
 

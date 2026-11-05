@@ -23,5 +23,6 @@ deployment itself is unverified, as are the links, which need a public repositor
 
 ## Handoff
 
-After the repository becomes public, set Settings, Pages, Source to GitHub Actions, then run the Pages workflow
-or push a change under `site/`. Update the page's signing note when T-0037 takes effect.
+After the repository becomes public, the next release adds a link to the site in the application (T-0044).
+Once that release is published, set Settings, Pages, Source to GitHub Actions, then run the Pages workflow or
+push a change under `site/`. Update the page's signing note when T-0037 takes effect.
