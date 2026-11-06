@@ -13,8 +13,8 @@ project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of
 Recent work:
 
 - T-0045: Dependabot and CodeQL set up, and the PDF tools updated for their alerts (ADR-0041).
-- T-0044 (in progress): a Project site link in About, opened in the default browser through the shell
-  (ADR-0040). It ships in 0.26.3.
+- T-0044: a Project site link in About, opened in the default browser through the shell (ADR-0040),
+  shipped in 0.26.3. The site is live at https://orwrkr.github.io/attention-focus/.
 - T-0043: a static project site in `site/`, deployed by GitHub Pages once the repository is public
   (ADR-0040).
 - T-0019: edit, delete and add intervals from menus on the timeline and session rows, with an audit
@@ -79,8 +79,8 @@ do not change the Windows app mode.
 ## Exact next step
 
 See [tasks/INDEX.md](../tasks/INDEX.md). Publishing is the owner's decision: T-0034 and then T-0037.
-0.26.3 with the site link is published, so the next step is for the owner to set Settings, Pages,
-Source to GitHub Actions, and then to run the Pages workflow (T-0043, T-0044). No larger feature is selected. Research compatibility before any further migration.
+0.26.3 is published and the site is live. What remains is the owner's: upgrading Production, and
+the SignPath application in T-0037. No larger feature is selected. Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires

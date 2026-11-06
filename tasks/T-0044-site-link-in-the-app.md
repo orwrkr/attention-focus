@@ -1,6 +1,6 @@
 # T-0044: A Link to the Project Site in the Application
 
-Status: in_progress.
+Status: done.
 Dependencies: T-0043; the repository being public.
 
 The repository became public on 2026-11-06. This goes into the next release, and only after that
@@ -31,7 +31,7 @@ leads to the site.
 3. Version 0.26.0, then 0.26.1 with the PDF tool updates from T-0045, 0.26.2 with the first
    Dependabot version updates, and 0.26.3 with tidier license notices; 0.26.0 was never tagged. Build, verify, tag and publish the release
    (T-0034).
-4. Then enable Pages and run the Pages workflow (T-0043).
+4. Done: Pages is enabled and the site is live (T-0043). The README links to it.
 
 ## Acceptance criteria
 

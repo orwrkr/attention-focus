@@ -7,6 +7,9 @@ It stays on your computer. There are no accounts, network access or telemetry, a
 not watch your screen or keyboard or score your productivity. Time is what you declare, not
 what a program guesses.
 
+**[Project site](https://orwrkr.github.io/attention-focus/)** ·
+**[Download the latest release](https://github.com/orwrkr/attention-focus/releases/latest)**
+
 ![The main window in the dark theme, with the current interval and today's time](docs/images/tracking.png)
 
 ![A week of tracked sessions on the timeline chart, in the light theme](docs/images/charts.png)

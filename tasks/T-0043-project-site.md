@@ -18,8 +18,13 @@ A simple project site on GitHub Pages, prepared now and served once the reposito
 
 The page was assembled into `target/site-preview` as the workflow does and captured with headless Edge at
 1280 pixels in light and dark, and inside a 390-pixel frame, because headless Edge lays out no narrower than
-504 pixels. All three looked as intended. The workflow has not run, since the repository is private, so the
-deployment itself is unverified, as are the links, which need a public repository and a published release.
+504 pixels. All three looked as intended.
+
+Live since 2026-11-06. After 0.26.3 was published, the owner set the Pages source to GitHub Actions and
+the Pages workflow ran from `workflow_dispatch`; build and deploy passed. The page, stylesheet, icon and both
+screenshots return 200 with the expected types, the Content Security Policy is in place, GitHub serves it
+over HTTPS with HSTS, and every link returns 200, with Download reaching the `v0.26.3` release. Headless Edge
+captured the live page at 1280 pixels in the light theme, styled as in the preview.
 
 ## Handoff
 
