@@ -58,3 +58,6 @@ leads to the site.
 - 0.26.2 replaced it with the first Dependabot version updates (T-0045). Its release run passed on the
   first attempt, and its draft passed the same checks with file properties 0.26.2.0; it is not signed.
   The `v0.26.1` draft was deleted; its tag remains.
+- 0.26.3 replaced it with tidier license notices. Its release run passed on the first attempt, and its
+  draft passed the same checks with file properties 0.26.3.0; it is not signed. The `v0.26.2` draft was
+  deleted; its tag remains.
