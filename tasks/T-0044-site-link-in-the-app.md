@@ -37,7 +37,7 @@ leads to the site.
 
 - [x] The link appears in About in every language and opens the site in the browser.
 - [x] Nothing in the application contacts a server by itself.
-- [ ] The release containing it is published before the site is enabled.
+- [x] The release containing it is published before the site is enabled.
 
 ## Checks
 
@@ -61,3 +61,5 @@ leads to the site.
 - 0.26.3 replaced it with tidier license notices. Its release run passed on the first attempt, and its
   draft passed the same checks with file properties 0.26.3.0; it is not signed. The `v0.26.2` draft was
   deleted; its tag remains.
+- The owner had it published on 2026-11-06 as the first public release, marked latest. The EXE
+  downloaded through `releases/latest/download/attention-focus.exe` has the SHA-256 of the checked draft.

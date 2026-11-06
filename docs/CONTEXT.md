@@ -5,7 +5,7 @@ Updated: 2026-11-05. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.26.3, built and verified but not yet run by the owner. Since 0.25.2 it
+Current release: 0.26.3, the first published release (2026-11-06), not yet run by the owner. Since 0.25.2 it
 upgrades history to schema five. Production runs an earlier version until the owner replaces it. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
@@ -43,7 +43,7 @@ public on 2026-11-06. CI passed there on its first run. Version tags start at
 `v0.1.0` and skip 0.20.0 to 0.24.0, whose commits hold the release workflow, so a tag would start a
 build. `v0.24.1` was the first release build. Its draft and the `v0.24.2` draft were deleted, and
 The `v0.25.2`, `v0.26.1` and `v0.26.2` drafts were deleted as well; their tags remain. `v0.26.3`
-has the current draft, verified, unsigned and not published. 0.26.0 was built but never tagged.
+was verified and published, unsigned, as the latest release. 0.26.0 was built but never tagged.
 
 The ignored `local/` directory holds useful context that does not belong in a public repository:
 machine notes, prepared application answers, helper tools and retired logs. Clones do not have
@@ -71,7 +71,7 @@ do not change the Windows app mode.
 - The real upgrade to schema four is confirmed only by the running version and its backup file.
 - The real upgrade to schema five, which Production has not yet had (T-0019).
 - Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1`, `v0.24.2`,
-  `v0.25.2`, `v0.26.1`, `v0.26.2` and `v0.26.3`, and the `v0.26.3` draft waits for the owner.
+  `v0.25.2`, `v0.26.1`, `v0.26.2` and `v0.26.3`; `v0.26.3` was published unsigned.
 - Whose license covers Visual Studio Enterprise on GitHub's runner (ADR-0038).
 - Multiple monitors and DPI combinations, real sleep/hibernate/logoff/shutdown, clean machines,
   native reduced-motion switching and hardware GPU use (T-0002).
@@ -79,8 +79,8 @@ do not change the Windows app mode.
 ## Exact next step
 
 See [tasks/INDEX.md](../tasks/INDEX.md). Publishing is the owner's decision: T-0034 and then T-0037.
-T-0044 adds a site link to the application in 0.26.3, and the site goes live only after that
-release is published. No larger feature is selected. Research compatibility before any further migration.
+0.26.3 with the site link is published, so the next step is for the owner to set Settings, Pages,
+Source to GitHub Actions, and then to run the Pages workflow (T-0043, T-0044). No larger feature is selected. Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires

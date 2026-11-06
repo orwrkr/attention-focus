@@ -65,8 +65,8 @@ scan of all history for personal paths and addresses before the first push found
 1. Done: GitHub reports signed commits as verified.
 2. Done: the repository is public, and the owner enabled private vulnerability reporting, Dependabot
    and CodeQL; the first alerts are handled in T-0045.
-3. Add the site link to the application in a new version (T-0044).
-4. Push that version's tag, check the draft release from the release workflow and publish it.
+3. Done: the site link is in 0.26.3 (T-0044).
+4. Done: `v0.26.3` was checked and published on 2026-11-06 as the first public release.
 5. Only then set Settings, Pages, Source to GitHub Actions, and run the Pages workflow (T-0043).
 6. Continue with the code signing steps in T-0037.
 
