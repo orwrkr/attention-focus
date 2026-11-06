@@ -44,7 +44,11 @@ and no overlaps in the file. A menu right-aligned for Arabic stretched across th
 left-aligned. Each correction after the first build changed shipped input, so 0.25.0 and 0.25.1 were built but are
 superseded by 0.25.2.
 
-Unverified: the upgrade of the real Production history; a running interval's disabled menu in the window, which a
+The owner upgraded Production to 0.26.3 on 2026-11-06. A read-only check of its database printed
+only metadata: `user_version` 5, the `focus_session_edits` table present, one `focus-before-v5-` backup
+beside it, and `quick_check` ok.
+
+Unverified: a running interval's disabled menu in the window, which a
 test covers; keyboard-only use of the dialog beyond Tab order in tests; daylight-saving boundaries in a real zone
 with such a change, which tests cover with America/New_York.
 

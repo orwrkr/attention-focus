@@ -38,7 +38,7 @@
 | [T-0034](T-0034-public-release-readiness.md) | in_progress | Public GitHub Release Readiness | T-0035 |
 | [T-0035](T-0035-application-projects.md) | done | Application-Owned Projects and Tasks | T-0033 |
 | [T-0036](T-0036-activity-visualization.md) | done | Graphical Activity Views | T-0035 |
-| [T-0037](T-0037-code-signing.md) | blocked | Free Code Signing Through SignPath Foundation | T-0034; first public release |
+| [T-0037](T-0037-code-signing.md) | blocked | Free Code Signing Through SignPath Foundation | T-0034; the owner's application, postponed |
 | [T-0038](T-0038-scroll-bars-themes-settings.md) | done | Scroll Bars, Themes and Interval Setting | T-0036 |
 | [T-0039](T-0039-interface-languages.md) | done | Interface Languages | T-0038 |
 | [T-0040](T-0040-single-exe-release.md) | done | One EXE as the Release | T-0039 |

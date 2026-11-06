@@ -5,8 +5,8 @@ Updated: 2026-11-05. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.26.3, the first published release (2026-11-06), not yet run by the owner. Since 0.25.2 it
-upgrades history to schema five. Production runs an earlier version until the owner replaces it. The application owns its
+Current release: 0.26.3, the first published release (2026-11-06). The owner runs it as Production
+since that day, and it upgraded the real history to schema five. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
@@ -69,7 +69,6 @@ do not change the Windows app mode.
 - The project panel and note conversion in the running application (T-0035).
 - Real tray foreground behavior and a real midnight crossing (T-0031, T-0033).
 - The real upgrade to schema four is confirmed only by the running version and its backup file.
-- The real upgrade to schema five, which Production has not yet had (T-0019).
 - Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1`, `v0.24.2`,
   `v0.25.2`, `v0.26.1`, `v0.26.2` and `v0.26.3`; `v0.26.3` was published unsigned.
 - Whose license covers Visual Studio Enterprise on GitHub's runner (ADR-0038).
@@ -79,8 +78,8 @@ do not change the Windows app mode.
 ## Exact next step
 
 See [tasks/INDEX.md](../tasks/INDEX.md). Publishing is the owner's decision: T-0034 and then T-0037.
-0.26.3 is published and the site is live. What remains is the owner's: upgrading Production, and
-the SignPath application in T-0037. No larger feature is selected. Research compatibility before any further migration.
+0.26.3 is published, the site is live, and Production runs it. The SignPath application in T-0037
+is postponed by the owner (2026-11-06). No larger feature is selected. Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires

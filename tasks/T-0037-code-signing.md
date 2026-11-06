@@ -10,7 +10,8 @@ signature instead of an unknown file. See ADR-0033.
 
 **Blocked on:** a public repository and a first public release, which the program requires before
 applying, and then the owner's application and SignPath's approval.
-**Resumes when:** the repository is public and the first release is published.
+**Resumes when:** the owner decides to apply. The repository became public and 0.26.3 was published
+on 2026-11-06, so the program's preconditions are met; the owner postponed the application that day.
 
 ## Prepared
 
