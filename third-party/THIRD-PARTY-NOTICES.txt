@@ -758,7 +758,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 arboard 3.7.0 | MIT OR Apache-2.0
 Repository: https://github.com/1Password/arboard
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE.txt ---
@@ -1874,7 +1874,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 ============================================================================
 byteorder-lite 0.1.0 | Unlicense OR MIT
 Repository: https://github.com/image-rs/byteorder-lite
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-MIT ---
@@ -2174,7 +2174,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 color 0.3.3 | Apache-2.0 OR MIT
 Repository: https://github.com/linebender/color
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -2616,7 +2616,7 @@ SOFTWARE.
 ============================================================================
 crossbeam-channel 0.5.17 | MIT OR Apache-2.0
 Repository: https://github.com/crossbeam-rs/crossbeam
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -3452,7 +3452,7 @@ limitations under the License.
 ============================================================================
 crossbeam-utils 0.8.23 | MIT OR Apache-2.0
 Repository: https://github.com/crossbeam-rs/crossbeam
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -4754,7 +4754,7 @@ SOFTWARE.
 ============================================================================
 dpi 0.1.2 | Apache-2.0 AND MIT
 Repository: https://github.com/rust-windowing/winit
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE ---
@@ -6207,7 +6207,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 either 1.19.0 | MIT OR Apache-2.0
 Repository: https://github.com/rayon-rs/either
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -9316,7 +9316,7 @@ the following restrictions:
 ============================================================================
 font-types 0.12.7 | MIT OR Apache-2.0
 Repository: https://github.com/googlefonts/fontations
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -9659,7 +9659,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 glifo 0.3.0 | Apache-2.0 OR MIT
 Repository: https://github.com/linebender/vello
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -11034,7 +11034,7 @@ SOFTWARE.
 ============================================================================
 harfrust 0.12.0 | MIT
 Repository: https://github.com/harfbuzz/harfrust
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE ---
@@ -11065,7 +11065,7 @@ SOFTWARE.
 ============================================================================
 hashbrown 0.17.1 | MIT OR Apache-2.0
 Repository: https://github.com/rust-lang/hashbrown
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -11303,7 +11303,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 hashlink 0.12.2 | MIT OR Apache-2.0
 Repository: https://github.com/djc/hashlink
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -12613,7 +12613,7 @@ THE SOFTWARE.
 ============================================================================
 kurbo 0.13.1 | Apache-2.0 OR MIT
 Repository: https://github.com/linebender/kurbo
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -12901,7 +12901,7 @@ THE SOFTWARE.
 ============================================================================
 linebender_resource_handle 0.1.1 | Apache-2.0 OR MIT
 Repository: https://github.com/linebender/raw_resource_handle
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -14587,7 +14587,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ============================================================================
 muda 0.21.2 | Apache-2.0 OR MIT
 Repository: https://github.com/tauri-apps/muda
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -16024,7 +16024,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 peniko 0.6.1 | Apache-2.0 OR MIT
 Repository: https://github.com/linebender/peniko
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -16230,7 +16230,7 @@ License source: Published crate license files
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
-   
+
 
 --- LICENSE-MIT ---
 Copyright (c) 2018 Raph Levien
@@ -16263,7 +16263,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 pin-project-lite 0.2.17 | Apache-2.0 OR MIT
 Repository: https://github.com/taiki-e/pin-project-lite
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -16713,7 +16713,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 polycool 0.4.0 | MIT OR Apache-2.0
 Repository: https://github.com/linebender/kurbo
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -18301,7 +18301,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 ============================================================================
 read-fonts 0.41.0 | MIT OR Apache-2.0
 Repository: https://github.com/googlefonts/fontations
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -20093,7 +20093,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 serde_json 1.0.154 | MIT OR Apache-2.0
 Repository: https://github.com/serde-rs/json
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -20334,7 +20334,7 @@ SOFTWARE.
 ============================================================================
 skrifa 0.44.0 | MIT OR Apache-2.0
 Repository: https://github.com/googlefonts/fontations
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -22327,7 +22327,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 tray-icon 0.26.1 | MIT OR Apache-2.0
 Repository: https://github.com/tauri-apps/tray-icon
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -24209,7 +24209,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 vello_common 0.2.0 | Apache-2.0 OR MIT
 Repository: https://github.com/linebender/vello
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -24422,7 +24422,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 vello_cpu 0.2.0 | Apache-2.0 OR MIT
 Repository: https://github.com/linebender/vello
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -24635,7 +24635,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 web-time 1.1.0 | MIT OR Apache-2.0
 Repository: https://github.com/daxpedda/web-time
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -25103,7 +25103,7 @@ SOFTWARE.
 ============================================================================
 windows-link 0.2.1 | MIT OR Apache-2.0
 Repository: https://github.com/microsoft/windows-rs
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- license-apache-2.0 ---
@@ -25571,7 +25571,7 @@ License source: Published crate license files
 ============================================================================
 windows-sys 0.61.2 | MIT OR Apache-2.0
 Repository: https://github.com/microsoft/windows-rs
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- license-apache-2.0 ---
@@ -26482,7 +26482,7 @@ Apache License
 ============================================================================
 zerocopy 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT
 Repository: https://github.com/google/zerocopy
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -26749,7 +26749,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 zerocopy-derive 0.8.63 | BSD-2-Clause OR Apache-2.0 OR MIT
 Repository: https://github.com/google/zerocopy
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
@@ -27016,11 +27016,11 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 zlib-rs 0.6.8 | Zlib
 Repository: https://github.com/trifectatechfoundation/zlib-rs
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE ---
-(C) 2024 Trifecta Tech Foundation 
+(C) 2024 Trifecta Tech Foundation
 
 This software is provided 'as-is', without any express or implied
 warranty. In no event will the authors be held liable for any damages
@@ -27076,7 +27076,7 @@ DEALINGS IN THE SOFTWARE.
 ============================================================================
 zune-core 0.5.3 | MIT OR Apache-2.0 OR Zlib
 Repository: https://github.com/etemesi254/zune-image
-Authors: 
+Authors: Not listed in the crate manifest
 License source: Published crate license files
 
 --- LICENSE-APACHE ---

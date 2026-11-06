@@ -35,7 +35,11 @@ GitHub's templates (ADR-0041).
 - Clippy, 245 tests, `scripts/build.ps1`, `scripts/verify-release.ps1`, `scripts/test-release-output.ps1`,
   `check-notices` and `scripts/test_release_tools.py` passed. `git diff --check` flags one generated notice
   line, `Authors: ` with a trailing space, because serde_json 1.0.154 lists no authors; thirty older entries
-  already have that form. The generator could omit the empty field in a later version.
+  already have that form.
+- At the owner's request, before publishing, 0.26.3 fixes the generator in `scripts/release_tools.py`:
+  an empty author list reads `Not listed in the crate manifest`, and no line ends in spaces or tabs, which
+  two published license files had. The regenerated notices differ from 0.26.2 in exactly those 33 lines;
+  `git diff --check` is clean, and two new tests in `scripts/test_release_tools.py` cover both rules.
 
 ## Handoff
 

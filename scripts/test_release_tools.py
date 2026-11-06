@@ -68,4 +68,13 @@ class PackageTests(unittest.TestCase):
         (self.root/"docs/user-guide.md").write_text("Changed without building",encoding="utf-8")
         with self.assertRaises(ValueError):release.pack(self.root)
 
+class NoticeTests(unittest.TestCase):
+    def test_lines_end_without_spaces_and_keep_their_text(self):
+        parts=["Synthetic License","Copyright (c) Example \nPermission is granted.\t\n  \n\tIndented line","\n"+"="*4]
+        self.assertEqual(release.notice_text(parts),"Synthetic License\nCopyright (c) Example\nPermission is granted.\n\n\tIndented line\n\n====\n")
+    def test_missing_authors_are_named_instead_of_left_blank(self):
+        self.assertEqual(release.authors({"authors":["A <a@example.com>","B"]}),"A <a@example.com>, B")
+        self.assertEqual(release.authors({"authors":[]}),"Not listed in the crate manifest")
+        self.assertEqual(release.authors({}),"Not listed in the crate manifest")
+
 if __name__=="__main__":unittest.main()

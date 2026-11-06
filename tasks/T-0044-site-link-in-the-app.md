@@ -28,8 +28,8 @@ leads to the site.
    `errors.site_not_opened`. The address is `attention_focus::SITE`, the manifest's `homepage`, and a
    test derives it from the repository address. The guide mentions it. Every five-second worker wait in
    `src/tracking/tests.rs` is now `WORKER_WAIT`, sixty seconds.
-3. Version 0.26.0, then 0.26.1 with the PDF tool updates from T-0045, then 0.26.2 with the first
-   Dependabot version updates; 0.26.0 was never tagged. Build, verify, tag and publish the release
+3. Version 0.26.0, then 0.26.1 with the PDF tool updates from T-0045, 0.26.2 with the first
+   Dependabot version updates, and 0.26.3 with tidier license notices; 0.26.0 was never tagged. Build, verify, tag and publish the release
    (T-0034).
 4. Then enable Pages and run the Pages workflow (T-0043).
 

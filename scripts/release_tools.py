@@ -87,7 +87,7 @@ def generate_notices() -> str:
             if data.get("provenance"):origin+=" | "+data["provenance"]
         # Font-specific OFL/UFL/Hack/icon notices are not always named LICENSE.
         if p["name"]=="epaint_default_fonts":files+=list((directory/"fonts").glob("*.txt"))
-        parts.extend(["\n"+"="*76,f"{p['name']} {p['version']} | {p.get('license') or 'See license text'}",f"Repository: {p.get('repository') or 'See crate metadata'}",f"Authors: {', '.join(p.get('authors',[]))}",f"License source: {origin}"])
+        parts.extend(["\n"+"="*76,f"{p['name']} {p['version']} | {p.get('license') or 'See license text'}",f"Repository: {p.get('repository') or 'See crate metadata'}",f"Authors: {authors(p)}",f"License source: {origin}"])
         for path in sorted(set(files)):
             if not path.is_file():raise ValueError(f"License file is missing: {p['name']} / {path.name}")
             parts.extend([f"\n--- {path.name} ---",path.read_text(encoding="utf-8-sig").replace("\r\n","\n")])
@@ -99,7 +99,16 @@ def generate_notices() -> str:
     parts.extend(["\n"+"="*76,"Microsoft C and C++ runtime libraries",(ROOT/"third-party/microsoft-runtime-notice.txt").read_text(encoding="utf-8").strip()])
     parts.extend(["\n"+"="*76,"Rust standard library",subprocess.check_output(["rustc","--version"],text=True).strip(),"\n".join(parser.parts)])
     print(f"Notices generated for {count} Windows runtime packages, bundled fonts, and Rust standard library.")
-    return "\n".join(parts)+"\n"
+    return notice_text(parts)
+
+def authors(package: dict) -> str:
+    """Many crates no longer list authors; say so instead of leaving the field empty."""
+    return ", ".join(package.get("authors") or []) or "Not listed in the crate manifest"
+
+def notice_text(parts: list[str]) -> str:
+    """Joins the notices into one LF text without spaces or tabs at line ends. Published license
+    files sometimes have them; the wording is otherwise kept exactly as published."""
+    return "\n".join(line.rstrip(" \t") for line in "\n".join(parts).split("\n"))+"\n"
 
 def update_notices() -> None:
     """The EXE embeds this tracked file, so it must be current before compiling."""
