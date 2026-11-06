@@ -42,8 +42,8 @@ configuration, and GitHub shows them as verified. The repository `orwrkr/attenti
 public on 2026-11-06. CI passed there on its first run. Version tags start at
 `v0.1.0` and skip 0.20.0 to 0.24.0, whose commits hold the release workflow, so a tag would start a
 build. `v0.24.1` was the first release build. Its draft and the `v0.24.2` draft were deleted, and
-`v0.25.2` has the current draft, which is unsigned and not published. 0.26.0 was built but never
-tagged; 0.26.1 is next.
+The `v0.25.2` draft was deleted as well, and `v0.26.1` has the current draft, verified, unsigned
+and not published. 0.26.0 was built but never tagged.
 
 The ignored `local/` directory holds useful context that does not belong in a public repository:
 machine notes, prepared application answers, helper tools and retired logs. Clones do not have
@@ -70,8 +70,8 @@ do not change the Windows app mode.
 - Real tray foreground behavior and a real midnight crossing (T-0031, T-0033).
 - The real upgrade to schema four is confirmed only by the running version and its backup file.
 - The real upgrade to schema five, which Production has not yet had (T-0019).
-- Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1`, `v0.24.2` and
-  `v0.25.2`, and the `v0.25.2` draft waits for the owner.
+- Signing in the release workflow (T-0037). Its unsigned path ran for `v0.24.1`, `v0.24.2`,
+  `v0.25.2` and `v0.26.1`, and the `v0.26.1` draft waits for the owner.
 - Whose license covers Visual Studio Enterprise on GitHub's runner (ADR-0038).
 - Multiple monitors and DPI combinations, real sleep/hibernate/logoff/shutdown, clean machines,
   native reduced-motion switching and hardware GPU use (T-0002).

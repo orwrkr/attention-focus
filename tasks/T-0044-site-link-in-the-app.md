@@ -50,3 +50,7 @@ leads to the site.
   hovering shows the address. One click produced no error, so the shell accepted the address. Whether the
   browser showed the page was left to the owner, since other windows were not inspected.
 - The language was set back to following Windows afterwards.
+- The owner then clicked the link and confirmed that the browser opened the address.
+- The release workflow for `v0.26.1` passed on its first attempt. Its draft has the local build's
+  source fingerprint, file hashes that match its manifest, the tracked notices inside the EXE, and file
+  properties 0.26.1.0; it is not signed. The `v0.25.2` draft was deleted; its tag remains.

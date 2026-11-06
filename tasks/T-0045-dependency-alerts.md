@@ -28,5 +28,6 @@ GitHub's templates (ADR-0041).
 
 ## Handoff
 
-Dependabot should close its two security pull requests once `main` has these versions; if it does not,
-close them. Check the first scheduled Dependabot pull requests against ADR-0041.
+Dependabot should close its two security pull requests (#2, #3) once `main` has these versions; if it
+does not, close them. Its first version updates are open: #4 (reportlab 5.1.0), #5 (three Cargo minor
+and patch updates) and #6 (miniz_oxide 0.9.1). Review them against ADR-0041 after the release.
