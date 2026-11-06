@@ -5,7 +5,7 @@ Updated: 2026-11-05. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.26.1, built and verified but not yet run by the owner. Since 0.25.2 it
+Current release: 0.26.2, built and verified but not yet run by the owner. Since 0.25.2 it
 upgrades history to schema five. Production runs an earlier version until the owner replaces it. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
@@ -14,7 +14,7 @@ Recent work:
 
 - T-0045: Dependabot and CodeQL set up, and the PDF tools updated for their alerts (ADR-0041).
 - T-0044 (in progress): a Project site link in About, opened in the default browser through the shell
-  (ADR-0040). It ships in 0.26.1.
+  (ADR-0040). It ships in 0.26.2.
 - T-0043: a static project site in `site/`, deployed by GitHub Pages once the repository is public
   (ADR-0040).
 - T-0019: edit, delete and add intervals from menus on the timeline and session rows, with an audit
@@ -42,8 +42,8 @@ configuration, and GitHub shows them as verified. The repository `orwrkr/attenti
 public on 2026-11-06. CI passed there on its first run. Version tags start at
 `v0.1.0` and skip 0.20.0 to 0.24.0, whose commits hold the release workflow, so a tag would start a
 build. `v0.24.1` was the first release build. Its draft and the `v0.24.2` draft were deleted, and
-The `v0.25.2` draft was deleted as well, and `v0.26.1` has the current draft, verified, unsigned
-and not published. 0.26.0 was built but never tagged.
+The `v0.25.2` draft was deleted as well. `v0.26.1` was tagged and its draft verified, but 0.26.2
+replaces it with the first Dependabot version updates. 0.26.0 was built but never tagged.
 
 The ignored `local/` directory holds useful context that does not belong in a public repository:
 machine notes, prepared application answers, helper tools and retired logs. Clones do not have
@@ -79,7 +79,7 @@ do not change the Windows app mode.
 ## Exact next step
 
 See [tasks/INDEX.md](../tasks/INDEX.md). Publishing is the owner's decision: T-0034 and then T-0037.
-T-0044 adds a site link to the application in 0.26.1, and the site goes live only after that
+T-0044 adds a site link to the application in 0.26.2, and the site goes live only after that
 release is published. No larger feature is selected. Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical

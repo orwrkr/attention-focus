@@ -12201,7 +12201,7 @@ DEALINGS IN THE SOFTWARE.
 
 
 ============================================================================
-jiff 0.2.38 | Unlicense OR MIT
+jiff 0.2.39 | Unlicense OR MIT
 Repository: https://github.com/BurntSushi/jiff
 Authors: Andrew Gallant <jamslam@gmail.com>
 License source: Published crate license files
@@ -12237,7 +12237,7 @@ THE SOFTWARE.
 
 
 ============================================================================
-jiff-core 0.1.1 | Unlicense OR MIT
+jiff-core 0.1.2 | Unlicense OR MIT
 Repository: https://github.com/BurntSushi/jiff
 Authors: Andrew Gallant <jamslam@gmail.com>
 License source: Published crate license files
@@ -12273,7 +12273,7 @@ THE SOFTWARE.
 
 
 ============================================================================
-jiff-static 0.2.38 | Unlicense OR MIT
+jiff-static 0.2.39 | Unlicense OR MIT
 Repository: https://github.com/BurntSushi/jiff
 Authors: Andrew Gallant <jamslam@gmail.com>
 License source: Published crate license files
@@ -18641,7 +18641,7 @@ DEALINGS IN THE SOFTWARE.
 
 
 ============================================================================
-rusqlite 0.41.0 | MIT
+rusqlite 0.41.1 | MIT
 Repository: https://github.com/rusqlite/rusqlite
 Authors: The rusqlite developers
 License source: Published crate license files
@@ -20091,9 +20091,9 @@ DEALINGS IN THE SOFTWARE.
 
 
 ============================================================================
-serde_json 1.0.151 | MIT OR Apache-2.0
+serde_json 1.0.154 | MIT OR Apache-2.0
 Repository: https://github.com/serde-rs/json
-Authors: Erick Tryzelaar <erick.tryzelaar@gmail.com>, David Tolnay <dtolnay@gmail.com>
+Authors: 
 License source: Published crate license files
 
 --- LICENSE-APACHE ---
