@@ -39,5 +39,6 @@ GitHub's templates (ADR-0041).
 
 ## Handoff
 
-Dependabot should close pull requests #2 to #6 once `main` has these versions; if it does not, close
-them. Later pull requests follow ADR-0041.
+Dependabot closed #4 to #6 once `main` had their versions. It left the security pull requests #2 and
+#3 open, so they were closed with a note that `main` already pins those versions. No Dependabot or code
+scanning alert is open. Later pull requests follow ADR-0041.

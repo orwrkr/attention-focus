@@ -55,3 +55,6 @@ leads to the site.
 - The release workflow for `v0.26.1` passed on its first attempt. Its draft has the local build's
   source fingerprint, file hashes that match its manifest, the tracked notices inside the EXE, and file
   properties 0.26.1.0; it is not signed. The `v0.25.2` draft was deleted; its tag remains.
+- 0.26.2 replaced it with the first Dependabot version updates (T-0045). Its release run passed on the
+  first attempt, and its draft passed the same checks with file properties 0.26.2.0; it is not signed.
+  The `v0.26.1` draft was deleted; its tag remains.
