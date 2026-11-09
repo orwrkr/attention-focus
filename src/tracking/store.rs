@@ -4,19 +4,47 @@ use super::{
 };
 use crate::reports;
 use rusqlite::{Connection, OptionalExtension, params};
-use std::{path::Path, time::Duration};
+use std::{cell::RefCell, collections::HashSet, path::Path, time::Duration};
+
+/// Sessions that overlap a period. Each half reads through the end index: finished rows end at
+/// or after the start, and rows without an end, such as the running one, are looked up as such.
+/// A single `ended_ms IS NULL OR ended_ms>=?1`, or an `ORDER BY id`, made SQLite scan the whole
+/// history in id order instead, so the caller sorts the rows it gets.
+pub(super) const REPORT_ROWS: &str = "SELECT id,started_ms,COALESCE(ended_ms,?3),elapsed_ms,state,activity,COALESCE(end_reason,''),checkpoint_ms FROM focus_sessions WHERE ended_ms>=?1 AND started_ms<?2 \
+    UNION ALL SELECT id,started_ms,COALESCE(ended_ms,?3),elapsed_ms,state,activity,COALESCE(end_reason,''),checkpoint_ms FROM focus_sessions WHERE ended_ms IS NULL AND started_ms<?2";
+const REVIEW: &str = "SELECT EXISTS(SELECT 1 FROM focus_sessions WHERE state='interrupted')";
+
+/// Project and task keys recorded in at least one session.
+pub(super) type Usage = HashSet<(i64, Option<String>)>;
 
 pub struct Store {
     pub(super) connection: Connection,
+    /// Usage decoded from every session once, then kept current by the writes that can change
+    /// it, so a command does not decode the whole history again. `None` means read it again.
+    pub(super) usage: RefCell<Option<Usage>>,
 }
 impl Store {
+    pub(super) fn wrap(connection: Connection) -> Self {
+        Self {
+            connection,
+            usage: RefCell::new(None),
+        }
+    }
+    /// The next catalog reads usage from every session again. Writes that can remove a key
+    /// call this; a write that only adds one updates the known set instead.
+    pub(super) fn forget_usage(&mut self) {
+        *self.usage.get_mut() = None;
+    }
+    pub(super) fn needs_review(&self) -> Result<bool> {
+        Ok(self.connection.query_row(REVIEW, [], |r| r.get(0))?)
+    }
     pub fn open(path: &Path) -> Result<Self> {
         let mut connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(2))?;
         connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")?;
         migrate::upgrade(&mut connection, path)?;
         connection.execute("UPDATE focus_sessions SET state='interrupted', ended_ms=checkpoint_ms, end_reason='crash' WHERE state='running'", [])?;
-        let store = Self { connection };
+        let store = Self::wrap(connection);
         store.snapshot()?;
         Ok(store)
     }
@@ -87,6 +115,8 @@ impl Store {
     }
     pub(super) fn reassign(&mut self, activity: &Activity, now: i64, elapsed: u64) -> Result<()> {
         activity.validate()?;
+        // The replaced activity may have been recorded nowhere else.
+        self.forget_usage();
         let text = serde_json::to_string(activity)?;
         let tx = self.connection.transaction()?;
         let changed = tx.execute("UPDATE focus_sessions SET activity=?1,checkpoint_ms=?2,elapsed_ms=?3 WHERE state='running' AND started_ms<=?2", params![text, now, bounded(elapsed)])?;
@@ -110,11 +140,7 @@ impl Store {
         activity.validate()?;
         let text = serde_json::to_string(activity)?;
         let tx = self.connection.transaction()?;
-        let review: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM focus_sessions WHERE state='interrupted')",
-            [],
-            |r| r.get(0),
-        )?;
+        let review: bool = tx.query_row(REVIEW, [], |r| r.get(0))?;
         if review {
             return Err(reject("errors.review_before_start").into());
         }
@@ -136,6 +162,9 @@ impl Store {
         )?;
         Self::remember(&tx, activity)?;
         tx.commit()?;
+        if let (Some(usage), Some(project)) = (self.usage.get_mut(), &activity.project) {
+            usage.insert((project.id, project.task.clone()));
+        }
         Ok(())
     }
     pub(super) fn finish(&mut self, now: i64, elapsed: u64, reason: &str) -> Result<()> {
@@ -187,11 +216,11 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
-        let (total, count): (i64,i64) = self.connection.query_row("SELECT COALESCE(SUM(elapsed_ms),0), COUNT(*) FROM focus_sessions WHERE state='stopped'", [], |r| Ok((r.get(0)?,r.get(1)?)))?;
-        let review = self.connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM focus_sessions WHERE state='interrupted')",
+        // One pass over the history for both the saved totals and pending review.
+        let (total, count, review): (i64, i64, bool) = self.connection.query_row(
+            "SELECT COALESCE(SUM(elapsed_ms) FILTER (WHERE state='stopped'),0), COUNT(*) FILTER (WHERE state='stopped'), COALESCE(MAX(state='interrupted'),0) FROM focus_sessions",
             [],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
         Ok(Snapshot {
             running: active.is_some(),
@@ -229,7 +258,7 @@ impl Store {
         active_ms: Option<u64>,
     ) -> Result<(reports::Range, Vec<reports::Record>)> {
         let range = reports::Range::new(request)?;
-        let mut statement = self.connection.prepare("SELECT id,started_ms,COALESCE(ended_ms,?3),elapsed_ms,state,activity,COALESCE(end_reason,''),checkpoint_ms FROM focus_sessions WHERE started_ms<?2 AND (ended_ms IS NULL OR ended_ms>=?1) ORDER BY id")?;
+        let mut statement = self.connection.prepare(REPORT_ROWS)?;
         let raw =
             statement.query_map(params![range.start_ms, range.end_ms, now.wall_ms], |row| {
                 Ok((
@@ -243,7 +272,8 @@ impl Store {
                     row.get::<_, i64>(7)?,
                 ))
             })?;
-        let raw = raw.collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut raw = raw.collect::<std::result::Result<Vec<_>, _>>()?;
+        raw.sort_unstable_by_key(|row| row.0);
         drop(statement);
         // Release the export snapshot's read lock before JSON decoding or output formatting.
         if active_ms.is_none() {
@@ -297,7 +327,7 @@ pub fn export_snapshot(path: &Path, request: &reports::Request) -> Result<report
         wall_ms: now_ms(),
         mono_ms: 0,
     };
-    let store = Store { connection };
+    let store = Store::wrap(connection);
     let titles = store.current_titles()?;
     let (range, records) = store.report_records(request, now, None)?;
     let mut report = reports::compute_all(range, records, now.wall_ms);

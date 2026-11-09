@@ -39,6 +39,8 @@ impl Stored {
 }
 impl Store {
     pub(super) fn save_interval(&mut self, edit: &IntervalEdit, now: i64) -> Result<()> {
+        // An edit can add a key and remove the last use of another.
+        self.forget_usage();
         let tx = self.connection.transaction()?;
         edit.activity.validate()?;
         let old = edit
@@ -147,6 +149,7 @@ impl Store {
         recorded: (i64, i64),
         now: i64,
     ) -> Result<()> {
+        self.forget_usage();
         let tx = self.connection.transaction()?;
         let before = Stored::load(&tx, id, Some(recorded))?.snapshot()?;
         if tx.execute(

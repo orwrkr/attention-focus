@@ -33,6 +33,8 @@ project has a permanent numeric ID. Each session stores that ID with the title a
 as recorded, so renaming, archiving or finishing never rewrites finished history. Report
 totals show current names and session rows show recorded ones. Anything with recorded
 time can be archived or finished but not deleted.
+The store keeps the set of project/task keys recorded in sessions as usage marks; a start adds its
+key, and changing the running activity or correcting history makes it read history again (ADR-0042).
 
 ## Storage boundary
 

@@ -1,8 +1,8 @@
 //! The application's own project and task list. Finished sessions keep the titles they
 //! recorded, so anything with recorded time can be archived or completed but not deleted.
-use super::{Activity, Result, Store, invalid, reject};
+use super::{Activity, Result, Store, invalid, reject, store::Usage};
 use rusqlite::{Connection, OptionalExtension, params};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 const MAX_TITLE_CHARS: usize = 200;
 
@@ -99,15 +99,32 @@ fn retitled(text: &str, id: i64, title: &str) -> Result<Option<String>> {
     }
 }
 
+/// Every project and task key recorded in a session. This decodes the whole history, so the
+/// store keeps the result; see `Store::usage`.
+pub(super) fn scan_usage(connection: &Connection) -> Result<Usage> {
+    // A malformed historical row must not hide the list; it is reported by the report.
+    let mut used = Usage::new();
+    let mut statement = connection.prepare("SELECT DISTINCT json_extract(activity,'$.project.id'),CASE WHEN json_type(activity,'$.project.task')='text' THEN json_extract(activity,'$.project.task') END FROM focus_sessions WHERE CASE WHEN json_valid(activity) THEN json_type(activity,'$.project.id')='integer' ELSE 0 END")?;
+    let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    for row in rows {
+        used.insert(row?);
+    }
+    Ok(used)
+}
+
 impl Store {
-    pub(super) fn catalog(&self) -> Result<Vec<CatalogProject>> {
-        // A malformed historical row must not hide the list; it is reported by the report.
-        let mut used = HashSet::<(i64, Option<String>)>::new();
-        let mut statement = self.connection.prepare("SELECT DISTINCT json_extract(activity,'$.project.id'),CASE WHEN json_type(activity,'$.project.task')='text' THEN json_extract(activity,'$.project.task') END FROM focus_sessions WHERE CASE WHEN json_valid(activity) THEN json_type(activity,'$.project.id')='integer' ELSE 0 END")?;
-        let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        for row in rows {
-            used.insert(row?);
+    /// Recorded keys, decoded from the history only when the store does not know them.
+    pub(super) fn usage(&self) -> Result<std::cell::Ref<'_, Usage>> {
+        if self.usage.borrow().is_none() {
+            let scanned = scan_usage(&self.connection)?;
+            *self.usage.borrow_mut() = Some(scanned);
         }
+        Ok(std::cell::Ref::map(self.usage.borrow(), |usage| {
+            usage.as_ref().expect("usage was just read")
+        }))
+    }
+    pub(super) fn catalog(&self) -> Result<Vec<CatalogProject>> {
+        let used = self.usage()?;
         let mut tasks = HashMap::<i64, Vec<CatalogTask>>::new();
         let mut statement = self
             .connection

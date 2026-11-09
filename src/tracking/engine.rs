@@ -3,6 +3,9 @@ use super::{Activity, ActivityKey, ChangeMode, Command, Moment, Result, Snapshot
 use crate::reports;
 use rusqlite::params;
 
+/// Saved sessions that reach into a day, read through the end index.
+pub(super) const DAILY_ROWS: &str = "SELECT started_ms,ended_ms,elapsed_ms,activity FROM focus_sessions WHERE state='stopped' AND started_ms<?2 AND ended_ms>?1";
+
 pub struct Engine {
     pub(super) store: Store,
     pub(super) started: Option<Moment>,
@@ -93,7 +96,7 @@ impl Engine {
             {
                 let mut total = 0u64;
                 let mut all = 0u64;
-                let mut query = self.store.connection.prepare("SELECT started_ms,ended_ms,elapsed_ms,activity FROM focus_sessions WHERE state='stopped' AND started_ms<?2 AND ended_ms>?1")?;
+                let mut query = self.store.connection.prepare(DAILY_ROWS)?;
                 let rows = query.query_map(params![begin, end], |r| {
                     Ok((
                         r.get::<_, i64>(0)?,
@@ -225,7 +228,7 @@ impl Engine {
                         }
                     }
                 } else {
-                    if self.store.snapshot()?.needs_review {
+                    if self.store.needs_review()? {
                         return Err(reject("errors.review_before_change").into());
                     }
                     self.store.select(&activity)?;

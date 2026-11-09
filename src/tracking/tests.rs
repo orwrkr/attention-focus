@@ -104,7 +104,7 @@ mod history_correction {
                         .unwrap(),
                     4
                 );
-                assert_eq!(history(&Store { connection }), before);
+                assert_eq!(history(&Store::wrap(connection)), before);
             } else {
                 let store = Store::open(&path).unwrap();
                 assert_eq!(history(&store), before);
@@ -121,9 +121,7 @@ mod history_correction {
             }
             let backups = backup_files(dir.path(), "focus-before-v5-");
             assert_eq!(backups.len(), 1);
-            let backup = Store {
-                connection: Connection::open(&backups[0]).unwrap(),
-            };
+            let backup = Store::wrap(Connection::open(&backups[0]).unwrap());
             assert_eq!(history(&backup), before);
             assert_eq!(
                 backup
@@ -3531,4 +3529,158 @@ fn list_changes_leave_the_timer_history_and_recent_use_alone() {
     assert_eq!(after.recent.len(), before.recent.len());
     assert_eq!(after.activity, before.activity);
     assert_eq!(rows(&engine).len(), 1);
+}
+
+/// The steps of a query plan, as SQLite reports them.
+fn query_plan(connection: &Connection, sql: &str) -> Vec<String> {
+    let mut statement = connection
+        .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+        .unwrap();
+    let values = std::iter::repeat_n(0_i64, statement.parameter_count());
+    statement
+        .query_map(rusqlite::params_from_iter(values), |r| {
+            r.get::<_, String>(3)
+        })
+        .unwrap()
+        .map(|step| step.unwrap())
+        .collect()
+}
+
+#[test]
+fn period_queries_read_through_the_end_index_instead_of_the_whole_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(&dir.path().join("focus.sqlite3")).unwrap();
+    for sql in [store::REPORT_ROWS, engine::DAILY_ROWS] {
+        let plan = query_plan(&store.connection, sql);
+        let reads: Vec<_> = plan
+            .iter()
+            .filter(|step| step.contains("focus_sessions"))
+            .collect();
+        assert!(!reads.is_empty(), "{plan:?}");
+        for step in reads {
+            assert!(
+                step.starts_with("SEARCH focus_sessions USING INDEX focus_sessions_ended"),
+                "a period query must not scan every session: {plan:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn known_usage_matches_a_fresh_history_scan_after_every_kind_of_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    let mut listed = |title: &str| {
+        engine.store.add_projects(&[title.into()]).unwrap();
+        let id = engine
+            .store
+            .catalog()
+            .unwrap()
+            .iter()
+            .find(|p| p.title == title)
+            .unwrap()
+            .id;
+        engine.store.add_tasks(id, &["Task".into()]).unwrap();
+        Activity {
+            project: Some(Project {
+                id,
+                title: title.into(),
+                task: Some("Task".into()),
+            }),
+            note: String::new(),
+        }
+    };
+    let [a, b, c, d, e] = ["A", "B", "C", "D", "E"].map(&mut listed);
+    let key = |activity: &Activity| {
+        let project = activity.project.as_ref().unwrap();
+        (project.id, project.task.clone())
+    };
+    let known = |engine: &Engine| {
+        engine.store.catalog().unwrap();
+        engine.store.usage.borrow().clone().unwrap()
+    };
+    let fresh = |engine: &Engine| catalog::scan_usage(&engine.store.connection).unwrap();
+    let mut ms = 0;
+    let mut apply = |engine: &mut Engine, command: Command| {
+        ms += 1000;
+        engine.apply(Some(command), at(ms)).unwrap();
+        engine.snapshot(at(ms)).unwrap();
+    };
+
+    // Starting adds the key to what the store already knows, without reading the history.
+    assert!(known(&engine).is_empty());
+    apply(&mut engine, Command::Start(a.clone()));
+    apply(&mut engine, Command::Switch(b.clone()));
+    apply(&mut engine, Command::Stop);
+    assert_eq!(known(&engine), fresh(&engine));
+    assert_eq!(known(&engine).len(), 2);
+
+    // A change made outside the store is not noticed, which proves the known set is reused.
+    engine.store.connection.execute(
+        "INSERT INTO focus_sessions(started_ms,ended_ms,checkpoint_ms,elapsed_ms,state,activity) VALUES(10,20,20,10,'stopped',?1)",
+        [serde_json::to_string(&e).unwrap()],
+    ).unwrap();
+    apply(&mut engine, Command::Start(a.clone()));
+    apply(&mut engine, Command::Stop);
+    assert!(!known(&engine).contains(&key(&e)));
+    engine
+        .store
+        .connection
+        .execute("DELETE FROM focus_sessions WHERE started_ms=10", [])
+        .unwrap();
+
+    // Editing the running interval can remove the last use of the replaced activity.
+    apply(&mut engine, Command::SetChangeMode(ChangeMode::EditCurrent));
+    apply(&mut engine, Command::Start(c.clone()));
+    apply(&mut engine, Command::ChangeActivity(d.clone()));
+    assert!(!known(&engine).contains(&key(&c)));
+    assert!(known(&engine).contains(&key(&d)));
+    assert_eq!(known(&engine), fresh(&engine));
+    apply(&mut engine, Command::Stop);
+
+    // Manual intervals add and remove keys.
+    apply(
+        &mut engine,
+        Command::SaveInterval(IntervalEdit {
+            id: None,
+            recorded: None,
+            start_ms: 100_000,
+            end_ms: 200_000,
+            activity: e.clone(),
+            timezone: "UTC".into(),
+        }),
+    );
+    assert!(known(&engine).contains(&key(&e)));
+    assert_eq!(known(&engine), fresh(&engine));
+    let id: i64 = engine
+        .store
+        .connection
+        .query_row(
+            "SELECT id FROM focus_sessions WHERE started_ms=100000",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    apply(
+        &mut engine,
+        Command::DeleteInterval {
+            id,
+            recorded: (100_000, 200_000),
+        },
+    );
+    assert!(!known(&engine).contains(&key(&e)));
+    assert_eq!(known(&engine), fresh(&engine));
+
+    // The list follows: a project used only by the deleted interval can be deleted again.
+    let project = key(&e).0;
+    apply(&mut engine, Command::DeleteProject(project));
+    assert!(
+        engine
+            .store
+            .catalog()
+            .unwrap()
+            .iter()
+            .all(|p| p.id != project)
+    );
+    assert_eq!(known(&engine), fresh(&engine));
 }

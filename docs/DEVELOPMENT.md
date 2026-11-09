@@ -30,6 +30,7 @@ python ./scripts/test_release_tools.py
 ./scripts/package-production.ps1
 ./scripts/dev.ps1 -BuildOnly
 ./scripts/dev.ps1
+cargo run --release --example history_scaling
 ```
 
 The only distributed executable is `dist/AttentionFocus/attention-focus.exe`. The main
@@ -48,6 +49,13 @@ If an agent launched a blocking app, it must offer to exit it and wait for appro
 Build output is ignored by Git. No installer or updater is added.
 Runtime requirements on a clean Windows machine have not yet been verified; do not
 describe this build as universally portable.
+
+The `history_scaling` example builds synthetic histories in a temporary directory, never in a
+profile: by default 1 to 10 years at 20 or 50 sessions a day, or the scenarios given as
+`YEARS:SESSIONS_PER_DAY` arguments. It times opening the history, Start and Stop as the worker
+handles them, and reports of today, 30 days, 365 days and the whole period. Timings depend on
+the machine and its load, so compare runs on one machine. Tests assert query plans and results,
+never timings. See ADR-0042.
 
 Cargo.toml is the version authority. FileVersion is major.minor.patch.0; ProductVersion
 is the package version (with -dev for debug). The header, PDF, manifest, and release folder

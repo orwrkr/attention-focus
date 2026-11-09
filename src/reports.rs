@@ -569,6 +569,16 @@ pub(crate) fn allocated(record: &Record, start: i64, end: i64) -> u64 {
     prefix(end).saturating_sub(prefix(start))
 }
 
+/// The days that a record can add time to. Days are consecutive and ordered, and a day the
+/// record does not overlap would receive nothing, so a report over years still costs one
+/// pass over its days plus the days each record actually spans.
+fn overlapping_days<'a>(days: &'a mut [Day], record: &Record) -> &'a mut [Day] {
+    let first = days.partition_point(|day| day.end_ms <= record.start_ms);
+    let days = &mut days[first..];
+    let count = days.partition_point(|day| day.start_ms < record.end_ms);
+    &mut days[..count]
+}
+
 pub fn compute(range: Range, records: Vec<Record>, generated_ms: i64) -> Report {
     let chart = Chart::compute(&range, &records);
     let mut report = compute_with_limit(range, records, generated_ms, Some(200));
@@ -608,7 +618,7 @@ fn compute_with_limit(
         match record.state {
             State::Saved => {
                 saved_ms = saved_ms.saturating_add(ms);
-                for day in &mut range.days {
+                for day in overlapping_days(&mut range.days, &record) {
                     day.saved_ms =
                         day.saved_ms
                             .saturating_add(allocated(&record, day.start_ms, day.end_ms));
@@ -984,6 +994,45 @@ mod tests {
             records.push(record);
         }
         records
+    }
+    #[test]
+    fn day_rows_of_a_long_period_match_allocation_over_every_day() {
+        // A period of more than a year across two daylight saving changes, with sessions that
+        // span several days and sessions clipped by both ends of the period.
+        let zone = "Europe/London";
+        let whole = range("2025-01-01", "2026-02-04", zone);
+        let mut rng = Sequence(0x10ad);
+        let mut records = timeline(
+            &mut rng,
+            whole.start_ms - 86_400_000,
+            whole.end_ms + 86_400_000,
+        );
+        for (index, start) in [
+            whole.start_ms - 3_600_000,
+            whole.days[200].start_ms - 1,
+            whole.end_ms - 7_200_000,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let span = 3 * 86_400_000 + 12_345;
+            let mut long = record(start, start + span, span as u64 - 999, State::Saved);
+            long.id = 1_000_000 + index as i64;
+            records.push(long);
+        }
+        let report = compute_all(whole.clone(), records.clone(), 0);
+        for (row, day) in report.range.days.iter().zip(&whole.days) {
+            let expected: u64 = records
+                .iter()
+                .filter(|r| valid_interval(r) && counted(r, &whole))
+                .map(|r| allocated(r, day.start_ms, day.end_ms))
+                .sum();
+            assert_eq!(row.saved_ms, expected, "{}", day.date);
+        }
+        assert_eq!(
+            report.range.days.iter().map(|d| d.saved_ms).sum::<u64>(),
+            report.saved_ms
+        );
     }
     #[test]
     fn totals_agree_for_every_grouping_and_partition_across_calendar_boundaries() {

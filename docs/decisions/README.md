@@ -47,5 +47,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0039](0039-history-correction.md) | accepted | Correcting history by hand |
 | [0040](0040-project-site.md) | accepted | A static project site on GitHub Pages |
 | [0041](0041-dependency-and-code-scanning.md) | accepted | Dependency and code scanning on GitHub |
+| [0042](0042-history-growth-and-query-cost.md) | accepted | Query cost that stays flat as the history grows |
 
-Next number: `0042`. Template: `templates/ADR.md` from the repository root.
+Next number: `0043`. Template: `templates/ADR.md` from the repository root.

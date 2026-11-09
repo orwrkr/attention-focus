@@ -1,17 +1,19 @@
 # Current Context
 
-Updated: 2026-11-05. History lives in Git and the task cards, and decisions in the ADRs.
+Updated: 2026-11-09. History lives in Git and the task cards, and decisions in the ADRs.
 
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.26.3, the first published release (2026-11-06). The owner runs it as Production
+Current release: 0.26.3, the first published release (2026-11-06). Version 0.26.4 holds T-0046
+and is built locally, not published. The owner runs 0.26.3 as Production
 since that day, and it upgraded the real history to schema five. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
 Recent work:
 
+- T-0046: reduced report and snapshot costs as history grows, without a schema change (ADR-0042).
 - T-0045: Dependabot and CodeQL set up, and the PDF tools updated for their alerts (ADR-0041).
 - T-0044: a Project site link in About, opened in the default browser through the shell (ADR-0040),
   shipped in 0.26.3. The site is live at https://orwrkr.github.io/attention-focus/.
@@ -62,6 +64,8 @@ do not change the Windows app mode.
 
 ## Unverified behavior
 
+- A long real history and a multi-year report period in the real UI (T-0046); By day still lays out
+  every day each frame and was not measured.
 - The theme following a change of the Windows app mode (T-0038).
 - Six languages in the real window, the tray in other languages, and typed Arabic or Chinese (T-0039).
 - The marks that appear only in the change mode, with no projects or with interrupted time (T-0041).
@@ -77,9 +81,9 @@ do not change the Windows app mode.
 
 ## Exact next step
 
-See [tasks/INDEX.md](../tasks/INDEX.md). Publishing is the owner's decision: T-0034 and then T-0037.
-0.26.3 is published, the site is live, and Production runs it. The SignPath application in T-0037
-is postponed by the owner (2026-11-06). No larger feature is selected. Research compatibility before any further migration.
+The owner decides on [T-0047](../tasks/T-0047-journal-mode.md), the journal mode, and on publishing
+0.26.4. See [tasks/INDEX.md](../tasks/INDEX.md) for T-0034 and T-0037; the SignPath application
+is postponed by the owner (2026-11-06). Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires
