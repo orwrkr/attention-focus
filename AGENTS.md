@@ -75,6 +75,13 @@ escapes to disguise non-English prose.
   tray icons encode running/stopped; development tray states retain their D badge.
 - Treat history conversions as the highest-risk changes: back up first, use one transaction,
   and test upgrades from databases built with each older schema.
+- When the environment stops a command because the system is low on memory, the work is not
+  dropped. By default, wait until enough memory is free for that command, then start it again
+  without asking. If it is stopped again, start a new wait. If a wait passes about 15 minutes
+  and the free memory is likely enough, start anyway; an amount at which the command was already
+  stopped does not count as enough. While memory is short, run memory-heavy steps such as
+  builds, test runs and executors one at a time, in the foreground when background commands are
+  the ones being stopped.
 
 ## End of session
 
