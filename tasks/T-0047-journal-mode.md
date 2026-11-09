@@ -48,8 +48,11 @@ durability, exports and copies of the files.
   `scripts/build.ps1`, `scripts/verify-release.ps1`, `scripts/test-release-output.ps1` and
   `scripts/test_release_tools.py` passed for 0.26.5. The guide changed only in its version.
 
-Unverified: the switch of the owner's real Production history, which happens on the first start
-of 0.26.5; a real power loss; the log on folders where SQLite cannot use shared memory, where the
+- Production after the owner's upgrade to 0.26.5 (2026-11-09): the running EXE reports 0.26.5,
+  `focus.sqlite3-wal` and `-shm` exist, and header bytes 18 and 19 of `focus.sqlite3` are 2, the
+  WAL format. Only file names, sizes and those two bytes were read.
+
+Unverified: a real power loss; the log on folders where SQLite cannot use shared memory, where the
 rollback journal stays.
 
 ## Handoff

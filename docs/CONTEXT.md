@@ -6,8 +6,9 @@ Updated: 2026-11-09. History lives in Git and the task cards, and decisions in t
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
 Current release: 0.26.5 (2026-11-09), with T-0046 and T-0047; 0.26.3 was the first published
-release (2026-11-06). 0.26.4 was built with T-0046 alone and never published. The owner runs 0.26.3
-as Production, and it upgraded the real history to schema five. The application owns its
+release (2026-11-06). 0.26.4 was built with T-0046 alone and never published. The owner runs 0.26.5
+as Production since 2026-11-09; 0.26.3 upgraded the real history to schema five, and 0.26.5
+switched it to the write-ahead log, confirmed from the file header. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
@@ -85,8 +86,7 @@ do not change the Windows app mode.
 
 ## Exact next step
 
-0.26.5 is published. Production moves to it when the owner upgrades; the history then switches to
-the write-ahead log on the first start (T-0047). See [tasks/INDEX.md](../tasks/INDEX.md) for T-0034
+0.26.5 is published and runs as Production. See [tasks/INDEX.md](../tasks/INDEX.md) for T-0034
 and T-0037; the SignPath application
 is postponed by the owner (2026-11-06). Research compatibility before any further migration.
 
