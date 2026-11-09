@@ -54,5 +54,5 @@ rollback journal stays.
 
 ## Handoff
 
-0.26.5 holds T-0046 and T-0047. After Production runs it, `focus.sqlite3-wal` and `-shm` appear in
+0.26.5 holds T-0046 and T-0047 and was published on 2026-11-09. After Production runs it, `focus.sqlite3-wal` and `-shm` appear in
 its data directory while the application is open; that is expected.

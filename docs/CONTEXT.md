@@ -5,9 +5,9 @@ Updated: 2026-11-09. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.26.3, the first published release (2026-11-06). Version 0.26.5 holds T-0046
-and T-0047; 0.26.4 was built with T-0046 alone and never published. The owner runs 0.26.3 as Production
-since that day, and it upgraded the real history to schema five. The application owns its
+Current release: 0.26.5 (2026-11-09), with T-0046 and T-0047; 0.26.3 was the first published
+release (2026-11-06). 0.26.4 was built with T-0046 alone and never published. The owner runs 0.26.3
+as Production, and it upgraded the real history to schema five. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
@@ -47,7 +47,9 @@ public on 2026-11-06. CI passed there on its first run. Version tags start at
 `v0.1.0` and skip 0.20.0 to 0.24.0, whose commits hold the release workflow, so a tag would start a
 build. `v0.24.1` was the first release build. Its draft and the `v0.24.2` draft were deleted, and
 The `v0.25.2`, `v0.26.1` and `v0.26.2` drafts were deleted as well; their tags remain. `v0.26.3`
-was verified and published, unsigned, as the latest release. 0.26.0 was built but never tagged.
+was verified and published, unsigned. `v0.26.5` was verified the same way, its draft's hashes,
+version and source fingerprint matching the local build, and published unsigned as the latest
+release with a section on its changes. 0.26.0 and 0.26.4 were built but never tagged.
 
 The ignored `local/` directory holds useful context that does not belong in a public repository:
 machine notes, prepared application answers, helper tools and retired logs. Clones do not have
@@ -83,8 +85,9 @@ do not change the Windows app mode.
 
 ## Exact next step
 
-Publish 0.26.5 through the release workflow; the owner approved it on 2026-11-09. See
-[tasks/INDEX.md](../tasks/INDEX.md) for T-0034 and T-0037; the SignPath application
+0.26.5 is published. Production moves to it when the owner upgrades; the history then switches to
+the write-ahead log on the first start (T-0047). See [tasks/INDEX.md](../tasks/INDEX.md) for T-0034
+and T-0037; the SignPath application
 is postponed by the owner (2026-11-06). Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
