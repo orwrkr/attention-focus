@@ -3684,3 +3684,84 @@ fn known_usage_matches_a_fresh_history_scan_after_every_kind_of_write() {
     );
     assert_eq!(known(&engine), fresh(&engine));
 }
+
+fn saved_sessions(path: &Path) -> i64 {
+    Connection::open(path)
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM focus_sessions WHERE state='stopped'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn history_uses_a_synced_write_ahead_log_that_exports_read_and_a_clean_exit_folds_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("focus.sqlite3");
+    let wal = dir.path().join("focus.sqlite3-wal");
+    let mut engine = engine(dir.path());
+    let pragma = |name: &str| -> String {
+        engine
+            .store
+            .connection
+            .query_row(&format!("PRAGMA {name}"), [], |r| {
+                r.get::<_, rusqlite::types::Value>(0)
+            })
+            .map(|value| format!("{value:?}"))
+            .unwrap()
+    };
+    assert_eq!(pragma("journal_mode"), "Text(\"wal\")");
+    assert_eq!(pragma("synchronous"), "Integer(2)", "FULL");
+    engine
+        .apply(Some(Command::Start(activity("A"))), at(0))
+        .unwrap();
+    engine.apply(Some(Command::Stop), at(20_000)).unwrap();
+    assert!(wal.exists(), "commits wait in the log until a checkpoint");
+
+    // An export reads its own snapshot while the store keeps the history open.
+    let period = whole_day("1970-01-01", "UTC");
+    let report = export_snapshot(&path, &period).unwrap();
+    assert_eq!(report.saved_ms, 20_000);
+    engine
+        .apply(Some(Command::Start(activity("B"))), at(21_000))
+        .unwrap();
+    assert_eq!(export_snapshot(&path, &period).unwrap().saved_ms, 20_000);
+    engine.apply(Some(Command::Exit), at(22_000)).unwrap();
+    drop(engine);
+
+    // The last connection folds the log into the history file and removes it.
+    assert!(!wal.exists());
+    let copy = tempfile::tempdir().unwrap();
+    std::fs::copy(&path, copy.path().join("focus.sqlite3")).unwrap();
+    assert_eq!(saved_sessions(&copy.path().join("focus.sqlite3")), 2);
+    assert_eq!(export_snapshot(&path, &period).unwrap().saved_ms, 21_000);
+}
+
+#[test]
+fn a_commit_survives_a_crash_in_the_log_but_not_in_a_copy_of_the_main_file_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut engine = engine(dir.path());
+    engine
+        .apply(Some(Command::Start(activity("A"))), at(0))
+        .unwrap();
+    engine.apply(Some(Command::Stop), at(20_000)).unwrap();
+    // Copying while the store is open captures the files as a crash would leave them.
+    let crash = tempfile::tempdir().unwrap();
+    for name in ["focus.sqlite3", "focus.sqlite3-wal"] {
+        std::fs::copy(dir.path().join(name), crash.path().join(name)).unwrap();
+    }
+    let alone = tempfile::tempdir().unwrap();
+    std::fs::copy(
+        dir.path().join("focus.sqlite3"),
+        alone.path().join("focus.sqlite3"),
+    )
+    .unwrap();
+    drop(engine);
+    let recovered = Store::open(&crash.path().join("focus.sqlite3")).unwrap();
+    assert_eq!(recovered.snapshot().unwrap().completed, 1);
+    assert_eq!(recovered.snapshot().unwrap().total_ms, 20_000);
+    // Why the guide says to copy the whole folder of a closed profile.
+    assert_eq!(saved_sessions(&alone.path().join("focus.sqlite3")), 0);
+}

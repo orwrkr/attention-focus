@@ -48,14 +48,12 @@
 | [T-0044](T-0044-site-link-in-the-app.md) | done | A Link to the Project Site in the Application | T-0043; public repository |
 | [T-0045](T-0045-dependency-alerts.md) | done | Dependency Alerts and Scanning Setup | public repository |
 | [T-0046](T-0046-history-growth.md) | done | Costs That Grow With the History | None |
-| [T-0047](T-0047-journal-mode.md) | backlog | Commit Latency and the SQLite Journal Mode | T-0046; the owner's decision |
+| [T-0047](T-0047-journal-mode.md) | done | Commit Latency and the SQLite Journal Mode | T-0046; the owner's decision |
 
 Task template: `templates/TASK.md` from the repository root.
 
 Next check: the project panel (T-0035), native tray activation (T-0031) and a real midnight
 crossing (T-0032, T-0033) in Development, using fresh desktop permission.
-Next technical decision: [T-0047](T-0047-journal-mode.md), the journal mode behind a slow commit on
-every Start and Stop; the owner decides whether to take it.
 Next steps: publishing through [T-0034](T-0034-public-release-readiness.md) and then
 [T-0037](T-0037-code-signing.md) needs the owner. T-0002 remains a separate desktop acceptance gate and does not authorize disruptive
 system tests.

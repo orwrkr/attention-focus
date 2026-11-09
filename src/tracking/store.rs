@@ -43,6 +43,12 @@ impl Store {
         connection.busy_timeout(Duration::from_secs(2))?;
         connection.execute_batch("PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;")?;
         migrate::upgrade(&mut connection, path)?;
+        // A commit appends to the write-ahead log and syncs it once, instead of creating,
+        // syncing and deleting a rollback journal, which slowed every command under load.
+        // FULL sync keeps each commit durable. The mode stays in the file; if the folder
+        // cannot hold the log, the rollback journal remains and nothing else changes.
+        // See ADR-0043.
+        let _ = connection.query_row("PRAGMA journal_mode=WAL", [], |_| Ok(()));
         connection.execute("UPDATE focus_sessions SET state='interrupted', ended_ms=checkpoint_ms, end_reason='crash' WHERE state='running'", [])?;
         let store = Self::wrap(connection);
         store.snapshot()?;

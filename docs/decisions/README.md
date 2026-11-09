@@ -9,7 +9,7 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0001](0001-product-boundaries.md) | superseded in part | Rust and read-only MetaPlan integration |
 | [0002](0002-english-only.md) | superseded in part | English-only project and application UI |
 | [0003](0003-chat-language.md) | accepted | Chat language clarification |
-| [0004](0004-desktop-stack.md) | accepted | Native Rust UI and transactional storage |
+| [0004](0004-desktop-stack.md) | superseded in part | Native Rust UI and transactional storage |
 | [0005](0005-desktop-state-and-branding.md) | accepted | Persistent desktop state and tray tracking |
 | [0006](0006-tray-single-click.md) | accepted | Single-click window access and hover time |
 | [0007](0007-source-settings.md) | superseded | Source settings and read-only preview |
@@ -48,5 +48,6 @@ record a replacement and link to the superseded record. Translation preserves me
 | [0040](0040-project-site.md) | accepted | A static project site on GitHub Pages |
 | [0041](0041-dependency-and-code-scanning.md) | accepted | Dependency and code scanning on GitHub |
 | [0042](0042-history-growth-and-query-cost.md) | accepted | Query cost that stays flat as the history grows |
+| [0043](0043-write-ahead-log.md) | accepted | A write-ahead log for the history |
 
-Next number: `0043`. Template: `templates/ADR.md` from the repository root.
+Next number: `0044`. Template: `templates/ADR.md` from the repository root.

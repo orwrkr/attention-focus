@@ -1,7 +1,8 @@
 # ADR-0004: Native Rust UI and Transactional Local Storage
 
 Date: 2026-10-26.
-Status: accepted.
+Status: superseded in part by [ADR-0043](0043-write-ahead-log.md), for the rollback
+journal.
 Basis: architecture task T-0001; implementation decision within the approved scope.
 
 ## Context

@@ -5,14 +5,16 @@ Updated: 2026-11-09. History lives in Git and the task cards, and decisions in t
 ## Current state
 
 A local Windows tray application in Rust, using egui/eframe, tray-icon and bundled SQLite.
-Current release: 0.26.3, the first published release (2026-11-06). Version 0.26.4 holds T-0046
-and is built locally, not published. The owner runs 0.26.3 as Production
+Current release: 0.26.3, the first published release (2026-11-06). Version 0.26.5 holds T-0046
+and T-0047; 0.26.4 was built with T-0046 alone and never published. The owner runs 0.26.3 as Production
 since that day, and it upgraded the real history to schema five. The application owns its
 project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of older history in
 `src/tracking/migrate.rs`.
 
 Recent work:
 
+- T-0047: the history uses a write-ahead log with FULL sync: Start and Stop commit in 2 to 4 ms
+  instead of about 9 ms, and no longer slow to seconds when memory is short (ADR-0043).
 - T-0046: reduced report and snapshot costs as history grows, without a schema change (ADR-0042).
 - T-0045: Dependabot and CodeQL set up, and the PDF tools updated for their alerts (ADR-0041).
 - T-0044: a Project site link in About, opened in the default browser through the shell (ADR-0040),
@@ -81,8 +83,8 @@ do not change the Windows app mode.
 
 ## Exact next step
 
-The owner decides on [T-0047](../tasks/T-0047-journal-mode.md), the journal mode, and on publishing
-0.26.4. See [tasks/INDEX.md](../tasks/INDEX.md) for T-0034 and T-0037; the SignPath application
+Publish 0.26.5 through the release workflow; the owner approved it on 2026-11-09. See
+[tasks/INDEX.md](../tasks/INDEX.md) for T-0034 and T-0037; the SignPath application
 is postponed by the owner (2026-11-06). Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical

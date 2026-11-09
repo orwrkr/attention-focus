@@ -40,7 +40,9 @@ key, and changing the running activity or correcting history makes it read histo
 
 Each profile has a fixed directory under the Windows per-user LocalAppData known folder:
 `AttentionFocus/Production` or `AttentionFocus/Development`. It holds `focus.sqlite3`,
-`window.ron` and any schema backups. Debug builds cannot select Production. There is no
+`window.ron` and any schema backups. The history uses a write-ahead log with FULL sync, so
+`focus.sqlite3-wal` and `-shm` sit beside it while it is open (ADR-0043). Debug builds cannot
+select Production. There is no
 setting for another location. Linked profile directories, and linked entries inside
 them, are rejected before anything writable opens. Older files directly under
 `AttentionFocus`, and `source.sqlite3` in a profile, remain unread and unchanged.
