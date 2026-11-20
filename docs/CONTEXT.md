@@ -90,7 +90,8 @@ do not change the Windows app mode.
 
 0.26.5 is published and runs as Production. `main` holds T-0048, which changes fingerprinted
 build inputs, so the next release starts with a version bump to 0.26.6 or later. See
-[tasks/INDEX.md](../tasks/INDEX.md) for T-0034 and T-0037; the SignPath application is postponed by the owner (2026-11-06). Research compatibility before any further migration.
+[tasks/INDEX.md](../tasks/INDEX.md) for T-0034 and T-0037; the SignPath application is postponed
+by the owner (2026-11-06). Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires
