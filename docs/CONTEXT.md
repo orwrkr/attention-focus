@@ -1,6 +1,6 @@
 # Current Context
 
-Updated: 2026-11-09. History lives in Git and the task cards, and decisions in the ADRs.
+Updated: 2026-11-20. History lives in Git and the task cards, and decisions in the ADRs.
 
 ## Current state
 
@@ -14,6 +14,8 @@ project and task list (ADR-0031); MetaPlan is gone, apart from the conversion of
 
 Recent work:
 
+- T-0048: `pypdf` dropped from the PDF tools, since no script imports it; the guide exports
+  byte-identically without it. Not released: the next release must bump the version first.
 - T-0047: the history uses a write-ahead log with FULL sync: Start and Stop commit in 2 to 4 ms
   instead of about 9 ms, and no longer slow to seconds when memory is short (ADR-0043).
 - T-0046: reduced report and snapshot costs as history grows, without a schema change (ADR-0042).
@@ -86,9 +88,9 @@ do not change the Windows app mode.
 
 ## Exact next step
 
-0.26.5 is published and runs as Production. See [tasks/INDEX.md](../tasks/INDEX.md) for T-0034
-and T-0037; the SignPath application
-is postponed by the owner (2026-11-06). Research compatibility before any further migration.
+0.26.5 is published and runs as Production. `main` holds T-0048, which changes fingerprinted
+build inputs, so the next release starts with a version bump to 0.26.6 or later. See
+[tasks/INDEX.md](../tasks/INDEX.md) for T-0034 and T-0037; the SignPath application is postponed by the owner (2026-11-06). Research compatibility before any further migration.
 
 Keep one primary task active. Publish only through scripts/build.ps1, preserving the canonical
 EXE path; a locked output must fail without alternate copies. Every shipped change requires

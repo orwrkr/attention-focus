@@ -8,7 +8,7 @@ try {
     $version = Get-ReleaseVersion $python
     Assert-PackageOutputs $paths $version
     Assert-OutputUnlocked $paths (Join-Path $paths.Root 'target/debug/attention-focus.exe')
-    & $python -c 'import reportlab, PIL, pypdf'
+    & $python -c 'import reportlab, PIL'
     if ($LASTEXITCODE -ne 0) { throw 'PDF dependencies are missing. Run scripts/setup-docs.ps1 or set ATTENTION_FOCUS_PYTHON.' }
     # The EXE embeds the notices, so they must describe its dependencies before it compiles.
     Push-Location $paths.Root

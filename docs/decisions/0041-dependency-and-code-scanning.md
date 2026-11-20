@@ -1,7 +1,7 @@
 # ADR-0041: Dependency and Code Scanning on GitHub
 
 Date: 2026-11-06.
-Status: accepted.
+Status: accepted. T-0048 later drops `pypdf`, which no script imports, from the PDF tools.
 Basis: the owner turned on GitHub's security features after making the repository public, and added a
 Dependabot file and a CodeQL workflow from GitHub's templates. T-0045.
 

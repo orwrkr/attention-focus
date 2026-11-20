@@ -49,6 +49,7 @@
 | [T-0045](T-0045-dependency-alerts.md) | done | Dependency Alerts and Scanning Setup | public repository |
 | [T-0046](T-0046-history-growth.md) | done | Costs That Grow With the History | None |
 | [T-0047](T-0047-journal-mode.md) | done | Commit Latency and the SQLite Journal Mode | T-0046; the owner's decision |
+| [T-0048](T-0048-drop-pypdf.md) | done | Drop pypdf From the PDF Tools | T-0045 |
 
 Task template: `templates/TASK.md` from the repository root.
 
